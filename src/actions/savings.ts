@@ -6,14 +6,30 @@ import type { SavingsGoalFormData } from '@/types';
 
 export async function createSavingsGoal(data: SavingsGoalFormData) {
   try {
+    const initialAmount = data.initialAmount || 0;
     const goal = await prisma.savingsGoal.create({
       data: {
         name: data.name,
         targetAmount: data.targetAmount,
+        currentAmount: initialAmount,
         currency: data.currency,
         profileId: data.profileId,
       },
     });
+
+    // Si hay monto inicial, crear una transacción de depósito inicial
+    if (initialAmount > 0) {
+      await prisma.savingsTransaction.create({
+        data: {
+          amount: initialAmount,
+          type: 'DEPOSITO',
+          description: 'Saldo inicial',
+          savingsGoalId: goal.id,
+          profileId: data.profileId,
+        },
+      });
+    }
+
     revalidatePath('/ahorros');
     return { success: true, data: goal };
   } catch (error) {

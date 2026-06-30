@@ -33,6 +33,7 @@ export default function AhorrosClient({ initialGoals }: { initialGoals: SavingsG
   // Goal form
   const [goalName, setGoalName] = useState('');
   const [targetAmount, setTargetAmount] = useState('');
+  const [initialAmount, setInitialAmount] = useState('');
   const [currency, setCurrency] = useState('ARS');
 
   // Transaction form
@@ -47,7 +48,8 @@ export default function AhorrosClient({ initialGoals }: { initialGoals: SavingsG
     startTransition(async () => {
       const result = await createSavingsGoal({
         name: goalName,
-        targetAmount: parseFloat(targetAmount),
+        targetAmount: targetAmount ? parseFloat(targetAmount) : 0,
+        initialAmount: initialAmount ? parseFloat(initialAmount) : 0,
         currency: currency as 'ARS' | 'USD' | 'EUR',
         profileId: activeProfile.id,
       });
@@ -56,6 +58,7 @@ export default function AhorrosClient({ initialGoals }: { initialGoals: SavingsG
         toast.success('Meta creada');
         setGoalName('');
         setTargetAmount('');
+        setInitialAmount('');
         setShowGoalForm(false);
         router.refresh();
       } else {
@@ -123,21 +126,23 @@ export default function AhorrosClient({ initialGoals }: { initialGoals: SavingsG
               value={goalName}
               onChange={(e) => setGoalName(e.target.value)}
               className="input-field"
-              placeholder="Ej: Viaje a Italia"
+              placeholder="Ej: Viaje a Italia, Cuenta general, etc."
               required
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-text-secondary mb-1">Monto Objetivo</label>
+              <label className="block text-sm text-text-secondary mb-1">
+                Monto Objetivo
+                <span className="text-text-muted text-xs ml-1">(opcional)</span>
+              </label>
               <input
                 type="number"
                 step="0.01"
                 value={targetAmount}
                 onChange={(e) => setTargetAmount(e.target.value)}
                 className="input-field"
-                placeholder="0.00"
-                required
+                placeholder="0 = sin objetivo"
               />
             </div>
             <div>
@@ -148,6 +153,20 @@ export default function AhorrosClient({ initialGoals }: { initialGoals: SavingsG
                 <option value="EUR">🇪🇺 EUR</option>
               </select>
             </div>
+          </div>
+          <div>
+            <label className="block text-sm text-text-secondary mb-1">
+              💰 Monto Inicial
+              <span className="text-text-muted text-xs ml-1">(plata que ya tenés ahorrada)</span>
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              value={initialAmount}
+              onChange={(e) => setInitialAmount(e.target.value)}
+              className="input-field"
+              placeholder="0.00"
+            />
           </div>
           <button type="submit" disabled={isPending} className="w-full gradient-btn py-3 disabled:opacity-50">
             {isPending ? 'Creando...' : 'Crear Meta'}
@@ -193,21 +212,32 @@ export default function AhorrosClient({ initialGoals }: { initialGoals: SavingsG
 
                 {/* Progress */}
                 <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-text-secondary">
-                      ${goal.currentAmount.toLocaleString('es-AR')}
-                    </span>
-                    <span className="text-text-muted">
-                      de ${goal.targetAmount.toLocaleString('es-AR')}
-                    </span>
-                  </div>
-                  <div className="w-full h-3 bg-bg-input rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-accent to-purple-500 transition-all duration-500"
-                      style={{ width: `${Math.min(progress, 100)}%` }}
-                    />
-                  </div>
-                  <p className="text-xs text-text-muted text-right mt-1">{progress.toFixed(1)}%</p>
+                  {goal.targetAmount > 0 ? (
+                    <>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="text-text-secondary">
+                          ${goal.currentAmount.toLocaleString('es-AR')}
+                        </span>
+                        <span className="text-text-muted">
+                          de ${goal.targetAmount.toLocaleString('es-AR')}
+                        </span>
+                      </div>
+                      <div className="w-full h-3 bg-bg-input rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-accent to-purple-500 transition-all duration-500"
+                          style={{ width: `${Math.min(progress, 100)}%` }}
+                        />
+                      </div>
+                      <p className="text-xs text-text-muted text-right mt-1">{progress.toFixed(1)}%</p>
+                    </>
+                  ) : (
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-bg-input">
+                      <span className="text-sm text-text-secondary">Saldo actual</span>
+                      <span className="text-lg font-bold text-accent">
+                        ${goal.currentAmount.toLocaleString('es-AR')}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Transaction form */}

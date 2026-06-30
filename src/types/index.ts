@@ -70,6 +70,7 @@ export interface ExpenseFormData {
 export interface SavingsGoalFormData {
   name: string;
   targetAmount: number;
+  initialAmount?: number;
   currency: Currency;
   profileId: string;
 }
