@@ -110,3 +110,86 @@ export async function deleteSavingsGoal(id: string) {
     return { success: false, error: 'Error al eliminar meta' };
   }
 }
+
+export async function getPatrimonioStats() {
+  try {
+    // 1. Total en metas de ahorro (agrupado por moneda)
+    const savingsGoals = await prisma.savingsGoal.findMany();
+    const savingsByCurrency: Record<string, number> = {};
+    savingsGoals.forEach((goal) => {
+      savingsByCurrency[goal.currency] = (savingsByCurrency[goal.currency] || 0) + goal.currentAmount;
+    });
+
+    // 2. Total en inversiones (agrupado por moneda)
+    const investments = await prisma.investment.findMany();
+    const investmentsByCurrency: Record<string, number> = {};
+    investments.forEach((inv) => {
+      investmentsByCurrency[inv.currency] = (investmentsByCurrency[inv.currency] || 0) + inv.amount;
+    });
+
+    // 3. Sobrante del mes actual (ingresos - gastos de este mes)
+    const now = new Date();
+    const month = now.getMonth();
+    const year = now.getFullYear();
+    const startOfMonth = new Date(year, month, 1);
+    const endOfMonth = new Date(year, month + 1, 0, 23, 59, 59);
+
+    const incomes = await prisma.income.findMany({
+      where: { date: { gte: startOfMonth, lte: endOfMonth } },
+    });
+
+    const expenses = await prisma.expense.findMany({
+      where: { date: { gte: startOfMonth, lte: endOfMonth } },
+    });
+
+    // Agrupar ingresos por moneda
+    const incomeByCurrency: Record<string, number> = {};
+    incomes.forEach((inc) => {
+      incomeByCurrency[inc.currency] = (incomeByCurrency[inc.currency] || 0) + inc.amount;
+    });
+
+    // Agrupar gastos por moneda
+    const expenseByCurrency: Record<string, number> = {};
+    expenses.forEach((exp) => {
+      expenseByCurrency[exp.currency] = (expenseByCurrency[exp.currency] || 0) + exp.amount;
+    });
+
+    // Calcular sobrante por moneda
+    const surplusByCurrency: Record<string, number> = {};
+    const allCurrencies = new Set([...Object.keys(incomeByCurrency), ...Object.keys(expenseByCurrency)]);
+    allCurrencies.forEach((cur) => {
+      const income = incomeByCurrency[cur] || 0;
+      const expense = expenseByCurrency[cur] || 0;
+      surplusByCurrency[cur] = income - expense;
+    });
+
+    // 4. Totales generales por moneda
+    const allCurrenciesTotal = new Set([
+      ...Object.keys(savingsByCurrency),
+      ...Object.keys(investmentsByCurrency),
+    ]);
+    const totalByCurrency: Record<string, number> = {};
+    allCurrenciesTotal.forEach((cur) => {
+      totalByCurrency[cur] = (savingsByCurrency[cur] || 0) + (investmentsByCurrency[cur] || 0);
+    });
+
+    return {
+      savingsByCurrency,
+      investmentsByCurrency,
+      surplusByCurrency,
+      totalByCurrency,
+      savingsCount: savingsGoals.length,
+      investmentsCount: investments.length,
+    };
+  } catch (error) {
+    console.error('Error fetching patrimonio stats:', error);
+    return {
+      savingsByCurrency: {},
+      investmentsByCurrency: {},
+      surplusByCurrency: {},
+      totalByCurrency: {},
+      savingsCount: 0,
+      investmentsCount: 0,
+    };
+  }
+}
