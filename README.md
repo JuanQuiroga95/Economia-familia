@@ -1,36 +1,174 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 💰 EconoApp - Gestión Financiera Personal y de Pareja
 
-## Getting Started
+Aplicación web de gestión financiera para Juan y Tania. Controla ingresos, gastos, ahorros e inversiones en múltiples monedas (ARS, USD, EUR) con presupuesto quincenal y estadísticas visuales.
 
-First, run the development server:
+## 🚀 Stack Tecnológico
+
+- **Framework**: Next.js 15+ (App Router)
+- **Frontend**: React 19, Tailwind CSS 4
+- **Base de Datos**: Neon (PostgreSQL) + Prisma ORM
+- **Autenticación**: NextAuth.js v4
+- **Gráficos**: Recharts
+- **Imágenes**: Cloudinary
+- **Deploy**: Vercel
+
+## 📋 Requisitos Previos
+
+1. [Node.js](https://nodejs.org/) v18+
+2. Cuenta en [Neon](https://neon.tech/) (base de datos PostgreSQL gratuita)
+3. Cuenta en [Cloudinary](https://cloudinary.com/) (almacenamiento de imágenes gratuito)
+4. Cuenta en [Vercel](https://vercel.com/) (deploy gratuito)
+
+## 🛠️ Instalación Local
+
+### 1. Clonar e instalar dependencias
+
+```bash
+git clone <tu-repo-url>
+cd economia
+npm install
+```
+
+### 2. Configurar variables de entorno
+
+```bash
+cp .env.example .env
+```
+
+Edita `.env` con tus credenciales:
+
+```env
+# Neon DB - Copiar Connection String desde el dashboard de Neon
+DATABASE_URL="postgresql://user:pass@host.neon.tech/dbname?sslmode=require"
+
+# NextAuth - Generar un secreto aleatorio
+NEXTAUTH_SECRET="genera-con-openssl-rand-base64-32"
+NEXTAUTH_URL="http://localhost:3000"
+
+# Login maestro
+MASTER_EMAIL="tu@email.com"
+MASTER_PASSWORD_HASH="hash-bcrypt-de-tu-contraseña"
+
+# Cloudinary - Copiar desde el dashboard de Cloudinary
+CLOUDINARY_CLOUD_NAME="tu-cloud-name"
+CLOUDINARY_API_KEY="tu-api-key"
+CLOUDINARY_API_SECRET="tu-api-secret"
+```
+
+### 3. Generar hash de contraseña
+
+```bash
+node -e "const bcrypt = require('bcryptjs'); console.log(bcrypt.hashSync('TU_CONTRASEÑA_AQUI', 12));"
+```
+
+Copia el resultado y pégalo en `MASTER_PASSWORD_HASH`.
+
+### 4. Inicializar la base de datos
+
+```bash
+# Crear las tablas en Neon
+npx prisma db push
+
+# Cargar datos iniciales (perfiles, categorías, presupuesto)
+npm run db:seed
+```
+
+### 5. Ejecutar en desarrollo
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Abrir [http://localhost:3000](http://localhost:3000)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 🌐 Deploy en Vercel
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 1. Subir a GitHub
 
-## Learn More
+```bash
+git add .
+git commit -m "Initial commit - EconoApp"
+git push origin main
+```
 
-To learn more about Next.js, take a look at the following resources:
+### 2. Importar en Vercel
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. Ir a [vercel.com/new](https://vercel.com/new)
+2. Importar el repositorio de GitHub
+3. Agregar las variables de entorno (las mismas del `.env`)
+4. Deploy
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### 3. Variables de entorno en Vercel
 
-## Deploy on Vercel
+En el dashboard de Vercel → Settings → Environment Variables, agregar:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| Variable | Valor |
+|----------|-------|
+| `DATABASE_URL` | URL de conexión de Neon |
+| `NEXTAUTH_SECRET` | Tu secreto generado |
+| `NEXTAUTH_URL` | `https://tu-app.vercel.app` |
+| `MASTER_EMAIL` | Tu email de login |
+| `MASTER_PASSWORD_HASH` | Hash bcrypt de tu contraseña |
+| `CLOUDINARY_CLOUD_NAME` | Tu cloud name de Cloudinary |
+| `CLOUDINARY_API_KEY` | Tu API key de Cloudinary |
+| `CLOUDINARY_API_SECRET` | Tu API secret de Cloudinary |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### 4. Inicializar la base de datos (post-deploy)
+
+Desde tu máquina local (con el `.env` configurado):
+
+```bash
+npx prisma db push
+npm run db:seed
+```
+
+## 📱 Funcionalidades
+
+### Dashboard
+- Resumen mensual de ingresos, gastos y balance
+- Gráfico de barras: Ingresos vs Gastos (últimos 6 meses)
+- Gráfico de dona: Desglose por categoría
+- Tracker de presupuesto quincenal de Juan
+
+### Ingresos
+- Registro por perfil (Juan/Tania)
+- Multi-moneda (ARS, USD, EUR)
+
+### Gastos
+- Gastos Propios o Compartidos (con split configurable)
+- Categorías con colores e íconos
+- Subida de comprobantes/facturas (Cloudinary)
+- Descuento automático del presupuesto quincenal
+
+### Ahorros
+- Metas de ahorro con barra de progreso
+- Depósitos y retiros
+- Multi-moneda
+
+### Inversiones
+- Tipos: Plazo Fijo, FCI, Acciones, Crypto, Bonos
+- Tasa de retorno y vencimiento
+- Resumen por moneda
+
+### Configuración
+- Tipo de cambio mensual
+- Gestión de categorías
+- Presupuesto quincenal configurable
+
+## 🗃️ Estructura de la Base de Datos
+
+```
+Profile        → Perfiles (Juan, Tania)
+Category       → Categorías de gasto
+Income         → Ingresos mensuales
+Expense        → Gastos (propios/compartidos)
+SavingsGoal    → Metas de ahorro
+SavingsTransaction → Movimientos de ahorro
+Investment     → Inversiones
+ExchangeRate   → Tipo de cambio mensual
+BudgetConfig   → Presupuesto quincenal
+```
+
+## 📝 Licencia
+
+Proyecto privado - Juan & Tania © 2026

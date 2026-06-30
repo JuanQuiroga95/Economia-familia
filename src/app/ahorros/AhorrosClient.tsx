@@ -1,0 +1,271 @@
+'use client';
+
+import { useState, useTransition } from 'react';
+import { useProfile } from '@/hooks/useProfile';
+import { createSavingsGoal, addSavingsTransaction, deleteSavingsGoal } from '@/actions/savings';
+import toast from 'react-hot-toast';
+import { useRouter } from 'next/navigation';
+
+interface SavingsGoal {
+  id: string;
+  name: string;
+  targetAmount: number;
+  currentAmount: number;
+  currency: string;
+  profileId: string;
+  profile: { id: string; name: string; avatar: string | null };
+  transactions: {
+    id: string;
+    amount: number;
+    type: string;
+    description: string | null;
+    date: string;
+  }[];
+}
+
+export default function AhorrosClient({ initialGoals }: { initialGoals: SavingsGoal[] }) {
+  const { activeProfile } = useProfile();
+  const [showGoalForm, setShowGoalForm] = useState(false);
+  const [showTransactionForm, setShowTransactionForm] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+  const router = useRouter();
+
+  // Goal form
+  const [goalName, setGoalName] = useState('');
+  const [targetAmount, setTargetAmount] = useState('');
+  const [currency, setCurrency] = useState('ARS');
+
+  // Transaction form
+  const [txAmount, setTxAmount] = useState('');
+  const [txType, setTxType] = useState<'DEPOSITO' | 'RETIRO'>('DEPOSITO');
+  const [txDescription, setTxDescription] = useState('');
+
+  const handleCreateGoal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeProfile) { toast.error('Seleccioná un perfil'); return; }
+
+    startTransition(async () => {
+      const result = await createSavingsGoal({
+        name: goalName,
+        targetAmount: parseFloat(targetAmount),
+        currency: currency as 'ARS' | 'USD' | 'EUR',
+        profileId: activeProfile.id,
+      });
+
+      if (result.success) {
+        toast.success('Meta creada');
+        setGoalName('');
+        setTargetAmount('');
+        setShowGoalForm(false);
+        router.refresh();
+      } else {
+        toast.error(result.error || 'Error');
+      }
+    });
+  };
+
+  const handleAddTransaction = async (goalId: string) => {
+    if (!activeProfile) { toast.error('Seleccioná un perfil'); return; }
+
+    startTransition(async () => {
+      const result = await addSavingsTransaction({
+        savingsGoalId: goalId,
+        amount: parseFloat(txAmount),
+        type: txType,
+        description: txDescription || undefined,
+        profileId: activeProfile.id,
+      });
+
+      if (result.success) {
+        toast.success(txType === 'DEPOSITO' ? 'Depósito registrado' : 'Retiro registrado');
+        setTxAmount('');
+        setTxDescription('');
+        setShowTransactionForm(null);
+        router.refresh();
+      } else {
+        toast.error(result.error || 'Error');
+      }
+    });
+  };
+
+  const handleDeleteGoal = (id: string) => {
+    startTransition(async () => {
+      const result = await deleteSavingsGoal(id);
+      if (result.success) {
+        toast.success('Meta eliminada');
+        router.refresh();
+      } else {
+        toast.error(result.error || 'Error');
+      }
+    });
+  };
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl lg:text-3xl font-bold text-text-primary">Ahorros</h1>
+          <p className="text-text-muted text-sm mt-1">Metas de ahorro y progreso</p>
+        </div>
+        <button onClick={() => setShowGoalForm(!showGoalForm)} className="gradient-btn px-4 py-2 text-sm">
+          {showGoalForm ? '✕ Cerrar' : '+ Nueva Meta'}
+        </button>
+      </div>
+
+      {/* New goal form */}
+      {showGoalForm && (
+        <form onSubmit={handleCreateGoal} className="glass-card p-4 lg:p-6 space-y-4 animate-slide-up">
+          <h3 className="text-lg font-semibold">Nueva Meta de Ahorro</h3>
+          <div>
+            <label className="block text-sm text-text-secondary mb-1">Nombre</label>
+            <input
+              type="text"
+              value={goalName}
+              onChange={(e) => setGoalName(e.target.value)}
+              className="input-field"
+              placeholder="Ej: Viaje a Italia"
+              required
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-text-secondary mb-1">Monto Objetivo</label>
+              <input
+                type="number"
+                step="0.01"
+                value={targetAmount}
+                onChange={(e) => setTargetAmount(e.target.value)}
+                className="input-field"
+                placeholder="0.00"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-text-secondary mb-1">Moneda</label>
+              <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="input-field">
+                <option value="ARS">🇦🇷 ARS</option>
+                <option value="USD">🇺🇸 USD</option>
+                <option value="EUR">🇪🇺 EUR</option>
+              </select>
+            </div>
+          </div>
+          <button type="submit" disabled={isPending} className="w-full gradient-btn py-3 disabled:opacity-50">
+            {isPending ? 'Creando...' : 'Crear Meta'}
+          </button>
+        </form>
+      )}
+
+      {/* Goals list */}
+      {initialGoals.length === 0 ? (
+        <div className="glass-card p-8 text-center">
+          <span className="text-4xl">🎯</span>
+          <p className="text-text-muted mt-2">No hay metas de ahorro creadas</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {initialGoals.map((goal) => {
+            const progress = goal.targetAmount > 0
+              ? (goal.currentAmount / goal.targetAmount) * 100
+              : 0;
+
+            return (
+              <div key={goal.id} className="glass-card p-4 lg:p-6 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-semibold text-text-primary">🎯 {goal.name}</h3>
+                    <p className="text-xs text-text-muted">{goal.profile.name} • {goal.currency}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setShowTransactionForm(showTransactionForm === goal.id ? null : goal.id)}
+                      className="px-3 py-1.5 rounded-lg bg-accent/20 text-accent text-xs font-medium hover:bg-accent/30 transition-all"
+                    >
+                      💵 Movimiento
+                    </button>
+                    <button
+                      onClick={() => handleDeleteGoal(goal.id)}
+                      className="p-1.5 rounded-lg text-text-muted hover:text-danger hover:bg-danger/10 transition-all"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                </div>
+
+                {/* Progress */}
+                <div>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-text-secondary">
+                      ${goal.currentAmount.toLocaleString('es-AR')}
+                    </span>
+                    <span className="text-text-muted">
+                      de ${goal.targetAmount.toLocaleString('es-AR')}
+                    </span>
+                  </div>
+                  <div className="w-full h-3 bg-bg-input rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-accent to-purple-500 transition-all duration-500"
+                      style={{ width: `${Math.min(progress, 100)}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-text-muted text-right mt-1">{progress.toFixed(1)}%</p>
+                </div>
+
+                {/* Transaction form */}
+                {showTransactionForm === goal.id && (
+                  <div className="p-3 bg-bg-input rounded-xl space-y-3 animate-fade-in">
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setTxType('DEPOSITO')}
+                        className={`py-2 rounded-lg text-sm font-medium transition-all ${
+                          txType === 'DEPOSITO'
+                            ? 'bg-success text-white'
+                            : 'bg-bg-card text-text-secondary border border-border'
+                        }`}
+                      >
+                        ⬆️ Depósito
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTxType('RETIRO')}
+                        className={`py-2 rounded-lg text-sm font-medium transition-all ${
+                          txType === 'RETIRO'
+                            ? 'bg-danger text-white'
+                            : 'bg-bg-card text-text-secondary border border-border'
+                        }`}
+                      >
+                        ⬇️ Retiro
+                      </button>
+                    </div>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={txAmount}
+                      onChange={(e) => setTxAmount(e.target.value)}
+                      className="input-field"
+                      placeholder="Monto"
+                    />
+                    <input
+                      type="text"
+                      value={txDescription}
+                      onChange={(e) => setTxDescription(e.target.value)}
+                      className="input-field"
+                      placeholder="Descripción (opcional)"
+                    />
+                    <button
+                      onClick={() => handleAddTransaction(goal.id)}
+                      disabled={isPending || !txAmount}
+                      className="w-full gradient-btn py-2 text-sm disabled:opacity-50"
+                    >
+                      {isPending ? 'Guardando...' : 'Registrar'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,151 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Profile {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  avatar    String?
+  createdAt DateTime @default(now())
+
+  incomes             Income[]
+  expenses            Expense[]
+  savingsTransactions SavingsTransaction[]
+  savingsGoals        SavingsGoal[]
+  investments         Investment[]
+  budgetConfigs       BudgetConfig[]
+}
+
+model Category {
+  id       String    @id @default(cuid())
+  name     String    @unique
+  icon     String    @default("📦")
+  color    String    @default("#6366f1")
+  expenses Expense[]
+}
+
+model Income {
+  id          String   @id @default(cuid())
+  amount      Float
+  currency    String   @default("ARS") // ARS, USD, EUR
+  date        DateTime
+  description String
+  profileId   String
+  profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Expense {
+  id          String   @id @default(cuid())
+  amount      Float
+  currency    String   @default("ARS")
+  date        DateTime
+  description String
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id])
+  profileId   String
+  profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  // Tipo de gasto
+  type        ExpenseType @default(PROPIO)
+  splitPercent Float       @default(100) // Porcentaje que le corresponde al perfil (100 = propio, 50 = mitad compartido)
+
+  // Imagen del comprobante
+  receiptUrl  String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+enum ExpenseType {
+  PROPIO
+  COMPARTIDO
+}
+
+model SavingsGoal {
+  id            String   @id @default(cuid())
+  name          String
+  targetAmount  Float
+  currency      String   @default("ARS")
+  currentAmount Float    @default(0)
+  profileId     String
+  profile       Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  transactions  SavingsTransaction[]
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model SavingsTransaction {
+  id            String      @id @default(cuid())
+  amount        Float
+  type          SavingsType
+  description   String?
+  savingsGoalId String
+  savingsGoal   SavingsGoal @relation(fields: [savingsGoalId], references: [id], onDelete: Cascade)
+  profileId     String
+  profile       Profile     @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  date          DateTime    @default(now())
+  createdAt     DateTime    @default(now())
+}
+
+enum SavingsType {
+  DEPOSITO
+  RETIRO
+}
+
+model Investment {
+  id          String          @id @default(cuid())
+  name        String
+  type        InvestmentType
+  amount      Float
+  currency    String          @default("ARS")
+  returnRate  Float?          // Tasa de retorno anual %
+  startDate   DateTime
+  endDate     DateTime?
+  notes       String?
+  profileId   String
+  profile     Profile         @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+}
+
+enum InvestmentType {
+  PLAZO_FIJO
+  FCI
+  ACCIONES
+  CRYPTO
+  BONOS
+  OTRO
+}
+
+model ExchangeRate {
+  id        String   @id @default(cuid())
+  month     Int      // 1-12
+  year      Int
+  usdToArs  Float
+  eurToArs  Float
+  eurToUsd  Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([month, year])
+}
+
+model BudgetConfig {
+  id              String  @id @default(cuid())
+  profileId       String
+  profile         Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  firstHalfBudget Float   @default(50000) // Presupuesto primera quincena ARS
+  secondHalfBudget Float  @default(50000) // Presupuesto segunda quincena ARS
+  currency        String  @default("ARS")
+  isActive        Boolean @default(true)
+
+  @@unique([profileId])
+}
