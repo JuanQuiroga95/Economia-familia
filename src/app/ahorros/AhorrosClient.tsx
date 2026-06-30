@@ -2,9 +2,10 @@
 
 import { useState, useTransition } from 'react';
 import { useProfile } from '@/hooks/useProfile';
-import { createSavingsGoal, addSavingsTransaction, deleteSavingsGoal } from '@/actions/savings';
+import { createSavingsGoal, addSavingsTransaction, deleteSavingsGoal, distributeSurplus } from '@/actions/savings';
 import toast from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 interface SavingsGoal {
   id: string;
@@ -49,7 +50,40 @@ export default function AhorrosClient({ initialGoals, patrimonio }: AhorrosClien
   const [showTransactionForm, setShowTransactionForm] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [activeTab, setActiveTab] = useState<'patrimonio' | 'metas'>('patrimonio');
+  
+  // Modal for distributing surplus
+  const [distributeModal, setDistributeModal] = useState<{ currency: string; amount: number } | null>(null);
+  const [distributeAmount, setDistributeAmount] = useState('');
+  const [distributeGoalId, setDistributeGoalId] = useState('');
+  
   const router = useRouter();
+
+  const handleDistributeSurplus = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeProfile || !distributeModal || !distributeGoalId) {
+      toast.error('Completá todos los campos');
+      return;
+    }
+
+    startTransition(async () => {
+      const result = await distributeSurplus({
+        amount: parseFloat(distributeAmount),
+        currency: distributeModal.currency,
+        savingsGoalId: distributeGoalId,
+        profileId: activeProfile.id,
+      });
+
+      if (result.success) {
+        toast.success('Sobrante distribuido correctamente');
+        setDistributeModal(null);
+        setDistributeAmount('');
+        setDistributeGoalId('');
+        router.refresh();
+      } else {
+        toast.error(result.error || 'Error al distribuir sobrante');
+      }
+    });
+  };
 
   // Goal form
   const [goalName, setGoalName] = useState('');
@@ -307,11 +341,21 @@ export default function AhorrosClient({ initialGoals, patrimonio }: AhorrosClien
               </p>
               <div className="space-y-2">
                 {Object.entries(patrimonio.surplusByCurrency).map(([cur, surplus]) => (
-                  <div key={cur} className="flex items-center justify-between p-3 rounded-xl bg-bg-input">
-                    <span className="text-sm text-text-secondary">{currencyFlags[cur]} {cur}</span>
-                    <span className={`text-sm font-bold ${surplus >= 0 ? 'text-success' : 'text-danger'}`}>
-                      {surplus >= 0 ? '+' : ''}${surplus.toLocaleString('es-AR')}
-                    </span>
+                  <div key={cur} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-xl bg-bg-input gap-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-text-secondary">{currencyFlags[cur]} {cur}</span>
+                      <span className={`text-sm font-bold ${surplus >= 0 ? 'text-success' : 'text-danger'}`}>
+                        {surplus >= 0 ? '+' : ''}${surplus.toLocaleString('es-AR')}
+                      </span>
+                    </div>
+                    {surplus > 0 && (
+                      <button
+                        onClick={() => setDistributeModal({ currency: cur, amount: surplus })}
+                        className="px-3 py-1.5 rounded-lg bg-accent/20 text-accent text-xs font-medium hover:bg-accent/30 transition-all text-center"
+                      >
+                        Distribuir Sobrante
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -449,6 +493,74 @@ export default function AhorrosClient({ initialGoals, patrimonio }: AhorrosClien
               );
             })
           )}
+        </div>
+      )}
+
+      {/* Modal: Distribuir Sobrante */}
+      {distributeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+          <div className="bg-bg-card w-full max-w-md rounded-2xl shadow-xl border border-border overflow-hidden animate-slide-up">
+            <div className="p-4 border-b border-border flex justify-between items-center">
+              <h3 className="font-semibold text-text-primary">Distribuir Sobrante ({distributeModal.currency})</h3>
+              <button 
+                onClick={() => setDistributeModal(null)}
+                className="text-text-muted hover:text-text-primary transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <form onSubmit={handleDistributeSurplus} className="p-4 space-y-4">
+              <p className="text-sm text-text-secondary">
+                Tenés un sobrante de <strong className="text-accent">${distributeModal.amount.toLocaleString('es-AR')}</strong> este mes. ¿Dónde querés guardarlo?
+              </p>
+              
+              <div>
+                <label className="block text-sm text-text-secondary mb-1">Monto a distribuir</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  max={distributeModal.amount}
+                  value={distributeAmount}
+                  onChange={(e) => setDistributeAmount(e.target.value)}
+                  className="input-field"
+                  placeholder={`Ej: ${distributeModal.amount}`}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-text-secondary mb-1">Destino (Meta o Cuenta)</label>
+                <select
+                  value={distributeGoalId}
+                  onChange={(e) => setDistributeGoalId(e.target.value)}
+                  className="input-field"
+                  required
+                >
+                  <option value="" disabled>Seleccioná un destino...</option>
+                  {initialGoals
+                    .filter((g) => g.currency === distributeModal.currency)
+                    .map((g) => (
+                      <option key={g.id} value={g.id}>{g.name} (Saldo: ${g.currentAmount})</option>
+                  ))}
+                </select>
+                <div className="mt-2 text-right">
+                  <span className="text-xs text-text-muted">¿Querés invertirlo? </span>
+                  <Link href="/inversiones" className="text-xs text-accent hover:underline font-medium">
+                    Ir a Inversiones →
+                  </Link>
+                </div>
+              </div>
+
+              <button 
+                type="submit" 
+                disabled={isPending || !distributeAmount || !distributeGoalId} 
+                className="w-full gradient-btn py-3 disabled:opacity-50 mt-4"
+              >
+                {isPending ? 'Distribuyendo...' : 'Confirmar Distribución'}
+              </button>
+            </form>
+          </div>
         </div>
       )}
     </div>

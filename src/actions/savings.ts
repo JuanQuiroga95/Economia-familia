@@ -111,6 +111,63 @@ export async function deleteSavingsGoal(id: string) {
   }
 }
 
+export async function distributeSurplus(data: {
+  amount: number;
+  currency: string;
+  savingsGoalId: string;
+  profileId: string;
+}) {
+  try {
+    // 1. Buscar o crear la categoría de Ahorro/Inversión
+    let category = await prisma.category.findUnique({ where: { name: 'Ahorro / Inversión' } });
+    if (!category) {
+      category = await prisma.category.create({
+        data: { name: 'Ahorro / Inversión', icon: '🏦', color: '#10b981' }, // Verde
+      });
+    }
+
+    // 2. Crear el "gasto" para descontarlo del sobrante del mes
+    await prisma.expense.create({
+      data: {
+        amount: data.amount,
+        currency: data.currency,
+        date: new Date(),
+        description: 'Distribución de sobrante',
+        categoryId: category.id,
+        profileId: data.profileId,
+        type: 'PROPIO',
+      },
+    });
+
+    // 3. Crear el depósito en la meta de ahorro seleccionada
+    await prisma.savingsTransaction.create({
+      data: {
+        amount: data.amount,
+        type: 'DEPOSITO',
+        description: 'Distribución de sobrante del mes',
+        savingsGoalId: data.savingsGoalId,
+        profileId: data.profileId,
+      },
+    });
+
+    // 4. Actualizar el saldo de la meta
+    const goal = await prisma.savingsGoal.findUnique({ where: { id: data.savingsGoalId } });
+    if (goal) {
+      await prisma.savingsGoal.update({
+        where: { id: data.savingsGoalId },
+        data: { currentAmount: goal.currentAmount + data.amount },
+      });
+    }
+
+    revalidatePath('/ahorros');
+    revalidatePath('/dashboard');
+    return { success: true };
+  } catch (error) {
+    console.error('Error distributing surplus:', error);
+    return { success: false, error: 'Error al distribuir el sobrante' };
+  }
+}
+
 export async function getPatrimonioStats() {
   try {
     // 1. Total en metas de ahorro (agrupado por moneda)
