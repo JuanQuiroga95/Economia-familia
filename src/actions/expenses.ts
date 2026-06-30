@@ -6,60 +6,22 @@ import type { ExpenseFormData, TransactionFilters } from '@/types';
 
 export async function createExpense(data: ExpenseFormData) {
   try {
-    // Si es compartido, crear dos registros (uno por cada perfil)
-    if (data.type === 'COMPARTIDO') {
-      const profiles = await prisma.profile.findMany();
-      const otherProfile = profiles.find((p) => p.id !== data.profileId);
-
-      if (!otherProfile) {
-        return { success: false, error: 'No se encontró el otro perfil' };
-      }
-
-      // Gasto para el perfil que lo carga
-      await prisma.expense.create({
-        data: {
-          amount: data.amount,
-          currency: data.currency,
-          date: new Date(data.date),
-          description: data.description,
-          categoryId: data.categoryId,
-          profileId: data.profileId,
-          type: 'COMPARTIDO',
-          splitPercent: data.splitPercent,
-          receiptUrl: data.receiptUrl || null,
-        },
-      });
-
-      // Gasto para el otro perfil
-      await prisma.expense.create({
-        data: {
-          amount: data.amount,
-          currency: data.currency,
-          date: new Date(data.date),
-          description: `${data.description} (compartido)`,
-          categoryId: data.categoryId,
-          profileId: otherProfile.id,
-          type: 'COMPARTIDO',
-          splitPercent: 100 - data.splitPercent,
-          receiptUrl: data.receiptUrl || null,
-        },
-      });
-    } else {
-      // Gasto propio
-      await prisma.expense.create({
-        data: {
-          amount: data.amount,
-          currency: data.currency,
-          date: new Date(data.date),
-          description: data.description,
-          categoryId: data.categoryId,
-          profileId: data.profileId,
-          type: 'PROPIO',
-          splitPercent: 100,
-          receiptUrl: data.receiptUrl || null,
-        },
-      });
-    }
+    // Gastos compartidos: un solo registro (no se duplica para el otro perfil)
+    // El gasto va al "fondo compartido". Si paidFromPersonalBudget = true,
+    // el fondo le debe ese monto al perfil que lo pagó.
+    await prisma.expense.create({
+      data: {
+        amount: data.amount,
+        currency: data.currency,
+        date: new Date(data.date),
+        description: data.description,
+        categoryId: data.categoryId,
+        profileId: data.profileId,
+        type: data.type,
+        paidFromPersonalBudget: data.type === 'COMPARTIDO' ? data.paidFromPersonalBudget : false,
+        receiptUrl: data.receiptUrl || null,
+      },
+    });
 
     revalidatePath('/gastos');
     revalidatePath('/dashboard');

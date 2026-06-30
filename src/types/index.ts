@@ -63,7 +63,7 @@ export interface ExpenseFormData {
   categoryId: string;
   profileId: string;
   type: 'PROPIO' | 'COMPARTIDO';
-  splitPercent: number;
+  paidFromPersonalBudget: boolean;
   receiptUrl?: string;
 }
 
@@ -92,4 +92,18 @@ export interface ExchangeRateData {
   usdToArs: number;
   eurToArs: number;
   eurToUsd: number;
+}
+
+export interface SharedFundDebt {
+  profileId: string;
+  profileName: string;
+  profileAvatar: string | null;
+  amount: number;
+  currency: string;
+}
+
+export interface SharedFundStats {
+  totalSharedExpenses: number;
+  debts: SharedFundDebt[];
+  currency: string;
 }

@@ -20,7 +20,7 @@ interface Expense {
   date: string;
   description: string;
   type: string;
-  splitPercent: number;
+  paidFromPersonalBudget: boolean;
   receiptUrl: string | null;
   profile: { id: string; name: string; avatar: string | null };
   category: { id: string; name: string; icon: string; color: string };
@@ -45,7 +45,7 @@ export default function GastosClient({ initialExpenses, categories }: GastosClie
   const [description, setDescription] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [type, setType] = useState<'PROPIO' | 'COMPARTIDO'>('PROPIO');
-  const [splitPercent, setSplitPercent] = useState(50);
+  const [paidFromPersonal, setPaidFromPersonal] = useState(false);
   const [receiptUrl, setReceiptUrl] = useState('');
   const [uploading, setUploading] = useState(false);
 
@@ -96,7 +96,7 @@ export default function GastosClient({ initialExpenses, categories }: GastosClie
         categoryId,
         profileId: activeProfile.id,
         type,
-        splitPercent: type === 'PROPIO' ? 100 : splitPercent,
+        paidFromPersonalBudget: type === 'COMPARTIDO' ? paidFromPersonal : false,
         receiptUrl: receiptUrl || undefined,
       });
 
@@ -106,6 +106,7 @@ export default function GastosClient({ initialExpenses, categories }: GastosClie
         setDescription('');
         setCategoryId('');
         setReceiptUrl('');
+        setPaidFromPersonal(false);
         setShowForm(false);
         router.refresh();
       } else {
@@ -235,7 +236,7 @@ export default function GastosClient({ initialExpenses, categories }: GastosClie
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
-                onClick={() => setType('PROPIO')}
+                onClick={() => { setType('PROPIO'); setPaidFromPersonal(false); }}
                 className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
                   type === 'PROPIO'
                     ? 'bg-accent text-white shadow-lg shadow-accent/25'
@@ -258,24 +259,34 @@ export default function GastosClient({ initialExpenses, categories }: GastosClie
             </div>
           </div>
 
-          {/* Split percentage (only for shared) */}
+          {/* Paid from personal budget (only for shared) */}
           {type === 'COMPARTIDO' && (
             <div className="animate-fade-in">
-              <label className="block text-sm text-text-secondary mb-1">
-                División: {splitPercent}% / {100 - splitPercent}%
-              </label>
-              <input
-                type="range"
-                min="10"
-                max="90"
-                step="5"
-                value={splitPercent}
-                onChange={(e) => setSplitPercent(parseInt(e.target.value))}
-                className="w-full accent-accent"
-              />
-              <div className="flex justify-between text-xs text-text-muted mt-1">
-                <span>{activeProfile?.name}: {splitPercent}%</span>
-                <span>Otro: {100 - splitPercent}%</span>
+              <div
+                className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${
+                  paidFromPersonal
+                    ? 'border-warning bg-warning/10'
+                    : 'border-border bg-bg-card hover:border-border-hover'
+                }`}
+                onClick={() => setPaidFromPersonal(!paidFromPersonal)}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${
+                    paidFromPersonal
+                      ? 'border-warning bg-warning text-white'
+                      : 'border-text-muted'
+                  }`}>
+                    {paidFromPersonal && <span className="text-xs">✓</span>}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-text-primary">
+                      💳 Lo pagué con mi billetera personal
+                    </p>
+                    <p className="text-xs text-text-muted mt-0.5">
+                      Se descuenta de tus {activeProfile?.name === 'Juan' ? '50k quincenales' : 'gastos personales'} y el fondo compartido te lo debe
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -345,7 +356,7 @@ export default function GastosClient({ initialExpenses, categories }: GastosClie
                 </div>
                 <div>
                   <p className="text-sm font-medium text-text-primary">{expense.description}</p>
-                  <div className="flex items-center gap-2 mt-0.5">
+                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                     <span className="text-xs text-text-muted">
                       {new Date(expense.date).toLocaleDateString('es-AR')}
                     </span>
@@ -353,7 +364,12 @@ export default function GastosClient({ initialExpenses, categories }: GastosClie
                     <span className="text-xs text-text-muted">{expense.profile.name}</span>
                     {expense.type === 'COMPARTIDO' && (
                       <span className="text-xs px-1.5 py-0.5 rounded-full bg-accent/20 text-accent">
-                        {expense.splitPercent}%
+                        👥 Compartido
+                      </span>
+                    )}
+                    {expense.type === 'COMPARTIDO' && expense.paidFromPersonalBudget && (
+                      <span className="text-xs px-1.5 py-0.5 rounded-full bg-warning/20 text-warning">
+                        💳 Pagó {expense.profile.name}
                       </span>
                     )}
                     {expense.receiptUrl && (
@@ -372,7 +388,7 @@ export default function GastosClient({ initialExpenses, categories }: GastosClie
               <div className="flex items-center gap-3">
                 <div className="text-right">
                   <p className="text-sm font-bold text-danger">
-                    -${((expense.amount * expense.splitPercent) / 100).toLocaleString('es-AR')}
+                    -${expense.amount.toLocaleString('es-AR')}
                   </p>
                   <p className="text-xs text-text-muted">{expense.currency}</p>
                 </div>

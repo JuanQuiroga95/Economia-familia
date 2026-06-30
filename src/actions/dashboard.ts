@@ -1,7 +1,7 @@
 'use server';
 
 import { prisma } from '@/lib/prisma';
-import type { BudgetStatus, CategoryBreakdown } from '@/types';
+import type { BudgetStatus, CategoryBreakdown, SharedFundStats } from '@/types';
 
 export async function getDashboardStats(month: number, year: number, profileId?: string) {
   try {
@@ -19,15 +19,29 @@ export async function getDashboardStats(month: number, year: number, profileId?:
       _sum: { amount: true },
     });
 
-    // Total gastos (considerando splitPercent)
+    // Total gastos PROPIOS (los compartidos van al fondo compartido)
     const expenses = await prisma.expense.findMany({
-      where: whereBase,
+      where: {
+        ...whereBase,
+        type: 'PROPIO',
+      },
     });
 
-    const totalExpenses = expenses.reduce((sum, exp) => {
-      return sum + (exp.amount * exp.splitPercent) / 100;
-    }, 0);
+    const totalOwnExpenses = expenses.reduce((sum, exp) => sum + exp.amount, 0);
 
+    // Gastos compartidos pagados desde billetera personal (se descuentan del saldo personal)
+    const paidFromPersonal = await prisma.expense.findMany({
+      where: {
+        date: { gte: startDate, lte: endDate },
+        type: 'COMPARTIDO',
+        paidFromPersonalBudget: true,
+        ...(profileId ? { profileId } : {}),
+      },
+    });
+
+    const totalPaidFromPersonal = paidFromPersonal.reduce((sum, exp) => sum + exp.amount, 0);
+
+    const totalExpenses = totalOwnExpenses + totalPaidFromPersonal;
     const totalIncome = incomes._sum.amount || 0;
 
     return {
@@ -62,16 +76,15 @@ export async function getCategoryBreakdown(
     const categoryMap = new Map<string, { category: string; icon: string; color: string; total: number }>();
 
     expenses.forEach((exp) => {
-      const effectiveAmount = (exp.amount * exp.splitPercent) / 100;
       const existing = categoryMap.get(exp.categoryId);
       if (existing) {
-        existing.total += effectiveAmount;
+        existing.total += exp.amount;
       } else {
         categoryMap.set(exp.categoryId, {
           category: exp.category.name,
           icon: exp.category.icon,
           color: exp.category.color,
-          total: effectiveAmount,
+          total: exp.amount,
         });
       }
     });
@@ -116,9 +129,7 @@ export async function getMonthlyComparison(profileId?: string) {
         where: whereBase,
       });
 
-      const totalExpenses = expenseRecords.reduce((sum, exp) => {
-        return sum + (exp.amount * exp.splitPercent) / 100;
-      }, 0);
+      const totalExpenses = expenseRecords.reduce((sum, exp) => sum + exp.amount, 0);
 
       const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
@@ -162,17 +173,32 @@ export async function getBudgetStatus(profileId: string): Promise<BudgetStatus |
       ? new Date(year, month, 15, 23, 59, 59)
       : new Date(year, month + 1, 0, 23, 59, 59);
 
-    const expenses = await prisma.expense.findMany({
+    // Gastos PROPIOS del perfil
+    const ownExpenses = await prisma.expense.findMany({
       where: {
         profileId,
         date: { gte: startDate, lte: endDate },
         currency: config.currency,
+        type: 'PROPIO',
       },
     });
 
-    const spent = expenses.reduce((sum, exp) => {
-      return sum + (exp.amount * exp.splitPercent) / 100;
-    }, 0);
+    const spentOwn = ownExpenses.reduce((sum, exp) => sum + exp.amount, 0);
+
+    // Gastos COMPARTIDOS pagados desde la billetera personal de este perfil
+    const sharedPaidPersonal = await prisma.expense.findMany({
+      where: {
+        profileId,
+        date: { gte: startDate, lte: endDate },
+        currency: config.currency,
+        type: 'COMPARTIDO',
+        paidFromPersonalBudget: true,
+      },
+    });
+
+    const spentSharedPersonal = sharedPaidPersonal.reduce((sum, exp) => sum + exp.amount, 0);
+
+    const spent = spentOwn + spentSharedPersonal;
 
     return {
       profileId,
@@ -187,5 +213,59 @@ export async function getBudgetStatus(profileId: string): Promise<BudgetStatus |
   } catch (error) {
     console.error('Error fetching budget status:', error);
     return null;
+  }
+}
+
+export async function getSharedFundStats(month: number, year: number): Promise<SharedFundStats> {
+  try {
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 0, 23, 59, 59);
+
+    // Todos los gastos compartidos del mes
+    const sharedExpenses = await prisma.expense.findMany({
+      where: {
+        type: 'COMPARTIDO',
+        date: { gte: startDate, lte: endDate },
+      },
+      include: { profile: true },
+    });
+
+    const totalSharedExpenses = sharedExpenses.reduce((sum, exp) => sum + exp.amount, 0);
+
+    // Deudas: gastos compartidos pagados desde billetera personal
+    // Agrupar por perfil
+    const debtMap = new Map<string, { profileName: string; profileAvatar: string | null; amount: number }>();
+
+    sharedExpenses.forEach((exp) => {
+      if (exp.paidFromPersonalBudget) {
+        const existing = debtMap.get(exp.profileId);
+        if (existing) {
+          existing.amount += exp.amount;
+        } else {
+          debtMap.set(exp.profileId, {
+            profileName: exp.profile.name,
+            profileAvatar: exp.profile.avatar,
+            amount: exp.amount,
+          });
+        }
+      }
+    });
+
+    const debts = Array.from(debtMap.entries()).map(([profileId, data]) => ({
+      profileId,
+      profileName: data.profileName,
+      profileAvatar: data.profileAvatar,
+      amount: data.amount,
+      currency: 'ARS',
+    }));
+
+    return {
+      totalSharedExpenses,
+      debts,
+      currency: 'ARS',
+    };
+  } catch (error) {
+    console.error('Error fetching shared fund stats:', error);
+    return { totalSharedExpenses: 0, debts: [], currency: 'ARS' };
   }
 }

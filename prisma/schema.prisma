@@ -53,7 +53,10 @@ model Expense {
 
   // Tipo de gasto
   type        ExpenseType @default(PROPIO)
-  splitPercent Float       @default(100) // Porcentaje que le corresponde al perfil (100 = propio, 50 = mitad compartido)
+
+  // Si es COMPARTIDO y se pagó con la billetera personal (ej: Juan paga nafta de sus 50k)
+  // El fondo compartido le "debe" ese monto a esa persona
+  paidFromPersonalBudget Boolean @default(false)
 
   // Imagen del comprobante
   receiptUrl  String?

@@ -3,13 +3,15 @@
 import IncomeVsExpenseChart from '@/components/dashboard/IncomeVsExpenseChart';
 import CategoryPieChart from '@/components/dashboard/CategoryPieChart';
 import BudgetTracker from '@/components/dashboard/BudgetTracker';
-import type { BudgetStatus, CategoryBreakdown } from '@/types';
+import SharedFundCard from '@/components/dashboard/SharedFundCard';
+import type { BudgetStatus, CategoryBreakdown, SharedFundStats } from '@/types';
 
 interface DashboardClientProps {
   stats: { totalIncome: number; totalExpenses: number; balance: number };
   categoryData: CategoryBreakdown[];
   monthlyData: { name: string; ingresos: number; gastos: number }[];
   budgetStatus: BudgetStatus | null;
+  sharedFundStats: SharedFundStats;
   profiles: { id: string; name: string; avatar: string | null }[];
   currentMonth: number;
   currentYear: number;
@@ -25,6 +27,7 @@ export default function DashboardClient({
   categoryData,
   monthlyData,
   budgetStatus,
+  sharedFundStats,
 }: DashboardClientProps) {
   const now = new Date();
 
@@ -92,8 +95,11 @@ export default function DashboardClient({
         </div>
       </div>
 
-      {/* Budget Tracker */}
+      {/* Budget Tracker (solo Juan) */}
       <BudgetTracker status={budgetStatus} />
+
+      {/* Shared Fund */}
+      <SharedFundCard stats={sharedFundStats} />
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
