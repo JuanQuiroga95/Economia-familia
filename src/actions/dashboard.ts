@@ -160,18 +160,37 @@ export async function getBudgetStatus(profileId: string): Promise<BudgetStatus |
 
     const now = new Date();
     const day = now.getDate();
-    const currentHalf: 1 | 2 = day <= 15 ? 1 : 2;
-    const budget = currentHalf === 1 ? config.firstHalfBudget : config.secondHalfBudget;
-
-    // Calcular gastos de la quincena actual
     const year = now.getFullYear();
     const month = now.getMonth();
-    const startDate = currentHalf === 1
-      ? new Date(year, month, 1)
-      : new Date(year, month, 16);
-    const endDate = currentHalf === 1
-      ? new Date(year, month, 15, 23, 59, 59)
-      : new Date(year, month + 1, 0, 23, 59, 59);
+
+    // La primera quincena arranca el último día del mes (día de cobro)
+    // y termina el 15 del mes siguiente.
+    // La segunda quincena va del 16 al penúltimo día del mes.
+    const lastDayOfMonth = new Date(year, month + 1, 0).getDate();
+    const isFirstHalf = day >= lastDayOfMonth || day <= 15;
+    const currentHalf: 1 | 2 = isFirstHalf ? 1 : 2;
+    const budget = currentHalf === 1 ? config.firstHalfBudget : config.secondHalfBudget;
+
+    // Calcular rango de fechas de la quincena actual
+    let startDate: Date;
+    let endDate: Date;
+
+    if (isFirstHalf) {
+      if (day >= lastDayOfMonth) {
+        // Último día del mes actual → 15 del mes siguiente
+        startDate = new Date(year, month, lastDayOfMonth);
+        endDate = new Date(year, month + 1, 15, 23, 59, 59);
+      } else {
+        // Día 1-15: último día del mes anterior → 15 del mes actual
+        const prevMonthLastDay = new Date(year, month, 0).getDate();
+        startDate = new Date(year, month - 1, prevMonthLastDay);
+        endDate = new Date(year, month, 15, 23, 59, 59);
+      }
+    } else {
+      // Segunda quincena: 16 al penúltimo día del mes
+      startDate = new Date(year, month, 16);
+      endDate = new Date(year, month, lastDayOfMonth - 1, 23, 59, 59);
+    }
 
     // Gastos PROPIOS del perfil
     const ownExpenses = await prisma.expense.findMany({
