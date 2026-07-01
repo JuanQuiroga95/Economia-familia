@@ -32,9 +32,11 @@ export async function createExpense(data: ExpenseFormData) {
   }
 }
 
+import { getAccountId } from '@/lib/session';
+import { getFinancialMonthRange } from '@/lib/dateUtils';
+
 export async function getExpenses(filters?: TransactionFilters) {
   try {
-    const { getAccountId } = require('@/lib/session');
     const accountId = await getAccountId();
     if (!accountId) throw new Error('No account id');
 
@@ -55,7 +57,6 @@ export async function getExpenses(filters?: TransactionFilters) {
     }
 
     if (filters?.month && filters?.year) {
-      const { getFinancialMonthRange } = require('@/lib/dateUtils');
       const { startDate, endDate } = getFinancialMonthRange(filters.month, filters.year);
       where.date = { gte: startDate, lte: endDate };
     }

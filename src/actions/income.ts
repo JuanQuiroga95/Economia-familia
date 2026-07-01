@@ -3,6 +3,8 @@
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import type { IncomeFormData } from '@/types';
+import { parseArgDate, getFinancialMonthRange } from '@/lib/dateUtils';
+import { getAccountId } from '@/lib/session';
 
 export async function createIncome(data: IncomeFormData) {
   try {
@@ -10,7 +12,7 @@ export async function createIncome(data: IncomeFormData) {
       data: {
         amount: data.amount,
         currency: data.currency,
-        date: require('@/lib/dateUtils').parseArgDate(data.date),
+        date: parseArgDate(data.date),
         description: data.description,
         profileId: data.profileId,
       },
@@ -30,7 +32,6 @@ export async function getIncomes(filters?: {
   profileId?: string;
 }) {
   try {
-    const { getAccountId } = require('@/lib/session');
     const accountId = await getAccountId();
     if (!accountId) throw new Error('No account id');
 
@@ -43,7 +44,6 @@ export async function getIncomes(filters?: {
     }
 
     if (filters?.month && filters?.year) {
-      const { getFinancialMonthRange } = require('@/lib/dateUtils');
       const { startDate, endDate } = getFinancialMonthRange(filters.month, filters.year);
       where.date = { gte: startDate, lte: endDate };
     }
