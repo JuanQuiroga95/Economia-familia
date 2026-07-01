@@ -13,7 +13,7 @@ export async function createExpense(data: ExpenseFormData) {
       data: {
         amount: data.amount,
         currency: data.currency,
-        date: new Date(data.date),
+        date: require('@/lib/dateUtils').parseArgDate(data.date),
         description: data.description,
         categoryId: data.categoryId,
         profileId: data.profileId,

@@ -39,7 +39,7 @@ export default function DashboardClient({
           Dashboard
         </h1>
         <p className="text-text-muted text-sm mt-1">
-          {monthNames[now.getMonth()]} {now.getFullYear()} • Resumen general
+          {monthNames[currentMonth - 1]} {currentYear} • Resumen general
         </p>
       </div>
 

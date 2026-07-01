@@ -10,7 +10,7 @@ export async function createIncome(data: IncomeFormData) {
       data: {
         amount: data.amount,
         currency: data.currency,
-        date: new Date(data.date),
+        date: require('@/lib/dateUtils').parseArgDate(data.date),
         description: data.description,
         profileId: data.profileId,
       },
@@ -62,7 +62,7 @@ export async function updateIncome(id: string, data: Partial<IncomeFormData>) {
       data: {
         ...(data.amount !== undefined && { amount: data.amount }),
         ...(data.currency && { currency: data.currency }),
-        ...(data.date && { date: new Date(data.date) }),
+        ...(data.date && { date: require('@/lib/dateUtils').parseArgDate(data.date) }),
         ...(data.description && { description: data.description }),
       },
     });

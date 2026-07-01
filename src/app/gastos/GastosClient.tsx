@@ -41,7 +41,13 @@ export default function GastosClient({ initialExpenses, categories }: GastosClie
   // Form state
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState('ARS');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  // Generar fecha actual en la zona horaria local, no en UTC
+  const getLocalDateString = () => {
+    const now = new Date();
+    return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+  };
+
+  const [date, setDate] = useState(getLocalDateString());
   const [description, setDescription] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [type, setType] = useState<'PROPIO' | 'COMPARTIDO'>('PROPIO');

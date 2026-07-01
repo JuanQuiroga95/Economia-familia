@@ -102,7 +102,7 @@ export async function getCategoryBreakdown(
 
 export async function getMonthlyComparison(profileId?: string) {
   try {
-    const now = new Date();
+    const now = require('@/lib/dateUtils').getArgDate();
     const months = [];
     
     const { getCurrentFinancialMonth } = require('@/lib/dateUtils');
@@ -162,7 +162,7 @@ export async function getBudgetStatus(profileId: string): Promise<BudgetStatus |
 
     if (!config || !config.isActive) return null;
 
-    const now = new Date();
+    const now = require('@/lib/dateUtils').getArgDate();
     const day = now.getDate();
     const year = now.getFullYear();
     const month = now.getMonth();

@@ -131,7 +131,7 @@ export async function distributeSurplus(data: {
       data: {
         amount: data.amount,
         currency: data.currency,
-        date: new Date(),
+        date: require('@/lib/dateUtils').getArgDate(),
         description: 'Distribución de sobrante',
         categoryId: category.id,
         profileId: data.profileId,
@@ -185,8 +185,8 @@ export async function getPatrimonioStats() {
     });
 
     // 3. Sobrante del mes actual (ingresos - gastos de este mes)
-    const { getCurrentFinancialMonth, getFinancialMonthRange } = require('@/lib/dateUtils');
-    const now = new Date();
+    const { getCurrentFinancialMonth, getFinancialMonthRange, getArgDate } = require('@/lib/dateUtils');
+    const now = getArgDate();
     const current = getCurrentFinancialMonth(now);
     const { startDate, endDate } = getFinancialMonthRange(current.month, current.year);
 

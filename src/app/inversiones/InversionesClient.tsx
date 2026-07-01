@@ -39,7 +39,13 @@ export default function InversionesClient({ initialInvestments }: { initialInves
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState('ARS');
   const [returnRate, setReturnRate] = useState('');
-  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+  // Generar fecha actual en la zona horaria local, no en UTC
+  const getLocalDateString = () => {
+    const now = new Date();
+    return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+  };
+
+  const [startDate, setStartDate] = useState(getLocalDateString());
   const [endDate, setEndDate] = useState('');
   const [notes, setNotes] = useState('');
 
