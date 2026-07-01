@@ -31,8 +31,8 @@ model Profile {
   id        String   @id @default(cuid())
   name      String
   avatar    String?
-  accountId String
-  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId String?
+  account   Account? @relation(fields: [accountId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
 
   incomes             Income[]
@@ -50,8 +50,8 @@ model Category {
   name      String
   icon      String    @default("📦")
   color     String    @default("#6366f1")
-  accountId String
-  account   Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId String?
+  account   Account?  @relation(fields: [accountId], references: [id], onDelete: Cascade)
   expenses  Expense[]
 
   @@unique([name, accountId])

@@ -18,27 +18,22 @@ async function main() {
     },
   });
 
-  const juan = await prisma.profile.upsert({
-    where: { name_accountId: { name: 'Juan', accountId: accountJT.id } },
-    update: {},
-    create: {
-      name: 'Juan',
-      avatar: '👨',
-      accountId: accountJT.id,
-    },
-  });
+  // Migrate existing profiles or create them
+  let juan = await prisma.profile.findFirst({ where: { name: 'Juan' } });
+  if (juan) {
+    juan = await prisma.profile.update({ where: { id: juan.id }, data: { accountId: accountJT.id } });
+  } else {
+    juan = await prisma.profile.create({ data: { name: 'Juan', avatar: '👨', accountId: accountJT.id } });
+  }
 
-  const tania = await prisma.profile.upsert({
-    where: { name_accountId: { name: 'Tania', accountId: accountJT.id } },
-    update: {},
-    create: {
-      name: 'Tania',
-      avatar: '👩',
-      accountId: accountJT.id,
-    },
-  });
+  let tania = await prisma.profile.findFirst({ where: { name: 'Tania' } });
+  if (tania) {
+    tania = await prisma.profile.update({ where: { id: tania.id }, data: { accountId: accountJT.id } });
+  } else {
+    tania = await prisma.profile.create({ data: { name: 'Tania', avatar: '👩', accountId: accountJT.id } });
+  }
 
-  console.log('Cuenta Juan & Tania creada:', { juan, tania });
+  console.log('Cuenta Juan & Tania migrada/creada:', { juan, tania });
 
   // ==========================================
   // Cuenta 2: Edu & Mai
@@ -93,17 +88,27 @@ async function main() {
     { name: 'Otros', icon: '📦', color: '#6b7280' },
   ];
 
+  // Migrate existing categories to accountJT if they have no accountId
+  await prisma.category.updateMany({
+    where: { accountId: null },
+    data: { accountId: accountJT.id },
+  });
+
   for (const account of [accountJT, accountEM]) {
     for (const cat of defaultCategories) {
-      await prisma.category.upsert({
-        where: { name_accountId: { name: cat.name, accountId: account.id } },
-        update: {},
-        create: { ...cat, accountId: account.id },
+      // First check if it exists for this account to avoid unique constraint errors during migration
+      const existing = await prisma.category.findFirst({
+        where: { name: cat.name, accountId: account.id },
       });
+      if (!existing) {
+        await prisma.category.create({
+          data: { ...cat, accountId: account.id },
+        });
+      }
     }
   }
 
-  console.log('Categorías creadas para ambas cuentas');
+  console.log('Categorías migradas/creadas para ambas cuentas');
 
   // ==========================================
   // Presupuesto quincenal de Juan
