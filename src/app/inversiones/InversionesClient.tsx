@@ -2,7 +2,7 @@
 import { formatCurrency } from '@/lib/formatUtils';
 import { useState, useTransition } from 'react';
 import { useProfile } from '@/hooks/useProfile';
-import { createInvestment, deleteInvestment } from '@/actions/investments';
+import { createInvestment, deleteInvestment, updateInvestment } from '@/actions/investments';
 import toast from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
 
@@ -48,13 +48,21 @@ export default function InversionesClient({ initialInvestments }: { initialInves
   const [startDate, setStartDate] = useState(getLocalDateString());
   const [endDate, setEndDate] = useState('');
   const [notes, setNotes] = useState('');
+  
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const resetForm = () => {
+    setName(''); setAmount(''); setReturnRate(''); setEndDate(''); setNotes('');
+    setType('PLAZO_FIJO'); setCurrency('ARS'); setStartDate(getLocalDateString());
+    setEditingId(null);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeProfile) { toast.error('Seleccioná un perfil'); return; }
 
     startTransition(async () => {
-      const result = await createInvestment({
+      const payload = {
         name,
         type: type as 'PLAZO_FIJO' | 'FCI' | 'ACCIONES' | 'CRYPTO' | 'BONOS' | 'OTRO',
         amount: parseFloat(amount),
@@ -64,17 +72,36 @@ export default function InversionesClient({ initialInvestments }: { initialInves
         endDate: endDate || undefined,
         notes: notes || undefined,
         profileId: activeProfile.id,
-      });
+      };
+
+      const result = editingId 
+        ? await updateInvestment(editingId, payload)
+        : await createInvestment(payload);
 
       if (result.success) {
-        toast.success('Inversión registrada');
-        setName(''); setAmount(''); setReturnRate(''); setEndDate(''); setNotes('');
+        toast.success(editingId ? 'Inversión actualizada' : 'Inversión registrada');
+        resetForm();
         setShowForm(false);
         router.refresh();
       } else {
         toast.error(result.error || 'Error');
       }
     });
+  };
+
+  const handleEdit = (inv: Investment) => {
+    setEditingId(inv.id);
+    setName(inv.name);
+    setType(inv.type);
+    setAmount(inv.amount.toString());
+    setCurrency(inv.currency);
+    setReturnRate(inv.returnRate ? inv.returnRate.toString() : '');
+    // Asumimos que las fechas vienen en formato ISO string
+    setStartDate(inv.startDate.split('T')[0]);
+    setEndDate(inv.endDate ? inv.endDate.split('T')[0] : '');
+    setNotes(inv.notes || '');
+    setShowForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleDelete = (id: string) => {
@@ -98,7 +125,14 @@ export default function InversionesClient({ initialInvestments }: { initialInves
           <h1 className="text-2xl lg:text-3xl font-bold text-text-primary">Inversiones</h1>
           <p className="text-text-muted text-sm mt-1">Plazos fijos, fondos y más</p>
         </div>
-        <button onClick={() => setShowForm(!showForm)} className="gradient-btn px-4 py-2 text-sm">
+        <button onClick={() => {
+          if (showForm) {
+            setShowForm(false);
+            resetForm();
+          } else {
+            setShowForm(true);
+          }
+        }} className="gradient-btn px-4 py-2 text-sm">
           {showForm ? '✕ Cerrar' : '+ Nueva'}
         </button>
       </div>
@@ -118,7 +152,7 @@ export default function InversionesClient({ initialInvestments }: { initialInves
       {/* Form */}
       {showForm && (
         <form onSubmit={handleSubmit} className="glass-card p-4 lg:p-6 space-y-4 animate-slide-up">
-          <h3 className="text-lg font-semibold">Nueva Inversión</h3>
+          <h3 className="text-lg font-semibold">{editingId ? 'Editar Inversión' : 'Nueva Inversión'}</h3>
           <div>
             <label className="block text-sm text-text-secondary mb-1">Nombre</label>
             <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="input-field" placeholder="Ej: Plazo fijo Banco Nación" required />
@@ -164,7 +198,7 @@ export default function InversionesClient({ initialInvestments }: { initialInves
             <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="input-field" rows={2} placeholder="Observaciones..." />
           </div>
           <button type="submit" disabled={isPending} className="w-full gradient-btn py-3 disabled:opacity-50">
-            {isPending ? 'Guardando...' : 'Registrar Inversión'}
+            {isPending ? 'Guardando...' : (editingId ? 'Actualizar Inversión' : 'Registrar Inversión')}
           </button>
         </form>
       )}
@@ -202,12 +236,22 @@ export default function InversionesClient({ initialInvestments }: { initialInves
                   <p className="text-sm font-bold text-accent">${formatCurrency(inv.amount)}</p>
                   <p className="text-xs text-text-muted">{inv.currency}</p>
                 </div>
-                <button
-                  onClick={() => handleDelete(inv.id)}
-                  className="p-2 rounded-lg text-text-muted hover:text-danger hover:bg-danger/10 transition-all"
-                >
-                  🗑️
-                </button>
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={() => handleEdit(inv)}
+                    className="p-1.5 rounded-lg text-text-muted hover:text-accent hover:bg-accent/10 transition-all text-xs"
+                    title="Editar"
+                  >
+                    ✏️
+                  </button>
+                  <button
+                    onClick={() => handleDelete(inv.id)}
+                    className="p-1.5 rounded-lg text-text-muted hover:text-danger hover:bg-danger/10 transition-all text-xs"
+                    title="Eliminar"
+                  >
+                    🗑️
+                  </button>
+                </div>
               </div>
             </div>
           ))}

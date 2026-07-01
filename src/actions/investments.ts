@@ -63,3 +63,30 @@ export async function deleteInvestment(id: string) {
     return { success: false, error: 'Error al eliminar inversión' };
   }
 }
+
+export async function updateInvestment(id: string, data: Partial<InvestmentFormData>) {
+  try {
+    const updateData: any = {};
+    if (data.name !== undefined) updateData.name = data.name;
+    if (data.type !== undefined) updateData.type = data.type;
+    if (data.amount !== undefined) updateData.amount = data.amount;
+    if (data.currency !== undefined) updateData.currency = data.currency;
+    if (data.returnRate !== undefined) updateData.returnRate = data.returnRate;
+    if (data.startDate !== undefined) updateData.startDate = new Date(data.startDate);
+    if (data.endDate !== undefined) updateData.endDate = data.endDate ? new Date(data.endDate) : null;
+    if (data.notes !== undefined) updateData.notes = data.notes;
+    if (data.profileId !== undefined) updateData.profileId = data.profileId;
+
+    const investment = await prisma.investment.update({
+      where: { id },
+      data: updateData,
+    });
+    
+    revalidatePath('/inversiones');
+    revalidatePath('/dashboard');
+    return { success: true, data: investment };
+  } catch (error) {
+    console.error('Error updating investment:', error);
+    return { success: false, error: 'Error al actualizar inversión' };
+  }
+}

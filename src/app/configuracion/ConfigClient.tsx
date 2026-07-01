@@ -146,7 +146,11 @@ export default function ConfigClient({ exchangeRates, categories, budgetConfigs,
 
       {/* Exchange Rates */}
       <section className="glass-card p-4 lg:p-6 space-y-4">
-        <h2 className="text-lg font-semibold text-text-primary">💱 Tipo de Cambio</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-text-primary">💱 Tipo de Cambio</h2>
+          <span className="text-xs px-2 py-1 bg-success/20 text-success rounded-full border border-success/30">DolarAPI (Automático)</span>
+        </div>
+        <p className="text-xs text-text-muted">Las cotizaciones del mes actual se sincronizan automáticamente cada día usando los valores del Dólar Blue y Euro oficial. Podés sobreescribirlas manualmente si lo necesitás.</p>
         <form onSubmit={handleExchangeRate} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>

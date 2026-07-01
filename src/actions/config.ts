@@ -47,17 +47,64 @@ export async function getExchangeRates() {
   }
 }
 
+export async function fetchLiveExchangeRates() {
+  try {
+    const [usdRes, eurRes] = await Promise.all([
+      fetch('https://dolarapi.com/v1/dolares/blue', { next: { revalidate: 3600 } }),
+      fetch('https://dolarapi.com/v1/cotizaciones/eur', { next: { revalidate: 3600 } })
+    ]);
+    
+    if (!usdRes.ok || !eurRes.ok) throw new Error('API fetching failed');
+
+    const usdData = await usdRes.json();
+    const eurData = await eurRes.json();
+
+    const usdToArs = usdData.venta;
+    const eurToArs = eurData.venta;
+    const eurToUsd = Number((eurToArs / usdToArs).toFixed(4));
+
+    return { usdToArs, eurToArs, eurToUsd };
+  } catch (error) {
+    console.error('Error fetching live rates:', error);
+    return null;
+  }
+}
+
 export async function getCurrentExchangeRate() {
   const now = new Date();
+  const currentMonth = now.getMonth() + 1;
+  const currentYear = now.getFullYear();
+  
   try {
-    return await prisma.exchangeRate.findUnique({
+    const rate = await prisma.exchangeRate.findUnique({
       where: {
         month_year: {
-          month: now.getMonth() + 1,
-          year: now.getFullYear(),
+          month: currentMonth,
+          year: currentYear,
         },
       },
     });
+
+    const todayStr = now.toISOString().split('T')[0];
+    const rateUpdatedStr = rate ? rate.updatedAt.toISOString().split('T')[0] : null;
+
+    // Si no hay cotización para el mes o no se actualizó hoy, traemos de la API
+    if (!rate || rateUpdatedStr !== todayStr) {
+      const liveRates = await fetchLiveExchangeRates();
+      if (liveRates) {
+        return await prisma.exchangeRate.upsert({
+          where: { month_year: { month: currentMonth, year: currentYear } },
+          update: liveRates,
+          create: {
+            month: currentMonth,
+            year: currentYear,
+            ...liveRates
+          }
+        });
+      }
+    }
+
+    return rate;
   } catch (error) {
     console.error('Error fetching current exchange rate:', error);
     return null;
