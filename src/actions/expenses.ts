@@ -128,6 +128,29 @@ export async function getExpenses(filters?: TransactionFilters) {
   }
 }
 
+export async function updateExpense(id: string, data: Partial<ExpenseFormData>) {
+  try {
+    const updateData: any = { ...data };
+    if (data.date) {
+      updateData.date = parseArgDate(data.date);
+    }
+    // No permitimos editar fundingSource, ya que eso implica revertir/crear transacciones de ahorro/inversion complejas.
+    delete updateData.fundingSource;
+
+    await prisma.expense.update({
+      where: { id },
+      data: updateData,
+    });
+
+    revalidatePath('/gastos');
+    revalidatePath('/dashboard');
+    return { success: true };
+  } catch (error) {
+    console.error('Error updating expense:', error);
+    return { success: false, error: 'Error al actualizar gasto' };
+  }
+}
+
 export async function deleteExpense(id: string) {
   try {
     await prisma.expense.delete({ where: { id } });

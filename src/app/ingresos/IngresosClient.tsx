@@ -2,7 +2,7 @@
 import { formatCurrency } from '@/lib/formatUtils';
 import { useState, useTransition } from 'react';
 import { useProfile } from '@/hooks/useProfile';
-import { createIncome, deleteIncome } from '@/actions/income';
+import { createIncome, deleteIncome, updateIncome } from '@/actions/income';
 import toast from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
 import confetti from 'canvas-confetti';
@@ -27,6 +27,7 @@ export default function IngresosClient({ initialIncomes }: IngresosClientProps) 
   const { activeProfile } = useProfile();
   const [showForm, setShowForm] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const [editingIncomeId, setEditingIncomeId] = useState<string | null>(null);
   const router = useRouter();
 
   // Form state
@@ -76,25 +77,47 @@ export default function IngresosClient({ initialIncomes }: IngresosClientProps) 
     }
 
     startTransition(async () => {
-      const result = await createIncome({
+      const incomeData = {
         amount: parseFloat(amount),
         currency: currency as 'ARS' | 'USD' | 'EUR',
         date,
         description,
         profileId: activeProfile.id,
-      });
+      };
+
+      const result = editingIncomeId
+        ? await updateIncome(editingIncomeId, incomeData)
+        : await createIncome(incomeData);
 
       if (result.success) {
-        toast.success('Ingreso registrado');
-        triggerConfetti();
+        toast.success(editingIncomeId ? 'Ingreso actualizado' : 'Ingreso registrado');
+        if (!editingIncomeId) triggerConfetti();
         setAmount('');
         setDescription('');
+        setEditingIncomeId(null);
         setShowForm(false);
         router.refresh();
       } else {
-        toast.error(result.error || 'Error al registrar');
+        toast.error(result.error || 'Error al guardar');
       }
     });
+  };
+
+  const handleEdit = (income: Income) => {
+    setEditingIncomeId(income.id);
+    setAmount(income.amount.toString());
+    setCurrency(income.currency);
+    setDate(income.date.split('T')[0]);
+    setDescription(income.description);
+    setShowForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleCloseForm = () => {
+    setShowForm(false);
+    setEditingIncomeId(null);
+    setAmount('');
+    setDescription('');
   };
 
   const handleDelete = (id: string) => {
@@ -123,7 +146,7 @@ export default function IngresosClient({ initialIncomes }: IngresosClientProps) 
           <p className="text-text-muted text-sm mt-1">Registra tus ingresos mensuales</p>
         </div>
         <button
-          onClick={() => setShowForm(!showForm)}
+          onClick={showForm ? handleCloseForm : () => setShowForm(true)}
           className="gradient-btn px-4 py-2 text-sm"
         >
           {showForm ? '✕ Cerrar' : '+ Nuevo'}
@@ -143,7 +166,7 @@ export default function IngresosClient({ initialIncomes }: IngresosClientProps) 
       {/* Form */}
       {showForm && (
         <form onSubmit={handleSubmit} className="glass-card p-4 lg:p-6 space-y-4 animate-slide-up">
-          <h3 className="text-lg font-semibold text-text-primary">Nuevo Ingreso</h3>
+          <h3 className="text-lg font-semibold text-text-primary">{editingIncomeId ? 'Editar Ingreso' : 'Nuevo Ingreso'}</h3>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -200,7 +223,7 @@ export default function IngresosClient({ initialIncomes }: IngresosClientProps) 
             disabled={isPending}
             className="w-full gradient-btn py-3 disabled:opacity-50"
           >
-            {isPending ? 'Guardando...' : 'Guardar Ingreso'}
+            {isPending ? 'Guardando...' : editingIncomeId ? 'Actualizar Ingreso' : 'Guardar Ingreso'}
           </button>
         </form>
       )}
@@ -233,13 +256,22 @@ export default function IngresosClient({ initialIncomes }: IngresosClientProps) 
                   </p>
                   <p className="text-xs text-text-muted">{income.currency}</p>
                 </div>
-                <button
-                  onClick={() => handleDelete(income.id)}
-                  className="p-2 rounded-lg text-text-muted hover:text-danger hover:bg-danger/10 transition-all"
-                  title="Eliminar"
-                >
-                  🗑️
-                </button>
+                <div className="flex">
+                  <button
+                    onClick={() => handleEdit(income)}
+                    className="p-2 rounded-lg text-text-muted hover:text-accent hover:bg-accent/10 transition-all"
+                    title="Editar"
+                  >
+                    ✏️
+                  </button>
+                  <button
+                    onClick={() => handleDelete(income.id)}
+                    className="p-2 rounded-lg text-text-muted hover:text-danger hover:bg-danger/10 transition-all"
+                    title="Eliminar"
+                  >
+                    🗑️
+                  </button>
+                </div>
               </div>
             </div>
           ))

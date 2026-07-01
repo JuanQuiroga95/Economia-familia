@@ -110,6 +110,58 @@ export async function addSavingsTransaction(data: {
   }
 }
 
+export async function updateSavingsTransaction(
+  id: string,
+  data: {
+    amount?: number;
+    description?: string;
+    type?: 'DEPOSITO' | 'RETIRO';
+  }
+) {
+  try {
+    const existing = await prisma.savingsTransaction.findUnique({ where: { id } });
+    if (!existing) throw new Error('Transaction not found');
+
+    // Restore old amount logically
+    const goal = await prisma.savingsGoal.findUnique({ where: { id: existing.savingsGoalId } });
+    if (goal) {
+      // Revert previous transaction impact
+      let revertAmount = goal.currentAmount;
+      if (existing.type === 'DEPOSITO') revertAmount -= existing.amount;
+      else revertAmount += existing.amount;
+
+      // Apply new transaction impact
+      const newType = data.type || existing.type;
+      const newAmount = data.amount !== undefined ? data.amount : existing.amount;
+      
+      let finalAmount = revertAmount;
+      if (newType === 'DEPOSITO') finalAmount += newAmount;
+      else finalAmount -= newAmount;
+
+      await prisma.savingsGoal.update({
+        where: { id: existing.savingsGoalId },
+        data: { currentAmount: Math.max(0, finalAmount) }
+      });
+    }
+
+    await prisma.savingsTransaction.update({
+      where: { id },
+      data: {
+        amount: data.amount,
+        description: data.description,
+        type: data.type,
+      },
+    });
+
+    revalidatePath('/ahorros');
+    revalidatePath('/dashboard');
+    return { success: true };
+  } catch (error) {
+    console.error('Error updating savings transaction:', error);
+    return { success: false, error: 'Error al actualizar movimiento' };
+  }
+}
+
 export async function deleteSavingsGoal(id: string) {
   try {
     await prisma.savingsGoal.delete({ where: { id } });

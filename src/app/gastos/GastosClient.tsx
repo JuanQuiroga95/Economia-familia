@@ -2,7 +2,7 @@
 import { formatCurrency } from '@/lib/formatUtils';
 import { useState, useTransition } from 'react';
 import { useProfile } from '@/hooks/useProfile';
-import { createExpense, deleteExpense } from '@/actions/expenses';
+import { createExpense, deleteExpense, updateExpense } from '@/actions/expenses';
 import toast from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -44,6 +44,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
   
   // Animation state
   const [animatingExpense, setAnimatingExpense] = useState(false);
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
 
   // Form state
   const [amount, setAmount] = useState('');
@@ -118,7 +119,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
     }
 
     startTransition(async () => {
-      const result = await createExpense({
+      const expenseData = {
         amount: parseFloat(amount),
         currency: currency as 'ARS' | 'USD' | 'EUR',
         date,
@@ -130,14 +131,20 @@ export default function GastosClient({ initialExpenses, categories, savings = []
         splitPercentage: type === 'COMPARTIDO' && accountInfo?.splitMode === 'PORCENTAJE' ? parseFloat(splitPercentage) : undefined,
         receiptUrl: receiptUrl || undefined,
         fundingSource,
-      });
+      };
+
+      const result = editingExpenseId 
+        ? await updateExpense(editingExpenseId, expenseData)
+        : await createExpense(expenseData);
 
       if (result.success) {
-        toast.success('Gasto registrado');
+        toast.success(editingExpenseId ? 'Gasto actualizado' : 'Gasto registrado');
         
         // Trigger subtle animation
-        setAnimatingExpense(true);
-        setTimeout(() => setAnimatingExpense(false), 1500);
+        if (!editingExpenseId) {
+          setAnimatingExpense(true);
+          setTimeout(() => setAnimatingExpense(false), 1500);
+        }
 
         setAmount('');
         setDescription('');
@@ -146,12 +153,40 @@ export default function GastosClient({ initialExpenses, categories, savings = []
         setPaidFromPersonal(false);
         setFundingSource('balance');
         setSplitPercentage('');
+        setEditingExpenseId(null);
         setShowForm(false);
         router.refresh();
       } else {
-        toast.error(result.error || 'Error al registrar');
+        toast.error(result.error || 'Error al guardar');
       }
     });
+  };
+
+  const handleEdit = (expense: Expense) => {
+    setEditingExpenseId(expense.id);
+    setAmount(expense.amount.toString());
+    setCurrency(expense.currency);
+    setDate(expense.date.split('T')[0]);
+    setDescription(expense.description);
+    setCategoryId(expense.category.id);
+    setType(expense.type as 'PROPIO' | 'COMPARTIDO');
+    setPaidFromPersonal(expense.paidFromPersonalBudget);
+    setReceiptUrl(expense.receiptUrl || '');
+    setFundingSource('balance');
+    setShowForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleCloseForm = () => {
+    setShowForm(false);
+    setEditingExpenseId(null);
+    setAmount('');
+    setDescription('');
+    setCategoryId('');
+    setReceiptUrl('');
+    setPaidFromPersonal(false);
+    setFundingSource('balance');
+    setSplitPercentage('');
   };
 
   const handleDelete = (id: string) => {
@@ -178,7 +213,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
           <p className="text-text-muted text-sm mt-1">Registra y controla tus gastos</p>
         </div>
         <button
-          onClick={() => setShowForm(!showForm)}
+          onClick={showForm ? handleCloseForm : () => setShowForm(true)}
           className="gradient-btn px-4 py-2 text-sm"
         >
           {showForm ? '✕ Cerrar' : '+ Nuevo'}
@@ -205,7 +240,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
       {/* Form */}
       {showForm && (
         <form onSubmit={handleSubmit} className="glass-card p-4 lg:p-6 space-y-4 animate-slide-up">
-          <h3 className="text-lg font-semibold text-text-primary">Nuevo Gasto</h3>
+          <h3 className="text-lg font-semibold text-text-primary">{editingExpenseId ? 'Editar Gasto' : 'Nuevo Gasto'}</h3>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -412,7 +447,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
             disabled={isPending || uploading}
             className="w-full gradient-btn py-3 disabled:opacity-50"
           >
-            {isPending ? 'Guardando...' : 'Guardar Gasto'}
+            {isPending ? 'Guardando...' : editingExpenseId ? 'Actualizar Gasto' : 'Guardar Gasto'}
           </button>
         </form>
       )}
@@ -472,12 +507,22 @@ export default function GastosClient({ initialExpenses, categories, savings = []
                   </p>
                   <p className="text-xs text-text-muted">{expense.currency}</p>
                 </div>
-                <button
-                  onClick={() => handleDelete(expense.id)}
-                  className="p-2 rounded-lg text-text-muted hover:text-danger hover:bg-danger/10 transition-all"
-                >
-                  🗑️
-                </button>
+                <div className="flex">
+                  <button
+                    onClick={() => handleEdit(expense)}
+                    className="p-2 rounded-lg text-text-muted hover:text-accent hover:bg-accent/10 transition-all"
+                    title="Editar"
+                  >
+                    ✏️
+                  </button>
+                  <button
+                    onClick={() => handleDelete(expense.id)}
+                    className="p-2 rounded-lg text-text-muted hover:text-danger hover:bg-danger/10 transition-all"
+                    title="Eliminar"
+                  >
+                    🗑️
+                  </button>
+                </div>
               </div>
             </div>
           ))
