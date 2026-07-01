@@ -19,29 +19,25 @@ export async function getDashboardStats(month: number, year: number, profileId?:
       _sum: { amount: true },
     });
 
-    // Total gastos PROPIOS
-    const expenses = await prisma.expense.findMany({
-      where: {
-        ...whereBase,
-        type: 'PROPIO',
-      },
-    });
+    let totalExpenses = 0;
 
-    const totalOwnExpenses = expenses.reduce((sum, exp) => sum + exp.amount, 0);
+    if (profileId) {
+      // Si es la vista de un perfil específico: Gastos PROPIOS + Compartidos pagados por él
+      const expenses = await prisma.expense.findMany({
+        where: whereBase,
+      });
+      totalExpenses = expenses
+        .filter((e) => e.type === 'PROPIO' || (e.type === 'COMPARTIDO' && e.paidFromPersonalBudget))
+        .reduce((sum, e) => sum + e.amount, 0);
+    } else {
+      // Vista global (Dashboard): TODOS los gastos (Propios de ambos + Compartidos)
+      const allExpenses = await prisma.expense.aggregate({
+        where: { date: { gte: startDate, lte: endDate } },
+        _sum: { amount: true },
+      });
+      totalExpenses = allExpenses._sum.amount || 0;
+    }
 
-    // Gastos compartidos pagados desde billetera personal
-    const paidFromPersonal = await prisma.expense.findMany({
-      where: {
-        date: { gte: startDate, lte: endDate },
-        type: 'COMPARTIDO',
-        paidFromPersonalBudget: true,
-        ...(profileId ? { profileId } : {}),
-      },
-    });
-
-    const totalPaidFromPersonal = paidFromPersonal.reduce((sum, exp) => sum + exp.amount, 0);
-
-    const totalExpenses = totalOwnExpenses + totalPaidFromPersonal;
     const totalIncome = incomes._sum.amount || 0;
 
     return {
@@ -66,8 +62,7 @@ export async function getCategoryBreakdown(
     const expenses = await prisma.expense.findMany({
       where: {
         date: { gte: startDate, lte: endDate },
-        type: 'PROPIO',
-        ...(profileId ? { profileId } : {}),
+        ...(profileId ? { profileId, type: 'PROPIO' } : {}),
       },
       include: { category: true },
     });
@@ -110,7 +105,6 @@ export async function getMonthlyComparison(profileId?: string) {
     const now = new Date();
     const months = [];
     
-    // Obtener mes financiero actual
     const { getCurrentFinancialMonth } = require('@/lib/dateUtils');
     const current = getCurrentFinancialMonth(now);
     
@@ -127,31 +121,28 @@ export async function getMonthlyComparison(profileId?: string) {
 
       const { startDate, endDate } = getFinancialMonthRange(m, y);
 
-      const whereBase = {
-        date: { gte: startDate, lte: endDate },
-        ...(profileId ? { profileId } : {}),
-      };
-
       const incomeAgg = await prisma.income.aggregate({
-        where: whereBase,
+        where: {
+          date: { gte: startDate, lte: endDate },
+          ...(profileId ? { profileId } : {}),
+        },
         _sum: { amount: true },
       });
 
-      const expenseRecords = await prisma.expense.findMany({
+      const expenseAgg = await prisma.expense.aggregate({
         where: {
-          ...whereBase,
-          type: 'PROPIO',
+          date: { gte: startDate, lte: endDate },
+          ...(profileId ? { profileId, type: 'PROPIO' } : {}),
         },
+        _sum: { amount: true },
       });
-
-      const totalExpenses = expenseRecords.reduce((sum, exp) => sum + exp.amount, 0);
 
       const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
       months.push({
         name: monthNames[m - 1],
         ingresos: incomeAgg._sum.amount || 0,
-        gastos: totalExpenses,
+        gastos: expenseAgg._sum.amount || 0,
       });
     }
 
