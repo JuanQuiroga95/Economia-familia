@@ -30,7 +30,13 @@ export async function getIncomes(filters?: {
   profileId?: string;
 }) {
   try {
-    const where: Record<string, unknown> = {};
+    const { getAccountId } = require('@/lib/session');
+    const accountId = await getAccountId();
+    if (!accountId) throw new Error('No account id');
+
+    const where: any = {
+      profile: { accountId },
+    };
 
     if (filters?.profileId) {
       where.profileId = filters.profileId;

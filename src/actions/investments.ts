@@ -30,7 +30,16 @@ export async function createInvestment(data: InvestmentFormData) {
 
 export async function getInvestments(profileId?: string) {
   try {
-    const where = profileId ? { profileId } : {};
+    const { getAccountId } = require('@/lib/session');
+    const accountId = await getAccountId();
+    if (!accountId) throw new Error('No account id');
+
+    const where: any = {
+      profile: { accountId },
+    };
+    if (profileId) {
+      where.profileId = profileId;
+    }
     return await prisma.investment.findMany({
       where,
       include: { profile: true },

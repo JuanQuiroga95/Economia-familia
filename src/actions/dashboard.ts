@@ -2,14 +2,19 @@
 
 import { prisma } from '@/lib/prisma';
 import type { BudgetStatus, CategoryBreakdown, SharedFundStats } from '@/types';
-import { getFinancialMonthRange } from '@/lib/dateUtils';
+import { getFinancialMonthRange, getArgDate, getCurrentFinancialMonth } from '@/lib/dateUtils';
+
+import { getAccountId } from '@/lib/session';
 
 export async function getDashboardStats(month: number, year: number, profileId?: string) {
   try {
     const { startDate, endDate } = getFinancialMonthRange(month, year);
+    const accountId = await getAccountId();
+    if (!accountId) throw new Error('No account id');
 
     const whereBase = {
       date: { gte: startDate, lte: endDate },
+      profile: { accountId },
       ...(profileId ? { profileId } : {}),
     };
 
@@ -58,10 +63,13 @@ export async function getCategoryBreakdown(
 ): Promise<CategoryBreakdown[]> {
   try {
     const { startDate, endDate } = getFinancialMonthRange(month, year);
+    const accountId = await getAccountId();
+    if (!accountId) throw new Error('No account id');
 
     const expenses = await prisma.expense.findMany({
       where: {
         date: { gte: startDate, lte: endDate },
+        profile: { accountId },
         ...(profileId ? { profileId, type: 'PROPIO' } : {}),
       },
       include: { category: true },
@@ -102,11 +110,10 @@ export async function getCategoryBreakdown(
 
 export async function getMonthlyComparison(profileId?: string) {
   try {
-    const now = require('@/lib/dateUtils').getArgDate();
-    const months = [];
-    
-    const { getCurrentFinancialMonth } = require('@/lib/dateUtils');
-    const current = getCurrentFinancialMonth(now);
+    const current = getCurrentFinancialMonth(getArgDate());
+    const data = [];
+    const accountId = await getAccountId();
+    if (!accountId) throw new Error('No account id');
     
     const currentMonth = current.month;
     const currentYear = current.year;
@@ -124,6 +131,7 @@ export async function getMonthlyComparison(profileId?: string) {
       const incomeAgg = await prisma.income.aggregate({
         where: {
           date: { gte: startDate, lte: endDate },
+          profile: { accountId },
           ...(profileId ? { profileId } : {}),
         },
         _sum: { amount: true },
@@ -132,6 +140,7 @@ export async function getMonthlyComparison(profileId?: string) {
       const expenseAgg = await prisma.expense.aggregate({
         where: {
           date: { gte: startDate, lte: endDate },
+          profile: { accountId },
           ...(profileId ? { profileId, type: 'PROPIO' } : {}),
         },
         _sum: { amount: true },
@@ -232,11 +241,25 @@ export async function getBudgetStatus(profileId: string): Promise<BudgetStatus |
 export async function getSharedFundStats(month: number, year: number): Promise<SharedFundStats> {
   try {
     const { startDate, endDate } = getFinancialMonthRange(month, year);
+    const accountId = await getAccountId();
+    if (!accountId) throw new Error('No account id');
+
+    const account = await prisma.account.findUnique({
+      where: { id: accountId },
+      include: { profiles: true },
+    });
+
+    if (!account || account.profiles.length < 2) {
+      return { totalShared: 0, profileA: { name: 'A', paid: 0, owes: 0 }, profileB: { name: 'B', paid: 0, owes: 0 } };
+    }
+
+    const [profileA, profileB] = account.profiles.sort((a, b) => a.name.localeCompare(b.name));
 
     const sharedExpenses = await prisma.expense.findMany({
       where: {
         type: 'COMPARTIDO',
         date: { gte: startDate, lte: endDate },
+        profile: { accountId },
       },
       include: { profile: true },
     });

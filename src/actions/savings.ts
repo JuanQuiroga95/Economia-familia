@@ -40,7 +40,16 @@ export async function createSavingsGoal(data: SavingsGoalFormData) {
 
 export async function getSavingsGoals(profileId?: string) {
   try {
-    const where = profileId ? { profileId } : {};
+    const { getAccountId } = require('@/lib/session');
+    const accountId = await getAccountId();
+    if (!accountId) throw new Error('No account id');
+
+    const where: any = {
+      profile: { accountId },
+    };
+    if (profileId) {
+      where.profileId = profileId;
+    }
     return await prisma.savingsGoal.findMany({
       where,
       include: {
@@ -176,15 +185,23 @@ export async function distributeSurplus(data: {
 
 export async function getPatrimonioStats() {
   try {
+    const { getAccountId } = require('@/lib/session');
+    const accountId = await getAccountId();
+    if (!accountId) throw new Error('No account id');
+
     // 1. Total en metas de ahorro (agrupado por moneda)
-    const savingsGoals = await prisma.savingsGoal.findMany();
+    const savingsGoals = await prisma.savingsGoal.findMany({
+      where: { profile: { accountId } },
+    });
     const savingsByCurrency: Record<string, number> = {};
     savingsGoals.forEach((goal) => {
       savingsByCurrency[goal.currency] = (savingsByCurrency[goal.currency] || 0) + goal.currentAmount;
     });
 
     // 2. Total en inversiones (agrupado por moneda)
-    const investments = await prisma.investment.findMany();
+    const investments = await prisma.investment.findMany({
+      where: { profile: { accountId } },
+    });
     const investmentsByCurrency: Record<string, number> = {};
     investments.forEach((inv) => {
       investmentsByCurrency[inv.currency] = (investmentsByCurrency[inv.currency] || 0) + inv.amount;
@@ -197,11 +214,11 @@ export async function getPatrimonioStats() {
     const { startDate, endDate } = getFinancialMonthRange(current.month, current.year);
 
     const incomes = await prisma.income.findMany({
-      where: { date: { gte: startDate, lte: endDate } },
+      where: { date: { gte: startDate, lte: endDate }, profile: { accountId } },
     });
 
     const expenses = await prisma.expense.findMany({
-      where: { date: { gte: startDate, lte: endDate } },
+      where: { date: { gte: startDate, lte: endDate }, profile: { accountId } },
     });
 
     // Agrupar ingresos por moneda
