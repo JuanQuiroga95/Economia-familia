@@ -82,6 +82,7 @@ export interface ExpenseFormData {
   type: 'PROPIO' | 'COMPARTIDO';
   paidFromPersonalBudget: boolean;
   receiptUrl?: string;
+  fundingSource?: string;
 }
 
 export interface SavingsGoalFormData {

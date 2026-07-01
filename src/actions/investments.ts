@@ -3,6 +3,7 @@
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import type { InvestmentFormData } from '@/types';
+import { getArgDate } from '@/lib/dateUtils';
 
 export async function createInvestment(data: InvestmentFormData) {
   try {
@@ -88,5 +89,37 @@ export async function updateInvestment(id: string, data: Partial<InvestmentFormD
   } catch (error) {
     console.error('Error updating investment:', error);
     return { success: false, error: 'Error al actualizar inversión' };
+  }
+}
+
+export async function withdrawToBalanceFromInvestment(investmentId: string, amount: number, profileId: string) {
+  try {
+    const inv = await prisma.investment.findUnique({ where: { id: investmentId } });
+    if (!inv) throw new Error('Inversión no encontrada');
+    if (inv.amount < amount) throw new Error('Fondos insuficientes en la inversión');
+
+    // 1. Restar el monto de la inversión
+    await prisma.investment.update({
+      where: { id: investmentId },
+      data: { amount: inv.amount - amount },
+    });
+
+    // 2. Crear ingreso en balance
+    await prisma.income.create({
+      data: {
+        amount,
+        currency: inv.currency,
+        date: getArgDate(),
+        description: `Rescate desde inversión: ${inv.name}`,
+        profileId,
+      },
+    });
+
+    revalidatePath('/inversiones');
+    revalidatePath('/dashboard');
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error withdrawing from investment:', error);
+    return { success: false, error: error.message || 'Error al rescatar fondos' };
   }
 }

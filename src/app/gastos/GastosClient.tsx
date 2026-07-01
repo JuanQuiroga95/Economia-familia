@@ -30,9 +30,11 @@ interface Expense {
 interface GastosClientProps {
   initialExpenses: Expense[];
   categories: Category[];
+  savings?: { id: string; name: string; currency: string; currentAmount: number }[];
+  investments?: { id: string; name: string; currency: string; amount: number }[];
 }
 
-export default function GastosClient({ initialExpenses, categories }: GastosClientProps) {
+export default function GastosClient({ initialExpenses, categories, savings = [], investments = [] }: GastosClientProps) {
   const { activeProfile } = useProfile();
   const [showForm, setShowForm] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -58,6 +60,7 @@ export default function GastosClient({ initialExpenses, categories }: GastosClie
   const [paidFromPersonal, setPaidFromPersonal] = useState(false);
   const [receiptUrl, setReceiptUrl] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [fundingSource, setFundingSource] = useState('balance');
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -108,6 +111,7 @@ export default function GastosClient({ initialExpenses, categories }: GastosClie
         type,
         paidFromPersonalBudget: type === 'COMPARTIDO' ? paidFromPersonal : false,
         receiptUrl: receiptUrl || undefined,
+        fundingSource,
       });
 
       if (result.success) {
@@ -122,6 +126,7 @@ export default function GastosClient({ initialExpenses, categories }: GastosClie
         setCategoryId('');
         setReceiptUrl('');
         setPaidFromPersonal(false);
+        setFundingSource('balance');
         setShowForm(false);
         router.refresh();
       } else {
@@ -204,6 +209,34 @@ export default function GastosClient({ initialExpenses, categories }: GastosClie
                 <option value="EUR">🇪🇺 EUR</option>
               </select>
             </div>
+          </div>
+
+          {/* Origen de los fondos */}
+          <div>
+            <label className="block text-sm text-text-secondary mb-1">Origen de los fondos</label>
+            <select value={fundingSource} onChange={(e) => setFundingSource(e.target.value)} className="input-field">
+              <option value="balance">🏦 Balance General (Cuenta corriente)</option>
+              
+              {savings.filter(s => s.currency === currency && s.currentAmount > 0).length > 0 && (
+                <optgroup label="Mis Ahorros">
+                  {savings.filter(s => s.currency === currency && s.currentAmount > 0).map(s => (
+                    <option key={s.id} value={`ahorro_${s.id}`}>
+                      🎯 {s.name} (${formatCurrency(s.currentAmount)})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              
+              {investments.filter(i => i.currency === currency && i.amount > 0).length > 0 && (
+                <optgroup label="Mis Inversiones">
+                  {investments.filter(i => i.currency === currency && i.amount > 0).map(i => (
+                    <option key={i.id} value={`inversion_${i.id}`}>
+                      📈 {i.name} (${formatCurrency(i.amount)})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
           </div>
 
           <div>

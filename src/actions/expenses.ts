@@ -4,16 +4,66 @@ import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import type { ExpenseFormData, TransactionFilters } from '@/types';
 
+import { parseArgDate } from '@/lib/dateUtils';
+
 export async function createExpense(data: ExpenseFormData) {
   try {
-    // Gastos compartidos: un solo registro (no se duplica para el otro perfil)
-    // El gasto va al "fondo compartido". Si paidFromPersonalBudget = true,
-    // el fondo le debe ese monto al perfil que lo pagó.
+    const expenseDate = parseArgDate(data.date);
+
+    // Si viene de un fondo, descontar primero
+    if (data.fundingSource && data.fundingSource !== 'balance') {
+      const parts = data.fundingSource.split('_');
+      const type = parts[0];
+      const sourceId = parts.slice(1).join('_');
+      
+      if (type === 'ahorro') {
+        const goal = await prisma.savingsGoal.findUnique({ where: { id: sourceId } });
+        if (!goal) throw new Error('Meta no encontrada');
+        if (goal.currentAmount < data.amount) throw new Error('Fondos insuficientes en el ahorro');
+        
+        await prisma.savingsTransaction.create({
+          data: {
+            amount: data.amount,
+            type: 'RETIRO',
+            description: `Gasto: ${data.description}`,
+            savingsGoalId: sourceId,
+            profileId: data.profileId,
+          }
+        });
+        await prisma.savingsGoal.update({
+          where: { id: sourceId },
+          data: { currentAmount: goal.currentAmount - data.amount }
+        });
+        
+      } else if (type === 'inversion') {
+        const inv = await prisma.investment.findUnique({ where: { id: sourceId } });
+        if (!inv) throw new Error('Inversión no encontrada');
+        if (inv.amount < data.amount) throw new Error('Fondos insuficientes en la inversión');
+        
+        await prisma.investment.update({
+          where: { id: sourceId },
+          data: { amount: inv.amount - data.amount }
+        });
+      }
+
+      // Crear ingreso "fantasma" para que no afecte el balance mensual
+      await prisma.income.create({
+        data: {
+          amount: data.amount,
+          currency: data.currency,
+          date: expenseDate,
+          description: `Uso de ${type === 'ahorro' ? 'Ahorros' : 'Inversiones'} para: ${data.description}`,
+          profileId: data.profileId,
+        }
+      });
+    }
+
+    // Registrar gasto normal
     await prisma.expense.create({
       data: {
         amount: data.amount,
         currency: data.currency,
-        date: require('@/lib/dateUtils').parseArgDate(data.date),
+        date: expenseDate,
         description: data.description,
         categoryId: data.categoryId,
         profileId: data.profileId,

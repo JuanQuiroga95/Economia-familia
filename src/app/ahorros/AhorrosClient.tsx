@@ -2,7 +2,7 @@
 import { formatCurrency } from '@/lib/formatUtils';
 import { useState, useTransition } from 'react';
 import { useProfile } from '@/hooks/useProfile';
-import { createSavingsGoal, addSavingsTransaction, deleteSavingsGoal, distributeSurplus } from '@/actions/savings';
+import { createSavingsGoal, addSavingsTransaction, deleteSavingsGoal, distributeSurplus, updateSavingsGoal, withdrawToBalanceFromSavings } from '@/actions/savings';
 import toast from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -90,6 +90,16 @@ export default function AhorrosClient({ initialGoals, patrimonio }: AhorrosClien
   const [targetAmount, setTargetAmount] = useState('');
   const [initialAmount, setInitialAmount] = useState('');
   const [currency, setCurrency] = useState('ARS');
+  
+  const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
+
+  const resetGoalForm = () => {
+    setGoalName('');
+    setTargetAmount('');
+    setInitialAmount('');
+    setCurrency('ARS');
+    setEditingGoalId(null);
+  };
 
   // Transaction form
   const [txAmount, setTxAmount] = useState('');
@@ -101,25 +111,38 @@ export default function AhorrosClient({ initialGoals, patrimonio }: AhorrosClien
     if (!activeProfile) { toast.error('Seleccioná un perfil'); return; }
 
     startTransition(async () => {
-      const result = await createSavingsGoal({
+      const payload = {
         name: goalName,
         targetAmount: targetAmount ? parseFloat(targetAmount) : 0,
         initialAmount: initialAmount ? parseFloat(initialAmount) : 0,
         currency: currency as 'ARS' | 'USD' | 'EUR',
         profileId: activeProfile.id,
-      });
+      };
+
+      const result = editingGoalId 
+        ? await updateSavingsGoal(editingGoalId, payload)
+        : await createSavingsGoal(payload);
 
       if (result.success) {
-        toast.success('Meta creada');
-        setGoalName('');
-        setTargetAmount('');
-        setInitialAmount('');
+        toast.success(editingGoalId ? 'Meta actualizada' : 'Meta creada');
+        resetGoalForm();
         setShowGoalForm(false);
         router.refresh();
       } else {
         toast.error(result.error || 'Error');
       }
     });
+  };
+
+  const handleEditGoal = (goal: SavingsGoal) => {
+    setEditingGoalId(goal.id);
+    setGoalName(goal.name);
+    setTargetAmount(goal.targetAmount.toString());
+    setCurrency(goal.currency);
+    setInitialAmount(''); // Initial amount only makes sense when creating
+    setShowGoalForm(true);
+    setActiveTab('metas');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleAddTransaction = async (goalId: string) => {
@@ -142,6 +165,29 @@ export default function AhorrosClient({ initialGoals, patrimonio }: AhorrosClien
         router.refresh();
       } else {
         toast.error(result.error || 'Error');
+      }
+    });
+  };
+
+  const handleWithdrawToBalance = (goalId: string, currentAmount: number) => {
+    if (!activeProfile) { toast.error('Seleccioná un perfil'); return; }
+    
+    const amountStr = prompt(`¿Cuánto querés transferir al Balance General? (Máximo: ${currentAmount})`);
+    if (!amountStr) return;
+    
+    const amount = parseFloat(amountStr);
+    if (isNaN(amount) || amount <= 0 || amount > currentAmount) {
+      toast.error('Monto inválido');
+      return;
+    }
+
+    startTransition(async () => {
+      const result = await withdrawToBalanceFromSavings(goalId, amount, activeProfile.id);
+      if (result.success) {
+        toast.success('Fondos transferidos al balance');
+        router.refresh();
+      } else {
+        toast.error(result.error || 'Error al transferir');
       }
     });
   };
@@ -169,7 +215,15 @@ export default function AhorrosClient({ initialGoals, patrimonio }: AhorrosClien
           <h1 className="text-2xl lg:text-3xl font-bold text-text-primary">Ahorros</h1>
           <p className="text-text-muted text-sm mt-1">Tu plata guardada y metas de ahorro</p>
         </div>
-        <button onClick={() => setShowGoalForm(!showGoalForm)} className="gradient-btn px-4 py-2 text-sm">
+        <button onClick={() => {
+          if (showGoalForm) {
+            setShowGoalForm(false);
+            resetGoalForm();
+          } else {
+            setShowGoalForm(true);
+            setActiveTab('metas');
+          }
+        }} className="gradient-btn px-4 py-2 text-sm">
           {showGoalForm ? '✕ Cerrar' : '+ Nueva Meta'}
         </button>
       </div>
@@ -201,7 +255,7 @@ export default function AhorrosClient({ initialGoals, patrimonio }: AhorrosClien
       {/* New goal form */}
       {showGoalForm && (
         <form onSubmit={handleCreateGoal} className="glass-card p-4 lg:p-6 space-y-4 animate-slide-up">
-          <h3 className="text-lg font-semibold">Nueva Meta de Ahorro</h3>
+          <h3 className="text-lg font-semibold">{editingGoalId ? 'Editar Meta' : 'Nueva Meta'}</h3>
           <div>
             <label className="block text-sm text-text-secondary mb-1">Nombre</label>
             <input
@@ -237,22 +291,14 @@ export default function AhorrosClient({ initialGoals, patrimonio }: AhorrosClien
               </select>
             </div>
           </div>
-          <div>
-            <label className="block text-sm text-text-secondary mb-1">
-              💰 Monto Inicial
-              <span className="text-text-muted text-xs ml-1">(plata que ya tenés ahorrada)</span>
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              value={initialAmount}
-              onChange={(e) => setInitialAmount(e.target.value)}
-              className="input-field"
-              placeholder="0.00"
-            />
-          </div>
+          {!editingGoalId && (
+            <div>
+              <label className="block text-sm text-text-secondary mb-1">Ahorro inicial (opcional)</label>
+              <input type="number" step="0.01" value={initialAmount} onChange={(e) => setInitialAmount(e.target.value)} className="input-field" placeholder="Monto ya ahorrado" />
+            </div>
+          )}
           <button type="submit" disabled={isPending} className="w-full gradient-btn py-3 disabled:opacity-50">
-            {isPending ? 'Creando...' : 'Crear Meta'}
+            {isPending ? 'Guardando...' : (editingGoalId ? 'Actualizar Meta' : 'Crear Meta')}
           </button>
         </form>
       )}
@@ -398,6 +444,20 @@ export default function AhorrosClient({ initialGoals, patrimonio }: AhorrosClien
                         className="px-3 py-1.5 rounded-lg bg-accent/20 text-accent text-xs font-medium hover:bg-accent/30 transition-all"
                       >
                         💵 Movimiento
+                      </button>
+                      <button
+                        onClick={() => handleWithdrawToBalance(goal.id, goal.currentAmount)}
+                        className="p-1.5 rounded-lg text-text-muted hover:text-accent hover:bg-accent/10 transition-all text-xs"
+                        title="Transferir a Balance"
+                      >
+                        🏦
+                      </button>
+                      <button
+                        onClick={() => handleEditGoal(goal)}
+                        className="p-1.5 rounded-lg text-text-muted hover:text-accent hover:bg-accent/10 transition-all text-xs"
+                        title="Editar Meta"
+                      >
+                        ✏️
                       </button>
                       <button
                         onClick={() => handleDeleteGoal(goal.id)}

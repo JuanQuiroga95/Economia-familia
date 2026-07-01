@@ -2,7 +2,7 @@
 import { formatCurrency } from '@/lib/formatUtils';
 import { useState, useTransition } from 'react';
 import { useProfile } from '@/hooks/useProfile';
-import { createInvestment, deleteInvestment, updateInvestment } from '@/actions/investments';
+import { createInvestment, deleteInvestment, updateInvestment, withdrawToBalanceFromInvestment } from '@/actions/investments';
 import toast from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
 
@@ -109,6 +109,29 @@ export default function InversionesClient({ initialInvestments }: { initialInves
       const result = await deleteInvestment(id);
       if (result.success) { toast.success('Inversión eliminada'); router.refresh(); }
       else { toast.error(result.error || 'Error'); }
+    });
+  };
+
+  const handleWithdrawToBalance = (invId: string, currentAmount: number) => {
+    if (!activeProfile) { toast.error('Seleccioná un perfil'); return; }
+    
+    const amountStr = prompt(`¿Cuánto querés rescatar al Balance General? (Máximo: ${currentAmount})`);
+    if (!amountStr) return;
+    
+    const amount = parseFloat(amountStr);
+    if (isNaN(amount) || amount <= 0 || amount > currentAmount) {
+      toast.error('Monto inválido');
+      return;
+    }
+
+    startTransition(async () => {
+      const result = await withdrawToBalanceFromInvestment(invId, amount, activeProfile.id);
+      if (result.success) {
+        toast.success('Fondos transferidos al balance');
+        router.refresh();
+      } else {
+        toast.error(result.error || 'Error al rescatar fondos');
+      }
     });
   };
 
@@ -237,6 +260,13 @@ export default function InversionesClient({ initialInvestments }: { initialInves
                   <p className="text-xs text-text-muted">{inv.currency}</p>
                 </div>
                 <div className="flex flex-col gap-2">
+                  <button
+                    onClick={() => handleWithdrawToBalance(inv.id, inv.amount)}
+                    className="p-1.5 rounded-lg text-text-muted hover:text-accent hover:bg-accent/10 transition-all text-xs"
+                    title="Rescatar a Balance"
+                  >
+                    🏦
+                  </button>
                   <button
                     onClick={() => handleEdit(inv)}
                     className="p-1.5 rounded-lg text-text-muted hover:text-accent hover:bg-accent/10 transition-all text-xs"

@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import type { SavingsGoalFormData } from '@/types';
 import { getAccountId } from '@/lib/session';
+import { getArgDate } from '@/lib/dateUtils';
 
 export async function createSavingsGoal(data: SavingsGoalFormData) {
   try {
@@ -41,7 +42,6 @@ export async function createSavingsGoal(data: SavingsGoalFormData) {
 
 export async function getSavingsGoals(profileId?: string) {
   try {
-    const { getAccountId } = require('@/lib/session');
     const accountId = await getAccountId();
     if (!accountId) throw new Error('No account id');
 
@@ -114,10 +114,74 @@ export async function deleteSavingsGoal(id: string) {
   try {
     await prisma.savingsGoal.delete({ where: { id } });
     revalidatePath('/ahorros');
+    revalidatePath('/dashboard');
     return { success: true };
   } catch (error) {
     console.error('Error deleting savings goal:', error);
     return { success: false, error: 'Error al eliminar meta' };
+  }
+}
+
+export async function updateSavingsGoal(id: string, data: Partial<SavingsGoalFormData>) {
+  try {
+    const updateData: any = {};
+    if (data.name !== undefined) updateData.name = data.name;
+    if (data.targetAmount !== undefined) updateData.targetAmount = data.targetAmount;
+    if (data.currency !== undefined) updateData.currency = data.currency;
+
+    const goal = await prisma.savingsGoal.update({
+      where: { id },
+      data: updateData,
+    });
+    
+    revalidatePath('/ahorros');
+    revalidatePath('/dashboard');
+    return { success: true, data: goal };
+  } catch (error) {
+    console.error('Error updating savings goal:', error);
+    return { success: false, error: 'Error al actualizar meta de ahorro' };
+  }
+}
+
+export async function withdrawToBalanceFromSavings(savingsGoalId: string, amount: number, profileId: string) {
+  try {
+    const goal = await prisma.savingsGoal.findUnique({ where: { id: savingsGoalId } });
+    if (!goal) throw new Error('Meta no encontrada');
+    if (goal.currentAmount < amount) throw new Error('Fondos insuficientes en la meta');
+
+    // 1. Retiro de la meta
+    await prisma.savingsTransaction.create({
+      data: {
+        amount,
+        type: 'RETIRO',
+        description: 'Transferencia a Balance',
+        savingsGoalId,
+        profileId,
+      },
+    });
+
+    await prisma.savingsGoal.update({
+      where: { id: savingsGoalId },
+      data: { currentAmount: goal.currentAmount - amount },
+    });
+
+    // 2. Ingreso al balance mensual (asume que la fecha es el mes actual para impactar el Dashboard)
+    await prisma.income.create({
+      data: {
+        amount,
+        currency: goal.currency,
+        date: getArgDate(),
+        description: `Rescate desde ahorros: ${goal.name}`,
+        profileId,
+      },
+    });
+
+    revalidatePath('/ahorros');
+    revalidatePath('/dashboard');
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error withdrawing to balance:', error);
+    return { success: false, error: error.message || 'Error al rescatar fondos' };
   }
 }
 
