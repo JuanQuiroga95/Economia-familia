@@ -364,7 +364,7 @@ export default function GastosClient({ initialExpenses, categories }: GastosClie
                   <p className="text-sm font-medium text-text-primary">{expense.description}</p>
                   <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                     <span className="text-xs text-text-muted">
-                      {new Date(expense.date).toLocaleDateString('es-AR')}
+                      {new Date(expense.date).toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}
                     </span>
                     <span className="text-xs text-text-muted">•</span>
                     <span className="text-xs text-text-muted">{expense.profile.name}</span>

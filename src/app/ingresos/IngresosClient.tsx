@@ -193,7 +193,7 @@ export default function IngresosClient({ initialIncomes }: IngresosClientProps) 
                 <div>
                   <p className="text-sm font-medium text-text-primary">{income.description}</p>
                   <p className="text-xs text-text-muted">
-                    {new Date(income.date).toLocaleDateString('es-AR')} • {income.profile.name}
+                    {new Date(income.date).toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })} • {income.profile.name}
                   </p>
                 </div>
               </div>
