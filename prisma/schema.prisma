@@ -41,8 +41,6 @@ model Profile {
   savingsGoals        SavingsGoal[]
   investments         Investment[]
   budgetConfigs       BudgetConfig[]
-
-  @@unique([name, accountId])
 }
 
 model Category {
@@ -53,8 +51,6 @@ model Category {
   accountId String?
   account   Account?  @relation(fields: [accountId], references: [id], onDelete: Cascade)
   expenses  Expense[]
-
-  @@unique([name, accountId])
 }
 
 model Income {
