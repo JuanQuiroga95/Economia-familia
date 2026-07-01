@@ -36,6 +36,7 @@ interface PatrimonioStats {
 interface AhorrosClientProps {
   initialGoals: SavingsGoal[];
   patrimonio: PatrimonioStats;
+  rates?: { usdToArs: number; eurToArs: number } | null;
 }
 
 const currencyFlags: Record<string, string> = {
@@ -44,7 +45,7 @@ const currencyFlags: Record<string, string> = {
   EUR: '🇪🇺',
 };
 
-export default function AhorrosClient({ initialGoals, patrimonio }: AhorrosClientProps) {
+export default function AhorrosClient({ initialGoals, patrimonio, rates }: AhorrosClientProps) {
   const { activeProfile } = useProfile();
   const [showGoalForm, setShowGoalForm] = useState(false);
   const [showTransactionForm, setShowTransactionForm] = useState<string | null>(null);
@@ -319,6 +320,16 @@ export default function AhorrosClient({ initialGoals, patrimonio }: AhorrosClien
                     <p className="text-2xl font-bold text-accent mt-1">
                       ${formatCurrency(total)}
                     </p>
+                    {cur === 'USD' && rates?.usdToArs && total > 0 && (
+                      <p className="text-xs text-text-muted mt-1 opacity-70">
+                        ≈ ARS ${formatCurrency(total * rates.usdToArs)} (Cotización: ${formatCurrency(rates.usdToArs)})
+                      </p>
+                    )}
+                    {cur === 'EUR' && rates?.eurToArs && total > 0 && (
+                      <p className="text-xs text-text-muted mt-1 opacity-70">
+                        ≈ ARS ${formatCurrency(total * rates.eurToArs)} (Cotización: ${formatCurrency(rates.eurToArs)})
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>

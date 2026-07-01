@@ -83,6 +83,7 @@ export interface ExpenseFormData {
   paidFromPersonalBudget: boolean;
   receiptUrl?: string;
   fundingSource?: string;
+  splitPercentage?: number;
 }
 
 export interface SavingsGoalFormData {
@@ -117,6 +118,7 @@ export interface SharedFundDebt {
   profileId: string;
   profileName: string;
   profileAvatar: string | null;
+  debtorName?: string;
   amount: number;
   currency: string;
 }

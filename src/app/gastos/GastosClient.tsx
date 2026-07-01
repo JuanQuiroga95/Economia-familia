@@ -32,9 +32,10 @@ interface GastosClientProps {
   categories: Category[];
   savings?: { id: string; name: string; currency: string; currentAmount: number }[];
   investments?: { id: string; name: string; currency: string; amount: number }[];
+  accountInfo?: any;
 }
 
-export default function GastosClient({ initialExpenses, categories, savings = [], investments = [] }: GastosClientProps) {
+export default function GastosClient({ initialExpenses, categories, savings = [], investments = [], accountInfo }: GastosClientProps) {
   const { activeProfile } = useProfile();
   const [showForm, setShowForm] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -61,6 +62,22 @@ export default function GastosClient({ initialExpenses, categories, savings = []
   const [receiptUrl, setReceiptUrl] = useState('');
   const [uploading, setUploading] = useState(false);
   const [fundingSource, setFundingSource] = useState('balance');
+  const [splitPercentage, setSplitPercentage] = useState<string>('');
+
+  // Handle setting default split percentage when choosing COMPARTIDO
+  const handleTypeChange = (newType: 'PROPIO' | 'COMPARTIDO') => {
+    setType(newType);
+    if (newType === 'COMPARTIDO' && accountInfo?.splitMode === 'PORCENTAJE' && activeProfile) {
+      const sortedProfiles = accountInfo.profiles || [];
+      if (sortedProfiles.length >= 2) {
+        if (activeProfile.id === sortedProfiles[0].id) {
+          setSplitPercentage(accountInfo.splitPercentA.toString());
+        } else {
+          setSplitPercentage(accountInfo.splitPercentB.toString());
+        }
+      }
+    }
+  };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -110,6 +127,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
         profileId: activeProfile.id,
         type,
         paidFromPersonalBudget: type === 'COMPARTIDO' ? paidFromPersonal : false,
+        splitPercentage: type === 'COMPARTIDO' && accountInfo?.splitMode === 'PORCENTAJE' ? parseFloat(splitPercentage) : undefined,
         receiptUrl: receiptUrl || undefined,
         fundingSource,
       });
@@ -127,6 +145,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
         setReceiptUrl('');
         setPaidFromPersonal(false);
         setFundingSource('balance');
+        setSplitPercentage('');
         setShowForm(false);
         router.refresh();
       } else {
@@ -284,7 +303,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
-                onClick={() => { setType('PROPIO'); setPaidFromPersonal(false); }}
+                onClick={() => { handleTypeChange('PROPIO'); setPaidFromPersonal(false); }}
                 className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
                   type === 'PROPIO'
                     ? 'bg-accent text-white shadow-lg shadow-accent/25'
@@ -295,7 +314,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
               </button>
               <button
                 type="button"
-                onClick={() => setType('COMPARTIDO')}
+                onClick={() => handleTypeChange('COMPARTIDO')}
                 className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
                   type === 'COMPARTIDO'
                     ? 'bg-accent text-white shadow-lg shadow-accent/25'
@@ -319,23 +338,36 @@ export default function GastosClient({ initialExpenses, categories, savings = []
                 onClick={() => setPaidFromPersonal(!paidFromPersonal)}
               >
                 <div className="flex items-center gap-3">
-                  <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${
-                    paidFromPersonal
-                      ? 'border-warning bg-warning text-white'
-                      : 'border-text-muted'
+                  <div className={`w-5 h-5 rounded border flex items-center justify-center ${
+                    paidFromPersonal ? 'bg-warning border-warning' : 'border-text-muted'
                   }`}>
-                    {paidFromPersonal && <span className="text-xs">✓</span>}
+                    {paidFromPersonal && <span className="text-white text-xs">✓</span>}
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-text-primary">
-                      💳 Lo pagué con mi billetera personal
-                    </p>
-                    <p className="text-xs text-text-muted mt-0.5">
-                      Se descuenta de tus {activeProfile?.name === 'Juan' ? '50k quincenales' : 'gastos personales'} y el fondo compartido te lo debe
-                    </p>
+                    <p className="text-sm font-medium text-text-primary">Pagué yo</p>
+                    <p className="text-xs text-text-muted">El fondo compartido te deberá este monto</p>
                   </div>
                 </div>
               </div>
+              
+              {accountInfo?.splitMode === 'PORCENTAJE' && (
+                <div className="mt-4 p-4 rounded-xl border border-border bg-bg-card">
+                  <label className="block text-sm text-text-secondary mb-2">Porcentaje que me corresponde pagar (%)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value={splitPercentage}
+                    onChange={(e) => setSplitPercentage(e.target.value)}
+                    className="input-field"
+                    placeholder="Ej: 50"
+                  />
+                  <p className="text-xs text-text-muted mt-2">
+                    Dejar vacío para usar tu {splitPercentage}% configurado por defecto.
+                  </p>
+                </div>
+              )}
             </div>
           )}
 

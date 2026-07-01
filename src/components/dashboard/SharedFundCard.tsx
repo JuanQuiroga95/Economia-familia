@@ -47,7 +47,7 @@ export default function SharedFundCard({ stats }: { stats: SharedFundStats }) {
                   <span className="text-lg">{debt.profileAvatar || '👤'}</span>
                   <div>
                     <p className="text-sm font-medium text-text-primary">
-                      El fondo le debe a {debt.profileName}
+                      {debt.debtorName ? `${debt.debtorName} le debe a ${debt.profileName}` : `El fondo le debe a ${debt.profileName}`}
                     </p>
                     <p className="text-xs text-text-muted">
                       Pagó gastos compartidos de su billetera

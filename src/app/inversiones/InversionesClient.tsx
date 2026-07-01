@@ -28,7 +28,12 @@ const investmentTypeLabels: Record<string, string> = {
   OTRO: '📦 Otro',
 };
 
-export default function InversionesClient({ initialInvestments }: { initialInvestments: Investment[] }) {
+interface InversionesClientProps {
+  initialInvestments: Investment[];
+  rates?: { usdToArs: number; eurToArs: number } | null;
+}
+
+export default function InversionesClient({ initialInvestments, rates }: InversionesClientProps) {
   const { activeProfile } = useProfile();
   const [showForm, setShowForm] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -167,6 +172,16 @@ export default function InversionesClient({ initialInvestments }: { initialInves
             <div key={cur} className="glass-card p-4">
               <p className="text-xs text-text-muted">Total {cur}</p>
               <p className="text-lg font-bold text-accent">${formatCurrency(total)}</p>
+              {cur === 'USD' && rates?.usdToArs && total > 0 && (
+                <p className="text-[10px] text-text-muted mt-0.5 opacity-70">
+                  ≈ ARS ${formatCurrency(total * rates.usdToArs)}
+                </p>
+              )}
+              {cur === 'EUR' && rates?.eurToArs && total > 0 && (
+                <p className="text-[10px] text-text-muted mt-0.5 opacity-70">
+                  ≈ ARS ${formatCurrency(total * rates.eurToArs)}
+                </p>
+              )}
             </div>
           ))}
         </div>

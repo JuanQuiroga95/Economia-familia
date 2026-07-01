@@ -90,6 +90,10 @@ model Expense {
   // El fondo compartido le "debe" ese monto a esa persona
   paidFromPersonalBudget Boolean @default(false)
 
+  // Porcentaje asignado al perfil que pagó/registró (0-100)
+  // Usado cuando la cuenta está en modo PORCENTAJE
+  splitPercentage Float?
+
   // Imagen del comprobante
   receiptUrl  String?
 

@@ -69,6 +69,7 @@ export async function createExpense(data: ExpenseFormData) {
         profileId: data.profileId,
         type: data.type,
         paidFromPersonalBudget: data.type === 'COMPARTIDO' ? data.paidFromPersonalBudget : false,
+        splitPercentage: data.type === 'COMPARTIDO' ? data.splitPercentage : null,
         receiptUrl: data.receiptUrl || null,
       },
     });

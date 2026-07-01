@@ -267,36 +267,72 @@ export async function getSharedFundStats(month: number, year: number): Promise<S
 
     const totalSharedExpenses = sharedExpenses.reduce((sum, exp) => sum + exp.amount, 0);
 
-    const debtMap = new Map<string, { profileName: string; profileAvatar: string | null; amount: number }>();
-
-    sharedExpenses.forEach((exp) => {
-      if (exp.paidFromPersonalBudget) {
-        const existing = debtMap.get(exp.profileId);
-        if (existing) {
-          existing.amount += exp.amount;
-        } else {
-          debtMap.set(exp.profileId, {
-            profileName: exp.profile.name,
-            profileAvatar: exp.profile.avatar,
-            amount: exp.amount,
-          });
+    if (account.splitMode === 'FONDO_COMUN') {
+      const debtMap = new Map<string, { profileName: string; profileAvatar: string | null; amount: number }>();
+      sharedExpenses.forEach((exp) => {
+        if (exp.paidFromPersonalBudget) {
+          const existing = debtMap.get(exp.profileId);
+          if (existing) {
+            existing.amount += exp.amount;
+          } else {
+            debtMap.set(exp.profileId, {
+              profileName: exp.profile.name,
+              profileAvatar: exp.profile.avatar,
+              amount: exp.amount,
+            });
+          }
         }
+      });
+      const debts = Array.from(debtMap.entries()).map(([profileId, data]) => ({
+        profileId,
+        profileName: data.profileName,
+        profileAvatar: data.profileAvatar,
+        amount: data.amount,
+        currency: 'ARS',
+      }));
+      return { totalSharedExpenses, debts, currency: 'ARS' };
+    } else {
+      // PORCENTAJE mode: person-to-person debt
+      let balanceA = 0; // Positive means B owes A
+      sharedExpenses.forEach((exp) => {
+        if (exp.paidFromPersonalBudget) {
+          const payer = exp.profileId;
+          const payerPercent = exp.splitPercentage ?? (payer === profileA.id ? account.splitPercentA : account.splitPercentB);
+          
+          const owedAmount = exp.amount * (100 - payerPercent) / 100;
+          
+          if (payer === profileA.id) {
+            balanceA += owedAmount;
+          } else {
+            balanceA -= owedAmount;
+          }
+        }
+      });
+      
+      const debts = [];
+      if (balanceA > 0) {
+        // B owes A
+        debts.push({
+          profileId: profileA.id,
+          profileName: profileA.name,
+          profileAvatar: profileA.avatar,
+          debtorName: profileB.name,
+          amount: balanceA,
+          currency: 'ARS',
+        });
+      } else if (balanceA < 0) {
+        // A owes B
+        debts.push({
+          profileId: profileB.id,
+          profileName: profileB.name,
+          profileAvatar: profileB.avatar,
+          debtorName: profileA.name,
+          amount: Math.abs(balanceA),
+          currency: 'ARS',
+        });
       }
-    });
-
-    const debts = Array.from(debtMap.entries()).map(([profileId, data]) => ({
-      profileId,
-      profileName: data.profileName,
-      profileAvatar: data.profileAvatar,
-      amount: data.amount,
-      currency: 'ARS',
-    }));
-
-    return {
-      totalSharedExpenses,
-      debts,
-      currency: 'ARS',
-    };
+      return { totalSharedExpenses, debts, currency: 'ARS' };
+    }
   } catch (error) {
     console.error('Error fetching shared fund stats:', error);
     return { totalSharedExpenses: 0, debts: [], currency: 'ARS' };
