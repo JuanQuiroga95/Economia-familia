@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { upsertExchangeRate, createCategory, deleteCategory, updateBudgetConfig, updateSplitMode } from '@/actions/config';
+import { generateTelegramLinkCode, unlinkTelegram } from '@/actions/telegram';
 import toast from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
 
@@ -34,6 +35,8 @@ interface ProfileData {
   id: string;
   name: string;
   avatar: string | null;
+  telegramChatId: string | null;
+  telegramLinkCode: string | null;
 }
 
 interface ConfigClientProps {
@@ -236,6 +239,85 @@ export default function ConfigClient({ exchangeRates, categories, budgetConfigs,
               </button>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* Telegram Link */}
+      <section className="glass-card p-4 lg:p-6 space-y-4">
+        <h2 className="text-lg font-semibold text-text-primary">🤖 Telegram Bot</h2>
+        <p className="text-xs text-text-muted">
+          Vinculá tu cuenta con Telegram para registrar gastos e ingresos mandando mensajes o audios.
+        </p>
+        <div className="space-y-3">
+          {profiles.map((profile) => (
+            <div key={profile.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-bg-input rounded-xl border border-border/50">
+              <div className="flex items-center gap-3 mb-3 sm:mb-0">
+                <div className="w-10 h-10 rounded-full bg-accent/10 flex items-center justify-center text-lg">
+                  {profile.avatar || '👤'}
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-text-primary">{profile.name}</p>
+                  <p className="text-xs text-text-muted">
+                    {profile.telegramChatId ? '✅ Vinculado' : profile.telegramLinkCode ? '⏳ Esperando vinculación' : '❌ No vinculado'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {profile.telegramChatId ? (
+                  <button
+                    onClick={() => {
+                      startTransition(async () => {
+                        const res = await unlinkTelegram(profile.id);
+                        if (res.success) toast.success('Desvinculado');
+                        else toast.error(res.error || 'Error');
+                      });
+                    }}
+                    disabled={isPending}
+                    className="px-3 py-1.5 text-xs text-danger hover:bg-danger/10 rounded-lg transition-colors"
+                  >
+                    Desvincular
+                  </button>
+                ) : profile.telegramLinkCode ? (
+                  <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+                    <div className="px-4 py-2 bg-bg-secondary rounded-lg font-mono text-accent text-lg tracking-widest text-center w-full sm:w-auto">
+                      {profile.telegramLinkCode}
+                    </div>
+                    <div className="text-xs text-text-muted text-center sm:text-left max-w-[200px]">
+                      Enviá este código al bot en Telegram para vincular tu cuenta.
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => {
+                      startTransition(async () => {
+                        const res = await generateTelegramLinkCode(profile.id);
+                        if (res.success) toast.success('Código generado');
+                        else toast.error(res.error || 'Error');
+                      });
+                    }}
+                    disabled={isPending}
+                    className="gradient-btn px-4 py-2 text-sm w-full sm:w-auto"
+                  >
+                    Generar PIN
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+          <div className="mt-2 text-center">
+            <a
+              href="https://t.me/TuEconoAppBot"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-accent hover:underline flex items-center justify-center gap-2"
+            >
+              <span>Abrir bot en Telegram</span>
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </a>
+          </div>
         </div>
       </section>
 

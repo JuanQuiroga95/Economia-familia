@@ -35,6 +35,10 @@ model Profile {
   account   Account? @relation(fields: [accountId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
 
+  // Telegram integration
+  telegramChatId  String?  @unique
+  telegramLinkCode String?
+
   incomes             Income[]
   expenses            Expense[]
   savingsTransactions SavingsTransaction[]
