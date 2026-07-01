@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import AppLayout from '@/components/layout/AppLayout';
 import DashboardClient from './DashboardClient';
+import MonthYearPicker from '@/components/ui/MonthYearPicker';
 import { getDashboardStats, getCategoryBreakdown, getMonthlyComparison, getBudgetStatus, getSharedFundStats } from '@/actions/dashboard';
 import { prisma } from '@/lib/prisma';
 import { getCurrentFinancialMonth, getArgDate } from '@/lib/dateUtils';
@@ -9,9 +10,13 @@ import { getAccountId } from '@/lib/session';
 
 import { redirect } from 'next/navigation';
 
-export default async function DashboardPage() {
+export default async function DashboardPage({ searchParams }: { searchParams: { month?: string; year?: string } }) {
   const now = getArgDate();
-  const { month, year } = getCurrentFinancialMonth(now);
+  const current = getCurrentFinancialMonth(now);
+  
+  const month = searchParams.month ? parseInt(searchParams.month) : current.month;
+  const year = searchParams.year ? parseInt(searchParams.year) : current.year;
+
   const accountId = await getAccountId();
 
   if (!accountId) {
@@ -39,6 +44,7 @@ export default async function DashboardPage() {
 
   return (
     <AppLayout>
+      <MonthYearPicker month={month} year={year} />
       <DashboardClient
         stats={stats}
         categoryData={categoryData}

@@ -315,8 +315,9 @@ export async function POST(request: NextRequest) {
     }
 
     // ─── Create transaction ───
-    const { parseArgDate } = require('@/lib/dateUtils');
-    const today = new Date();
+    const { parseArgDate, getArgDate } = require('@/lib/dateUtils');
+    const { revalidatePath } = require('next/cache');
+    const today = getArgDate();
     const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
     if (parsed.tipo === 'ingreso') {
@@ -371,6 +372,10 @@ export async function POST(request: NextRequest) {
           budgetInfo
       );
     }
+
+    revalidatePath('/gastos');
+    revalidatePath('/ingresos');
+    revalidatePath('/dashboard');
 
     return NextResponse.json({ ok: true });
   } catch (error) {
