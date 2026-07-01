@@ -6,7 +6,8 @@ import MonthYearPicker from '@/components/ui/MonthYearPicker';
 import { getIncomes } from '@/actions/income';
 import { getCurrentFinancialMonth, getArgDate } from '@/lib/dateUtils';
 
-export default async function IngresosPage({ searchParams }: { searchParams: { month?: string; year?: string } }) {
+export default async function IngresosPage(props: { searchParams: Promise<{ month?: string; year?: string }> }) {
+  const searchParams = await props.searchParams;
   const now = getArgDate();
   const current = getCurrentFinancialMonth(now);
   

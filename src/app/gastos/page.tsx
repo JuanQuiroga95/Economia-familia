@@ -6,7 +6,8 @@ import MonthYearPicker from '@/components/ui/MonthYearPicker';
 import { getExpenses, getCategories } from '@/actions/expenses';
 import { getCurrentFinancialMonth, getArgDate } from '@/lib/dateUtils';
 
-export default async function GastosPage({ searchParams }: { searchParams: { month?: string; year?: string } }) {
+export default async function GastosPage(props: { searchParams: Promise<{ month?: string; year?: string }> }) {
+  const searchParams = await props.searchParams;
   const now = getArgDate();
   const current = getCurrentFinancialMonth(now);
   

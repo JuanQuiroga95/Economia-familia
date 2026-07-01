@@ -10,7 +10,8 @@ import { getAccountId } from '@/lib/session';
 
 import { redirect } from 'next/navigation';
 
-export default async function DashboardPage({ searchParams }: { searchParams: { month?: string; year?: string } }) {
+export default async function DashboardPage(props: { searchParams: Promise<{ month?: string; year?: string }> }) {
+  const searchParams = await props.searchParams;
   const now = getArgDate();
   const current = getCurrentFinancialMonth(now);
   
