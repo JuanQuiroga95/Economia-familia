@@ -13,7 +13,7 @@ export default async function AhorrosPage() {
   const [goals, patrimonio, rates] = await Promise.all([
     getSavingsGoals(),
     getPatrimonioStats(),
-    getCurrentExchangeRate(current.month, current.year),
+    getCurrentExchangeRate(),
   ]);
 
   return (

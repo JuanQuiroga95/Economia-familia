@@ -12,7 +12,7 @@ export default async function InversionesPage() {
   
   const [investments, rates] = await Promise.all([
     getInvestments(),
-    getCurrentExchangeRate(current.month, current.year),
+    getCurrentExchangeRate(),
   ]);
 
   return (
