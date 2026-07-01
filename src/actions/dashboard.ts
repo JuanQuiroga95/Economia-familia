@@ -92,13 +92,13 @@ export async function getCategoryBreakdown(
 
     return Array.from(categoryMap.values())
       .map((c) => ({
-        name: c.category,
+        category: c.category,
         icon: c.icon,
         color: c.color,
-        amount: c.total,
+        total: c.total,
         percentage: totalExpenses > 0 ? (c.total / totalExpenses) * 100 : 0,
       }))
-      .sort((a, b) => b.amount - a.amount);
+      .sort((a, b) => b.total - a.total);
   } catch (error) {
     console.error('Error fetching category breakdown:', error);
     return [];
