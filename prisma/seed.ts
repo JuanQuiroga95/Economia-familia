@@ -50,25 +50,19 @@ async function main() {
     },
   });
 
-  const edu = await prisma.profile.upsert({
-    where: { name_accountId: { name: 'Edu', accountId: accountEM.id } },
-    update: {},
-    create: {
-      name: 'Edu',
-      avatar: '👨',
-      accountId: accountEM.id,
-    },
-  });
+  let edu = await prisma.profile.findFirst({ where: { name: 'Edu', accountId: accountEM.id } });
+  if (edu) {
+    edu = await prisma.profile.update({ where: { id: edu.id }, data: { accountId: accountEM.id } });
+  } else {
+    edu = await prisma.profile.create({ data: { name: 'Edu', avatar: '👨', accountId: accountEM.id } });
+  }
 
-  const mai = await prisma.profile.upsert({
-    where: { name_accountId: { name: 'Mai', accountId: accountEM.id } },
-    update: {},
-    create: {
-      name: 'Mai',
-      avatar: '👩',
-      accountId: accountEM.id,
-    },
-  });
+  let mai = await prisma.profile.findFirst({ where: { name: 'Mai', accountId: accountEM.id } });
+  if (mai) {
+    mai = await prisma.profile.update({ where: { id: mai.id }, data: { accountId: accountEM.id } });
+  } else {
+    mai = await prisma.profile.create({ data: { name: 'Mai', avatar: '👩', accountId: accountEM.id } });
+  }
 
   console.log('Cuenta Edu & Mai creada:', { edu, mai });
 
