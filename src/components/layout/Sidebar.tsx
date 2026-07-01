@@ -9,7 +9,7 @@ const navItems = [
   { href: '/ingresos', label: 'Ingresos', icon: '💰' },
   { href: '/gastos', label: 'Gastos', icon: '💸' },
   { href: '/ahorros', label: 'Ahorros', icon: '🏦' },
-  { href: '/inversiones', label: 'Más', icon: '📊' },
+  { href: '/mas', label: 'Más', icon: '📊' },
 ];
 
 export default function Sidebar() {
