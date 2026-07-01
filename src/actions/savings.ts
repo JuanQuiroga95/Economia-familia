@@ -3,6 +3,7 @@
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import type { SavingsGoalFormData } from '@/types';
+import { getAccountId } from '@/lib/session';
 
 export async function createSavingsGoal(data: SavingsGoalFormData) {
   try {
@@ -128,7 +129,6 @@ export async function distributeSurplus(data: {
 }) {
   try {
     // 1. Buscar o crear la categoría de Ahorro/Inversión
-    const { getAccountId } = require('@/lib/session');
     const accountId = await getAccountId();
     if (!accountId) return { success: false, error: 'No autenticado' };
 
@@ -185,7 +185,6 @@ export async function distributeSurplus(data: {
 
 export async function getPatrimonioStats() {
   try {
-    const { getAccountId } = require('@/lib/session');
     const accountId = await getAccountId();
     if (!accountId) throw new Error('No account id');
 

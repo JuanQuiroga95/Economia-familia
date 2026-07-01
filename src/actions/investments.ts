@@ -28,9 +28,10 @@ export async function createInvestment(data: InvestmentFormData) {
   }
 }
 
+import { getAccountId } from '@/lib/session';
+
 export async function getInvestments(profileId?: string) {
   try {
-    const { getAccountId } = require('@/lib/session');
     const accountId = await getAccountId();
     if (!accountId) throw new Error('No account id');
 
