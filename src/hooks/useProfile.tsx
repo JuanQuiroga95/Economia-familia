@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { useSession } from 'next-auth/react';
 import type { ProfileData } from '@/types';
 
 interface ProfileContextType {
@@ -21,11 +22,14 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
   const [profiles, setProfiles] = useState<ProfileData[]>([]);
   const [activeProfile, setActiveProfileState] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
+  const { status } = useSession();
 
   useEffect(() => {
     async function fetchProfiles() {
       try {
+        setLoading(true);
         const res = await fetch('/api/profiles');
+        if (!res.ok) throw new Error('Failed to fetch');
         const data = await res.json();
         setProfiles(data);
 
@@ -48,8 +52,14 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    fetchProfiles();
-  }, []);
+    if (status === 'authenticated') {
+      fetchProfiles();
+    } else if (status === 'unauthenticated') {
+      setProfiles([]);
+      setActiveProfileState(null);
+      setLoading(false);
+    }
+  }, [status]);
 
   const setActiveProfile = (profile: ProfileData) => {
     setActiveProfileState(profile);
