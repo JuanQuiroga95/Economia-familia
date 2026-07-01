@@ -6,11 +6,13 @@ import { getExchangeRates } from '@/actions/config';
 import { prisma } from '@/lib/prisma';
 import { getAccountId } from '@/lib/session';
 
+import { redirect } from 'next/navigation';
+
 export default async function ConfiguracionPage() {
   const accountId = await getAccountId();
 
   if (!accountId) {
-    return <div>No autenticado</div>;
+    redirect('/api/auth/signout');
   }
 
   const [exchangeRates, categories, budgetConfigs, account, profiles] = await Promise.all([

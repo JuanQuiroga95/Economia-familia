@@ -7,13 +7,15 @@ import { prisma } from '@/lib/prisma';
 import { getCurrentFinancialMonth, getArgDate } from '@/lib/dateUtils';
 import { getAccountId } from '@/lib/session';
 
+import { redirect } from 'next/navigation';
+
 export default async function DashboardPage() {
   const now = getArgDate();
   const { month, year } = getCurrentFinancialMonth(now);
   const accountId = await getAccountId();
 
   if (!accountId) {
-    return <div>No autenticado</div>;
+    redirect('/api/auth/signout');
   }
 
   // Fetch all data server-side
