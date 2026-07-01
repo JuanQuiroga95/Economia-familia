@@ -37,7 +37,7 @@ export async function getDashboardStats(month: number, year: number, profileId?:
     } else {
       // Vista global (Dashboard): TODOS los gastos (Propios de ambos + Compartidos)
       const allExpenses = await prisma.expense.aggregate({
-        where: { date: { gte: startDate, lte: endDate } },
+        where: whereBase,
         _sum: { amount: true },
       });
       totalExpenses = allExpenses._sum.amount || 0;
