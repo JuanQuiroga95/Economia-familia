@@ -2,11 +2,11 @@
 
 import { prisma } from '@/lib/prisma';
 import type { BudgetStatus, CategoryBreakdown, SharedFundStats } from '@/types';
+import { getFinancialMonthRange } from '@/lib/dateUtils';
 
 export async function getDashboardStats(month: number, year: number, profileId?: string) {
   try {
-    const startDate = new Date(year, month - 1, 1);
-    const endDate = new Date(year, month, 0, 23, 59, 59);
+    const { startDate, endDate } = getFinancialMonthRange(month, year);
 
     const whereBase = {
       date: { gte: startDate, lte: endDate },
@@ -19,7 +19,7 @@ export async function getDashboardStats(month: number, year: number, profileId?:
       _sum: { amount: true },
     });
 
-    // Total gastos PROPIOS (los compartidos van al fondo compartido)
+    // Total gastos PROPIOS
     const expenses = await prisma.expense.findMany({
       where: {
         ...whereBase,
@@ -29,7 +29,7 @@ export async function getDashboardStats(month: number, year: number, profileId?:
 
     const totalOwnExpenses = expenses.reduce((sum, exp) => sum + exp.amount, 0);
 
-    // Gastos compartidos pagados desde billetera personal (se descuentan del saldo personal)
+    // Gastos compartidos pagados desde billetera personal
     const paidFromPersonal = await prisma.expense.findMany({
       where: {
         date: { gte: startDate, lte: endDate },
@@ -61,18 +61,17 @@ export async function getCategoryBreakdown(
   profileId?: string
 ): Promise<CategoryBreakdown[]> {
   try {
-    const startDate = new Date(year, month - 1, 1);
-    const endDate = new Date(year, month, 0, 23, 59, 59);
+    const { startDate, endDate } = getFinancialMonthRange(month, year);
 
     const expenses = await prisma.expense.findMany({
       where: {
         date: { gte: startDate, lte: endDate },
+        type: 'PROPIO',
         ...(profileId ? { profileId } : {}),
       },
       include: { category: true },
     });
 
-    // Agrupar por categoría
     const categoryMap = new Map<string, { category: string; icon: string; color: string; total: number }>();
 
     expenses.forEach((exp) => {
@@ -93,10 +92,13 @@ export async function getCategoryBreakdown(
 
     return Array.from(categoryMap.values())
       .map((c) => ({
-        ...c,
+        name: c.category,
+        icon: c.icon,
+        color: c.color,
+        amount: c.total,
         percentage: totalExpenses > 0 ? (c.total / totalExpenses) * 100 : 0,
       }))
-      .sort((a, b) => b.total - a.total);
+      .sort((a, b) => b.amount - a.amount);
   } catch (error) {
     console.error('Error fetching category breakdown:', error);
     return [];
@@ -107,13 +109,23 @@ export async function getMonthlyComparison(profileId?: string) {
   try {
     const now = new Date();
     const months = [];
+    
+    // Obtener mes financiero actual
+    const { getCurrentFinancialMonth } = require('@/lib/dateUtils');
+    const current = getCurrentFinancialMonth(now);
+    
+    const currentMonth = current.month;
+    const currentYear = current.year;
 
     for (let i = 5; i >= 0; i--) {
-      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const month = date.getMonth() + 1;
-      const year = date.getFullYear();
-      const startDate = new Date(year, month - 1, 1);
-      const endDate = new Date(year, month, 0, 23, 59, 59);
+      let m = currentMonth - i;
+      let y = currentYear;
+      if (m <= 0) {
+        m += 12;
+        y -= 1;
+      }
+
+      const { startDate, endDate } = getFinancialMonthRange(m, y);
 
       const whereBase = {
         date: { gte: startDate, lte: endDate },
@@ -126,7 +138,10 @@ export async function getMonthlyComparison(profileId?: string) {
       });
 
       const expenseRecords = await prisma.expense.findMany({
-        where: whereBase,
+        where: {
+          ...whereBase,
+          type: 'PROPIO',
+        },
       });
 
       const totalExpenses = expenseRecords.reduce((sum, exp) => sum + exp.amount, 0);
@@ -134,9 +149,7 @@ export async function getMonthlyComparison(profileId?: string) {
       const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
       months.push({
-        name: monthNames[month - 1],
-        month,
-        year,
+        name: monthNames[m - 1],
         ingresos: incomeAgg._sum.amount || 0,
         gastos: totalExpenses,
       });
@@ -163,36 +176,28 @@ export async function getBudgetStatus(profileId: string): Promise<BudgetStatus |
     const year = now.getFullYear();
     const month = now.getMonth();
 
-    // La primera quincena arranca el último día del mes (día de cobro)
-    // y termina el 15 del mes siguiente.
-    // La segunda quincena va del 16 al penúltimo día del mes.
     const lastDayOfMonth = new Date(year, month + 1, 0).getDate();
     const isFirstHalf = day >= lastDayOfMonth || day <= 15;
     const currentHalf: 1 | 2 = isFirstHalf ? 1 : 2;
     const budget = currentHalf === 1 ? config.firstHalfBudget : config.secondHalfBudget;
 
-    // Calcular rango de fechas de la quincena actual
     let startDate: Date;
     let endDate: Date;
 
     if (isFirstHalf) {
       if (day >= lastDayOfMonth) {
-        // Último día del mes actual → 15 del mes siguiente
         startDate = new Date(year, month, lastDayOfMonth);
         endDate = new Date(year, month + 1, 15, 23, 59, 59);
       } else {
-        // Día 1-15: último día del mes anterior → 15 del mes actual
         const prevMonthLastDay = new Date(year, month, 0).getDate();
         startDate = new Date(year, month - 1, prevMonthLastDay);
         endDate = new Date(year, month, 15, 23, 59, 59);
       }
     } else {
-      // Segunda quincena: 16 al penúltimo día del mes
       startDate = new Date(year, month, 16);
       endDate = new Date(year, month, lastDayOfMonth - 1, 23, 59, 59);
     }
 
-    // Gastos PROPIOS del perfil
     const ownExpenses = await prisma.expense.findMany({
       where: {
         profileId,
@@ -204,7 +209,6 @@ export async function getBudgetStatus(profileId: string): Promise<BudgetStatus |
 
     const spentOwn = ownExpenses.reduce((sum, exp) => sum + exp.amount, 0);
 
-    // Gastos COMPARTIDOS pagados desde la billetera personal de este perfil
     const sharedPaidPersonal = await prisma.expense.findMany({
       where: {
         profileId,
@@ -216,7 +220,6 @@ export async function getBudgetStatus(profileId: string): Promise<BudgetStatus |
     });
 
     const spentSharedPersonal = sharedPaidPersonal.reduce((sum, exp) => sum + exp.amount, 0);
-
     const spent = spentOwn + spentSharedPersonal;
 
     return {
@@ -237,10 +240,8 @@ export async function getBudgetStatus(profileId: string): Promise<BudgetStatus |
 
 export async function getSharedFundStats(month: number, year: number): Promise<SharedFundStats> {
   try {
-    const startDate = new Date(year, month - 1, 1);
-    const endDate = new Date(year, month, 0, 23, 59, 59);
+    const { startDate, endDate } = getFinancialMonthRange(month, year);
 
-    // Todos los gastos compartidos del mes
     const sharedExpenses = await prisma.expense.findMany({
       where: {
         type: 'COMPARTIDO',
@@ -251,8 +252,6 @@ export async function getSharedFundStats(month: number, year: number): Promise<S
 
     const totalSharedExpenses = sharedExpenses.reduce((sum, exp) => sum + exp.amount, 0);
 
-    // Deudas: gastos compartidos pagados desde billetera personal
-    // Agrupar por perfil
     const debtMap = new Map<string, { profileName: string; profileAvatar: string | null; amount: number }>();
 
     sharedExpenses.forEach((exp) => {

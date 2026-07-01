@@ -37,8 +37,8 @@ export async function getIncomes(filters?: {
     }
 
     if (filters?.month && filters?.year) {
-      const startDate = new Date(filters.year, filters.month - 1, 1);
-      const endDate = new Date(filters.year, filters.month, 0, 23, 59, 59);
+      const { getFinancialMonthRange } = require('@/lib/dateUtils');
+      const { startDate, endDate } = getFinancialMonthRange(filters.month, filters.year);
       where.date = { gte: startDate, lte: endDate };
     }
 

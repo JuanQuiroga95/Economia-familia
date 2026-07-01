@@ -185,18 +185,17 @@ export async function getPatrimonioStats() {
     });
 
     // 3. Sobrante del mes actual (ingresos - gastos de este mes)
+    const { getCurrentFinancialMonth, getFinancialMonthRange } = require('@/lib/dateUtils');
     const now = new Date();
-    const month = now.getMonth();
-    const year = now.getFullYear();
-    const startOfMonth = new Date(year, month, 1);
-    const endOfMonth = new Date(year, month + 1, 0, 23, 59, 59);
+    const current = getCurrentFinancialMonth(now);
+    const { startDate, endDate } = getFinancialMonthRange(current.month, current.year);
 
     const incomes = await prisma.income.findMany({
-      where: { date: { gte: startOfMonth, lte: endOfMonth } },
+      where: { date: { gte: startDate, lte: endDate } },
     });
 
     const expenses = await prisma.expense.findMany({
-      where: { date: { gte: startOfMonth, lte: endOfMonth } },
+      where: { date: { gte: startDate, lte: endDate } },
     });
 
     // Agrupar ingresos por moneda

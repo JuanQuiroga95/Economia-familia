@@ -4,11 +4,11 @@ import AppLayout from '@/components/layout/AppLayout';
 import DashboardClient from './DashboardClient';
 import { getDashboardStats, getCategoryBreakdown, getMonthlyComparison, getBudgetStatus, getSharedFundStats } from '@/actions/dashboard';
 import { prisma } from '@/lib/prisma';
+import { getCurrentFinancialMonth } from '@/lib/dateUtils';
 
 export default async function DashboardPage() {
   const now = new Date();
-  const month = now.getMonth() + 1;
-  const year = now.getFullYear();
+  const { month, year } = getCurrentFinancialMonth(now);
 
   // Fetch all data server-side
   const [stats, categoryData, monthlyData, profiles, sharedFundStats] = await Promise.all([

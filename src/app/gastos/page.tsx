@@ -3,14 +3,14 @@ export const dynamic = 'force-dynamic';
 import AppLayout from '@/components/layout/AppLayout';
 import GastosClient from './GastosClient';
 import { getExpenses, getCategories } from '@/actions/expenses';
+import { getCurrentFinancialMonth } from '@/lib/dateUtils';
 
 export default async function GastosPage() {
   const now = new Date();
+  const { month, year } = getCurrentFinancialMonth(now);
+
   const [expenses, categories] = await Promise.all([
-    getExpenses({
-      month: now.getMonth() + 1,
-      year: now.getFullYear(),
-    }),
+    getExpenses({ month, year }),
     getCategories(),
   ]);
 
