@@ -2,7 +2,9 @@ import { prisma } from './src/lib/prisma';
 
 async function seedSavings() {
   const account = await prisma.account.findFirst();
+  if (!account) return;
   const tania = await prisma.profile.findFirst({ where: { accountId: account.id, name: 'Tania' } });
+  if (!tania) return;
 
   // Ualá USD
   const goalUSD = await prisma.savingsGoal.create({
