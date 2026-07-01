@@ -1,10 +1,11 @@
 'use client';
-
+import { formatCurrency } from '@/lib/formatUtils';
 import { useState, useTransition } from 'react';
 import { useProfile } from '@/hooks/useProfile';
 import { createExpense, deleteExpense } from '@/actions/expenses';
 import toast from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface Category {
   id: string;
@@ -37,6 +38,9 @@ export default function GastosClient({ initialExpenses, categories }: GastosClie
   const [isPending, startTransition] = useTransition();
   const [filterType, setFilterType] = useState<string>('');
   const router = useRouter();
+  
+  // Animation state
+  const [animatingExpense, setAnimatingExpense] = useState(false);
 
   // Form state
   const [amount, setAmount] = useState('');
@@ -108,6 +112,11 @@ export default function GastosClient({ initialExpenses, categories }: GastosClie
 
       if (result.success) {
         toast.success('Gasto registrado');
+        
+        // Trigger subtle animation
+        setAnimatingExpense(true);
+        setTimeout(() => setAnimatingExpense(false), 1500);
+
         setAmount('');
         setDescription('');
         setCategoryId('');
@@ -138,7 +147,7 @@ export default function GastosClient({ initialExpenses, categories }: GastosClie
     : initialExpenses;
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in relative">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl lg:text-3xl font-bold text-text-primary">Gastos</h1>
@@ -394,7 +403,7 @@ export default function GastosClient({ initialExpenses, categories }: GastosClie
               <div className="flex items-center gap-3">
                 <div className="text-right">
                   <p className="text-sm font-bold text-danger">
-                    -${expense.amount.toLocaleString('es-AR')}
+                    -${formatCurrency(expense.amount)}
                   </p>
                   <p className="text-xs text-text-muted">{expense.currency}</p>
                 </div>
@@ -409,6 +418,23 @@ export default function GastosClient({ initialExpenses, categories }: GastosClie
           ))
         )}
       </div>
+
+      {/* Expense Animation Overlay */}
+      <AnimatePresence>
+        {animatingExpense && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.5 }}
+            animate={{ opacity: 1, y: -100, scale: 1.2 }}
+            exit={{ opacity: 0, y: -200, scale: 1 }}
+            transition={{ duration: 1.2, ease: "easeOut" }}
+            className="fixed inset-0 pointer-events-none flex items-center justify-center z-50"
+          >
+            <div className="bg-danger/20 text-danger p-6 rounded-full shadow-2xl shadow-danger/50 backdrop-blur-md text-6xl">
+              💸
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

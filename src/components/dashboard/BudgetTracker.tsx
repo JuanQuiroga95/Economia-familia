@@ -1,4 +1,5 @@
 'use client';
+import { formatCurrency } from '@/lib/formatUtils';
 
 import type { BudgetStatus } from '@/types';
 
@@ -53,19 +54,19 @@ export default function BudgetTracker({ status }: { status: BudgetStatus | null 
         <div>
           <p className="text-xs text-text-muted">Presupuesto</p>
           <p className="text-sm font-bold text-text-primary">
-            ${status.budget.toLocaleString('es-AR')}
+            ${formatCurrency(status.budget)}
           </p>
         </div>
         <div>
           <p className="text-xs text-text-muted">Gastado</p>
           <p className={`text-sm font-bold ${colors.text}`}>
-            ${status.spent.toLocaleString('es-AR')}
+            ${formatCurrency(status.spent)}
           </p>
         </div>
         <div>
           <p className="text-xs text-text-muted">Disponible</p>
           <p className={`text-sm font-bold ${status.remaining < 0 ? 'text-danger' : 'text-success'}`}>
-            ${status.remaining.toLocaleString('es-AR')}
+            ${formatCurrency(status.remaining)}
           </p>
         </div>
       </div>

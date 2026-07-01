@@ -1,4 +1,5 @@
 'use client';
+import { formatCurrency } from '@/lib/formatUtils';
 
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import type { CategoryBreakdown } from '@/types';
@@ -47,7 +48,7 @@ export default function CategoryPieChart({ data }: { data: CategoryBreakdown[] }
                 }}
                 formatter={(value: any) => {
                   const numValue = typeof value === 'number' ? value : 0;
-                  return [`$${numValue.toLocaleString('es-AR')}`, ''];
+                  return [`$${formatCurrency(numValue)}`, ''];
                 }}
               />
             </PieChart>

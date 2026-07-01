@@ -1,5 +1,5 @@
 'use client';
-
+import { formatCurrency } from '@/lib/formatUtils';
 import { useState, useTransition } from 'react';
 import { useProfile } from '@/hooks/useProfile';
 import { createInvestment, deleteInvestment } from '@/actions/investments';
@@ -109,7 +109,7 @@ export default function InversionesClient({ initialInvestments }: { initialInves
           {Object.entries(totalByCurrency).map(([cur, total]) => (
             <div key={cur} className="glass-card p-4">
               <p className="text-xs text-text-muted">Total {cur}</p>
-              <p className="text-lg font-bold text-accent">${total.toLocaleString('es-AR')}</p>
+              <p className="text-lg font-bold text-accent">${formatCurrency(total)}</p>
             </div>
           ))}
         </div>
@@ -199,7 +199,7 @@ export default function InversionesClient({ initialInvestments }: { initialInves
               </div>
               <div className="flex items-center gap-3">
                 <div className="text-right">
-                  <p className="text-sm font-bold text-accent">${inv.amount.toLocaleString('es-AR')}</p>
+                  <p className="text-sm font-bold text-accent">${formatCurrency(inv.amount)}</p>
                   <p className="text-xs text-text-muted">{inv.currency}</p>
                 </div>
                 <button

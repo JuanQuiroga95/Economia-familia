@@ -4,7 +4,10 @@ import IncomeVsExpenseChart from '@/components/dashboard/IncomeVsExpenseChart';
 import CategoryPieChart from '@/components/dashboard/CategoryPieChart';
 import BudgetTracker from '@/components/dashboard/BudgetTracker';
 import SharedFundCard from '@/components/dashboard/SharedFundCard';
-import type { BudgetStatus, CategoryBreakdown, SharedFundStats } from '@/types';
+import UserExpenseChart from '@/components/dashboard/UserExpenseChart';
+import CategoryBudgetProgress from '@/components/dashboard/CategoryBudgetProgress';
+import type { BudgetStatus, CategoryBreakdown, SharedFundStats, UserExpenseBreakdown, CategoryBudgetStatus } from '@/types';
+import { formatCurrency } from '@/lib/formatUtils';
 
 interface DashboardClientProps {
   stats: { totalIncome: number; totalExpenses: number; balance: number };
@@ -15,6 +18,8 @@ interface DashboardClientProps {
   profiles: { id: string; name: string; avatar: string | null }[];
   currentMonth: number;
   currentYear: number;
+  userExpenseBreakdown: UserExpenseBreakdown[];
+  categoryBudgets: CategoryBudgetStatus[];
 }
 
 const monthNames = [
@@ -30,6 +35,8 @@ export default function DashboardClient({
   sharedFundStats,
   currentMonth,
   currentYear,
+  userExpenseBreakdown,
+  categoryBudgets,
 }: DashboardClientProps) {
 
   return (
@@ -55,7 +62,7 @@ export default function DashboardClient({
             <div>
               <p className="text-xs text-text-muted">Ingresos</p>
               <p className="text-xl font-bold text-success">
-                ${stats.totalIncome.toLocaleString('es-AR')}
+                ${formatCurrency(stats.totalIncome)}
               </p>
             </div>
           </div>
@@ -70,7 +77,7 @@ export default function DashboardClient({
             <div>
               <p className="text-xs text-text-muted">Gastos</p>
               <p className="text-xl font-bold text-danger">
-                ${stats.totalExpenses.toLocaleString('es-AR')}
+                ${formatCurrency(stats.totalExpenses)}
               </p>
             </div>
           </div>
@@ -89,12 +96,17 @@ export default function DashboardClient({
               <p className={`text-xl font-bold ${
                 stats.balance >= 0 ? 'text-accent' : 'text-danger'
               }`}>
-                ${stats.balance.toLocaleString('es-AR')}
+                ${formatCurrency(stats.balance)}
               </p>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Category Budgets */}
+      {categoryBudgets && categoryBudgets.length > 0 && (
+        <CategoryBudgetProgress budgets={categoryBudgets} />
+      )}
 
       {/* Budget Trackers (for all profiles with active budget) */}
       {budgetStatuses.map((status) => (
@@ -106,6 +118,7 @@ export default function DashboardClient({
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <UserExpenseChart data={userExpenseBreakdown} />
         <IncomeVsExpenseChart data={monthlyData} />
         <CategoryPieChart data={categoryData} />
       </div>

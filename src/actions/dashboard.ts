@@ -302,3 +302,91 @@ export async function getSharedFundStats(month: number, year: number): Promise<S
     return { totalSharedExpenses: 0, debts: [], currency: 'ARS' };
   }
 }
+
+export async function getUserExpenseBreakdown(month: number, year: number): Promise<import('@/types').UserExpenseBreakdown[]> {
+  try {
+    const { startDate, endDate } = getFinancialMonthRange(month, year);
+    const accountId = await getAccountId();
+    if (!accountId) throw new Error('No account id');
+
+    const expenses = await prisma.expense.findMany({
+      where: {
+        date: { gte: startDate, lte: endDate },
+        profile: { accountId },
+      },
+      include: { profile: true },
+    });
+
+    const breakdownMap = new Map<string, { total: number; color: string }>();
+    const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+
+    expenses.forEach((exp) => {
+      let key = '';
+      let color = '';
+      
+      if (exp.type === 'COMPARTIDO') {
+        key = 'Compartido';
+        color = '#8b5cf6'; // violeta
+      } else {
+        key = `Propios ${exp.profile.name}`;
+        color = exp.profile.name === 'Juan' ? '#3b82f6' : (exp.profile.name === 'Tania' ? '#ec4899' : '#14b8a6');
+      }
+
+      const existing = breakdownMap.get(key) || { total: 0, color };
+      existing.total += exp.amount;
+      breakdownMap.set(key, existing);
+    });
+
+    return Array.from(breakdownMap.entries()).map(([name, data]) => ({
+      name,
+      total: data.total,
+      percentage: totalExpenses > 0 ? (data.total / totalExpenses) * 100 : 0,
+      color: data.color,
+    }));
+
+  } catch (error) {
+    console.error('Error fetching user breakdown:', error);
+    return [];
+  }
+}
+
+export async function getCategoryBudgetStatuses(month: number, year: number): Promise<import('@/types').CategoryBudgetStatus[]> {
+  try {
+    const { startDate, endDate } = getFinancialMonthRange(month, year);
+    const accountId = await getAccountId();
+    if (!accountId) throw new Error('No account id');
+
+    const budgets = await prisma.categoryBudget.findMany({
+      where: { accountId, month, year },
+      include: { category: true },
+    });
+
+    const expenses = await prisma.expense.groupBy({
+      by: ['categoryId'],
+      where: {
+        date: { gte: startDate, lte: endDate },
+        profile: { accountId },
+      },
+      _sum: { amount: true },
+    });
+
+    const spentMap = new Map(expenses.map(e => [e.categoryId, e._sum.amount || 0]));
+
+    return budgets.map(b => {
+      const spent = spentMap.get(b.categoryId) || 0;
+      return {
+        categoryId: b.categoryId,
+        categoryName: b.category.name,
+        categoryIcon: b.category.icon,
+        categoryColor: b.category.color,
+        budget: b.amount,
+        spent,
+        percentage: b.amount > 0 ? (spent / b.amount) * 100 : 0,
+      };
+    }).sort((a, b) => b.percentage - a.percentage); // Ordenar por mayor porcentaje consumido
+
+  } catch (error) {
+    console.error('Error fetching category budgets:', error);
+    return [];
+  }
+}

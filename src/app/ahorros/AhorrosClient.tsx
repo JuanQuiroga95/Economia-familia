@@ -1,5 +1,5 @@
 'use client';
-
+import { formatCurrency } from '@/lib/formatUtils';
 import { useState, useTransition } from 'react';
 import { useProfile } from '@/hooks/useProfile';
 import { createSavingsGoal, addSavingsTransaction, deleteSavingsGoal, distributeSurplus } from '@/actions/savings';
@@ -271,7 +271,7 @@ export default function AhorrosClient({ initialGoals, patrimonio }: AhorrosClien
                   <div key={cur} className="p-4 rounded-xl bg-gradient-to-br from-accent/10 to-purple-500/10 border border-accent/20">
                     <p className="text-xs text-text-muted">{currencyFlags[cur] || '💱'} {cur}</p>
                     <p className="text-2xl font-bold text-accent mt-1">
-                      ${total.toLocaleString('es-AR')}
+                      ${formatCurrency(total)}
                     </p>
                   </div>
                 ))}
@@ -294,7 +294,7 @@ export default function AhorrosClient({ initialGoals, patrimonio }: AhorrosClien
                     total > 0 && (
                       <div key={cur} className="flex items-center justify-between p-3 rounded-xl bg-bg-input">
                         <span className="text-sm text-text-secondary">{currencyFlags[cur]} {cur}</span>
-                        <span className="text-sm font-bold text-success">${total.toLocaleString('es-AR')}</span>
+                        <span className="text-sm font-bold text-success">${formatCurrency(total)}</span>
                       </div>
                     )
                   ))}
@@ -317,7 +317,7 @@ export default function AhorrosClient({ initialGoals, patrimonio }: AhorrosClien
                     total > 0 && (
                       <div key={cur} className="flex items-center justify-between p-3 rounded-xl bg-bg-input">
                         <span className="text-sm text-text-secondary">{currencyFlags[cur]} {cur}</span>
-                        <span className="text-sm font-bold text-accent">${total.toLocaleString('es-AR')}</span>
+                        <span className="text-sm font-bold text-accent">${formatCurrency(total)}</span>
                       </div>
                     )
                   ))}
@@ -345,7 +345,7 @@ export default function AhorrosClient({ initialGoals, patrimonio }: AhorrosClien
                     <div className="flex items-center gap-2">
                       <span className="text-sm text-text-secondary">{currencyFlags[cur]} {cur}</span>
                       <span className={`text-sm font-bold ${surplus >= 0 ? 'text-success' : 'text-danger'}`}>
-                        {surplus >= 0 ? '+' : ''}${surplus.toLocaleString('es-AR')}
+                        {surplus >= 0 ? '+' : ''}${formatCurrency(surplus)}
                       </span>
                     </div>
                     {surplus > 0 && (
@@ -414,10 +414,10 @@ export default function AhorrosClient({ initialGoals, patrimonio }: AhorrosClien
                       <>
                         <div className="flex justify-between text-sm mb-1">
                           <span className="text-text-secondary">
-                            ${goal.currentAmount.toLocaleString('es-AR')}
+                            ${formatCurrency(goal.currentAmount)}
                           </span>
                           <span className="text-text-muted">
-                            de ${goal.targetAmount.toLocaleString('es-AR')}
+                            de ${formatCurrency(goal.targetAmount)}
                           </span>
                         </div>
                         <div className="w-full h-3 bg-bg-input rounded-full overflow-hidden">
@@ -432,7 +432,7 @@ export default function AhorrosClient({ initialGoals, patrimonio }: AhorrosClien
                       <div className="flex items-center justify-between p-3 rounded-xl bg-bg-input">
                         <span className="text-sm text-text-secondary">Saldo actual</span>
                         <span className="text-lg font-bold text-accent">
-                          ${goal.currentAmount.toLocaleString('es-AR')}
+                          ${formatCurrency(goal.currentAmount)}
                         </span>
                       </div>
                     )}
@@ -512,7 +512,7 @@ export default function AhorrosClient({ initialGoals, patrimonio }: AhorrosClien
             
             <form onSubmit={handleDistributeSurplus} className="p-4 space-y-4">
               <p className="text-sm text-text-secondary">
-                Tenés un sobrante de <strong className="text-accent">${distributeModal.amount.toLocaleString('es-AR')}</strong> este mes. ¿Dónde querés guardarlo?
+                Tenés un sobrante de <strong className="text-accent">${formatCurrency(distributeModal.amount)}</strong> este mes. ¿Dónde querés guardarlo?
               </p>
               
               <div>

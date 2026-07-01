@@ -20,6 +20,8 @@ model Account {
   splitMode     SplitMode @default(FONDO_COMUN)
   splitPercentA Float     @default(50) // % del primer perfil (orden alfabético)
   splitPercentB Float     @default(50) // % del segundo perfil
+
+  categoryBudgets CategoryBudget[]
 }
 
 enum SplitMode {
@@ -55,6 +57,7 @@ model Category {
   accountId String?
   account   Account?  @relation(fields: [accountId], references: [id], onDelete: Cascade)
   expenses  Expense[]
+  categoryBudgets CategoryBudget[]
 }
 
 model Income {
@@ -180,4 +183,17 @@ model BudgetConfig {
   isActive        Boolean @default(true)
 
   @@unique([profileId])
+}
+
+model CategoryBudget {
+  id         String   @id @default(cuid())
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  accountId  String
+  account    Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  month      Int
+  year       Int
+  amount     Float    // Límite mensual
+
+  @@unique([categoryId, month, year])
 }

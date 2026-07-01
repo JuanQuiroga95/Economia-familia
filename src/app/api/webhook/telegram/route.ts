@@ -1,3 +1,4 @@
+import { formatCurrency } from '@/lib/formatUtils';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import Groq from 'groq-sdk';
@@ -157,7 +158,7 @@ async function getBudgetRemaining(profileId: string): Promise<string> {
     const spent = expenses._sum?.amount || 0;
     const remaining = budget - spent;
 
-    return `\n💰 Quincena ${half}: $${remaining.toLocaleString('es-AR')} restante de $${budget.toLocaleString('es-AR')}`;
+    return `\n💰 Quincena ${half}: $${formatCurrency(remaining)} restante de $${formatCurrency(budget)}`;
   } catch {
     return '';
   }
@@ -335,7 +336,7 @@ export async function POST(request: NextRequest) {
       await sendTelegramMessage(
         chatId,
         `✅ <b>Ingreso registrado</b>\n\n` +
-          `${emoji} Monto: <b>$${parsed.monto.toLocaleString('es-AR')}</b> ${parsed.moneda}\n` +
+          `${emoji} Monto: <b>$${formatCurrency(parsed.monto)}</b> ${parsed.moneda}\n` +
           `📝 Descripción: ${parsed.descripcion}\n` +
           `👤 Perfil: ${targetProfile.name}`
       );
@@ -365,7 +366,7 @@ export async function POST(request: NextRequest) {
       await sendTelegramMessage(
         chatId,
         `✅ <b>Gasto registrado</b>\n\n` +
-          `💸 Monto: <b>$${parsed.monto.toLocaleString('es-AR')}</b> ${parsed.moneda}\n` +
+          `💸 Monto: <b>$${formatCurrency(parsed.monto)}</b> ${parsed.moneda}\n` +
           `📂 Categoría: ${matchedCategory.icon} ${matchedCategory.name}\n` +
           `📝 ${parsed.descripcion}\n` +
           `${tipoLabel} · ${targetProfile.name}` +

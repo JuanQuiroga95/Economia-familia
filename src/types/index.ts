@@ -23,6 +23,23 @@ export interface CategoryBreakdown {
   percentage: number;
 }
 
+export interface UserExpenseBreakdown {
+  name: string; // Ej: 'Juan', 'Tania', 'Compartido'
+  total: number;
+  percentage: number;
+  color: string;
+}
+
+export interface CategoryBudgetStatus {
+  categoryId: string;
+  categoryName: string;
+  categoryIcon: string;
+  categoryColor: string;
+  budget: number;
+  spent: number;
+  percentage: number;
+}
+
 export interface BudgetStatus {
   profileId: string;
   profileName: string;

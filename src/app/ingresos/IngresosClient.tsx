@@ -1,10 +1,11 @@
 'use client';
-
+import { formatCurrency } from '@/lib/formatUtils';
 import { useState, useTransition } from 'react';
 import { useProfile } from '@/hooks/useProfile';
 import { createIncome, deleteIncome } from '@/actions/income';
 import toast from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
+import confetti from 'canvas-confetti';
 
 interface Income {
   id: string;
@@ -40,6 +41,33 @@ export default function IngresosClient({ initialIncomes }: IngresosClientProps) 
   const [date, setDate] = useState(getLocalDateString());
   const [description, setDescription] = useState('');
 
+  const triggerConfetti = () => {
+    const duration = 3000;
+    const end = Date.now() + duration;
+
+    const frame = () => {
+      confetti({
+        particleCount: 5,
+        angle: 60,
+        spread: 55,
+        origin: { x: 0 },
+        colors: ['#26ff52', '#a8ff78']
+      });
+      confetti({
+        particleCount: 5,
+        angle: 120,
+        spread: 55,
+        origin: { x: 1 },
+        colors: ['#26ff52', '#a8ff78']
+      });
+
+      if (Date.now() < end) {
+        requestAnimationFrame(frame);
+      }
+    };
+    frame();
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeProfile) {
@@ -58,6 +86,7 @@ export default function IngresosClient({ initialIncomes }: IngresosClientProps) 
 
       if (result.success) {
         toast.success('Ingreso registrado');
+        triggerConfetti();
         setAmount('');
         setDescription('');
         setShowForm(false);
@@ -106,7 +135,7 @@ export default function IngresosClient({ initialIncomes }: IngresosClientProps) 
         {Object.entries(totalByProfile).map(([name, total]) => (
           <div key={name} className="glass-card p-4">
             <p className="text-xs text-text-muted">{name}</p>
-            <p className="text-lg font-bold text-success">${total.toLocaleString('es-AR')}</p>
+            <p className="text-lg font-bold text-success">${formatCurrency(total)}</p>
           </div>
         ))}
       </div>
@@ -200,7 +229,7 @@ export default function IngresosClient({ initialIncomes }: IngresosClientProps) 
               <div className="flex items-center gap-3">
                 <div className="text-right">
                   <p className="text-sm font-bold text-success">
-                    +${income.amount.toLocaleString('es-AR')}
+                    +${formatCurrency(income.amount)}
                   </p>
                   <p className="text-xs text-text-muted">{income.currency}</p>
                 </div>

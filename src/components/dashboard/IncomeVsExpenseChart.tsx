@@ -1,4 +1,5 @@
 'use client';
+import { formatCurrency } from '@/lib/formatUtils';
 
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 
@@ -44,7 +45,7 @@ export default function IncomeVsExpenseChart({ data }: { data: MonthData[] }) {
               }}
               formatter={(value: any) => {
                 const numValue = typeof value === 'number' ? value : 0;
-                return [`$${numValue.toLocaleString('es-AR')}`, ''];
+                return [`$${formatCurrency(numValue)}`, ''];
               }}
             />
             <Legend

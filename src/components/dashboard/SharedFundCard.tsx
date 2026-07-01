@@ -1,4 +1,5 @@
 'use client';
+import { formatCurrency } from '@/lib/formatUtils';
 
 import type { SharedFundStats } from '@/types';
 
@@ -25,7 +26,7 @@ export default function SharedFundCard({ stats }: { stats: SharedFundStats }) {
         <div className="flex items-center justify-between">
           <span className="text-sm text-text-secondary">Total gastado en conjunto</span>
           <span className="text-lg font-bold text-text-primary">
-            ${stats.totalSharedExpenses.toLocaleString('es-AR')}
+            ${formatCurrency(stats.totalSharedExpenses)}
           </span>
         </div>
       </div>
@@ -54,7 +55,7 @@ export default function SharedFundCard({ stats }: { stats: SharedFundStats }) {
                   </div>
                 </div>
                 <span className="text-lg font-bold text-warning">
-                  ${debt.amount.toLocaleString('es-AR')}
+                  ${formatCurrency(debt.amount)}
                 </span>
               </div>
             ))}
