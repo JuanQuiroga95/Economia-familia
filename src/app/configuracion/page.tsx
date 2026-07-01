@@ -12,7 +12,7 @@ export default async function ConfiguracionPage() {
   const accountId = await getAccountId();
 
   if (!accountId) {
-    redirect('/api/auth/signout');
+    redirect('/logout');
   }
 
   const [exchangeRates, categories, budgetConfigs, account, profiles] = await Promise.all([

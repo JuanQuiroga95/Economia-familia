@@ -15,7 +15,7 @@ export default async function DashboardPage() {
   const accountId = await getAccountId();
 
   if (!accountId) {
-    redirect('/api/auth/signout');
+    redirect('/logout');
   }
 
   // Fetch all data server-side
