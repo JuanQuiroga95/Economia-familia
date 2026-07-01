@@ -84,7 +84,12 @@ export async function deleteExpense(id: string) {
 
 export async function getCategories() {
   try {
-    return await prisma.category.findMany({ orderBy: { name: 'asc' } });
+    const { getAccountId } = require('@/lib/session');
+    const accountId = await getAccountId();
+    return await prisma.category.findMany({
+      where: accountId ? { accountId } : {},
+      orderBy: { name: 'asc' },
+    });
   } catch (error) {
     console.error('Error fetching categories:', error);
     return [];

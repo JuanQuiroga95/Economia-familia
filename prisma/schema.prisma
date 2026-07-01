@@ -6,10 +6,33 @@ datasource db {
   provider = "postgresql"
 }
 
+model Account {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  password  String   // Hash bcrypt
+  label     String   // Ej: "Juan & Tania", "Edu & Mai"
+  createdAt DateTime @default(now())
+
+  profiles   Profile[]
+  categories Category[]
+
+  // Configuración de gastos compartidos
+  splitMode     SplitMode @default(FONDO_COMUN)
+  splitPercentA Float     @default(50) // % del primer perfil (orden alfabético)
+  splitPercentB Float     @default(50) // % del segundo perfil
+}
+
+enum SplitMode {
+  FONDO_COMUN
+  PORCENTAJE
+}
+
 model Profile {
   id        String   @id @default(cuid())
-  name      String   @unique
+  name      String
   avatar    String?
+  accountId String
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
 
   incomes             Income[]
@@ -18,14 +41,20 @@ model Profile {
   savingsGoals        SavingsGoal[]
   investments         Investment[]
   budgetConfigs       BudgetConfig[]
+
+  @@unique([name, accountId])
 }
 
 model Category {
-  id       String    @id @default(cuid())
-  name     String    @unique
-  icon     String    @default("📦")
-  color    String    @default("#6366f1")
-  expenses Expense[]
+  id        String    @id @default(cuid())
+  name      String
+  icon      String    @default("📦")
+  color     String    @default("#6366f1")
+  accountId String
+  account   Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  expenses  Expense[]
+
+  @@unique([name, accountId])
 }
 
 model Income {

@@ -119,10 +119,16 @@ export async function distributeSurplus(data: {
 }) {
   try {
     // 1. Buscar o crear la categoría de Ahorro/Inversión
-    let category = await prisma.category.findUnique({ where: { name: 'Ahorro / Inversión' } });
+    const { getAccountId } = require('@/lib/session');
+    const accountId = await getAccountId();
+    if (!accountId) return { success: false, error: 'No autenticado' };
+
+    let category = await prisma.category.findUnique({
+      where: { name_accountId: { name: 'Ahorro / Inversión', accountId } },
+    });
     if (!category) {
       category = await prisma.category.create({
-        data: { name: 'Ahorro / Inversión', icon: '🏦', color: '#10b981' }, // Verde
+        data: { name: 'Ahorro / Inversión', icon: '🏦', color: '#10b981', accountId },
       });
     }
 

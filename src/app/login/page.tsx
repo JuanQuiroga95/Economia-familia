@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -18,7 +18,7 @@ export default function LoginPage() {
 
     try {
       const result = await signIn('credentials', {
-        email,
+        username,
         password,
         redirect: false,
       });
@@ -58,16 +58,16 @@ export default function LoginPage() {
           style={{ animationDelay: '0.1s' }}
         >
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-text-secondary mb-2">
-              Email
+            <label htmlFor="username" className="block text-sm font-medium text-text-secondary mb-2">
+              Usuario
             </label>
             <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              id="username"
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
               className="input-field"
-              placeholder="tu@email.com"
+              placeholder="tu_usuario"
               required
             />
           </div>
@@ -110,7 +110,7 @@ export default function LoginPage() {
         </form>
 
         <p className="text-center text-text-muted text-xs mt-6">
-          Juan & Tania • {new Date().getFullYear()}
+          EconoApp • {new Date().getFullYear()}
         </p>
       </div>
     </div>

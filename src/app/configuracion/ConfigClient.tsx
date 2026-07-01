@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { upsertExchangeRate, createCategory, deleteCategory, updateBudgetConfig } from '@/actions/config';
+import { upsertExchangeRate, createCategory, deleteCategory, updateBudgetConfig, updateSplitMode } from '@/actions/config';
 import toast from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
 
@@ -26,18 +26,29 @@ interface BudgetConfig {
   profileId: string;
   firstHalfBudget: number;
   secondHalfBudget: number;
+  isActive: boolean;
   profile: { id: string; name: string };
+}
+
+interface ProfileData {
+  id: string;
+  name: string;
+  avatar: string | null;
 }
 
 interface ConfigClientProps {
   exchangeRates: ExchangeRate[];
   categories: Category[];
   budgetConfigs: BudgetConfig[];
+  profiles: ProfileData[];
+  splitMode: string;
+  splitPercentA: number;
+  splitPercentB: number;
 }
 
 const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
-export default function ConfigClient({ exchangeRates, categories, budgetConfigs }: ConfigClientProps) {
+export default function ConfigClient({ exchangeRates, categories, budgetConfigs, profiles, splitMode: initialSplitMode, splitPercentA: initialPercentA, splitPercentB: initialPercentB }: ConfigClientProps) {
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
   const now = new Date();
@@ -54,6 +65,11 @@ export default function ConfigClient({ exchangeRates, categories, budgetConfigs 
   const [catName, setCatName] = useState('');
   const [catIcon, setCatIcon] = useState('📦');
   const [catColor, setCatColor] = useState('#6366f1');
+
+  // Split mode
+  const [splitMode, setSplitMode] = useState(initialSplitMode);
+  const [percentA, setPercentA] = useState(initialPercentA.toString());
+  const [percentB, setPercentB] = useState(initialPercentB.toString());
 
   const handleExchangeRate = (e: React.FormEvent) => {
     e.preventDefault();
@@ -90,23 +106,39 @@ export default function ConfigClient({ exchangeRates, categories, budgetConfigs 
     });
   };
 
-  const handleBudgetUpdate = (config: BudgetConfig, first: string, second: string) => {
+  const handleBudgetUpdate = (profileId: string, first: string, second: string, isActive: boolean) => {
     startTransition(async () => {
       const result = await updateBudgetConfig({
-        profileId: config.profileId,
-        firstHalfBudget: parseFloat(first),
-        secondHalfBudget: parseFloat(second),
+        profileId,
+        firstHalfBudget: parseFloat(first) || 0,
+        secondHalfBudget: parseFloat(second) || 0,
+        isActive,
       });
       if (result.success) { toast.success('Presupuesto actualizado'); router.refresh(); }
       else { toast.error(result.error || 'Error'); }
     });
   };
 
+  const handleSplitMode = () => {
+    startTransition(async () => {
+      const result = await updateSplitMode({
+        splitMode: splitMode as 'FONDO_COMUN' | 'PORCENTAJE',
+        splitPercentA: parseFloat(percentA) || 50,
+        splitPercentB: parseFloat(percentB) || 50,
+      });
+      if (result.success) { toast.success('Modo de división actualizado'); router.refresh(); }
+      else { toast.error(result.error || 'Error'); }
+    });
+  };
+
+  // Sort profiles alphabetically for consistent A/B assignment
+  const sortedProfiles = [...profiles].sort((a, b) => a.name.localeCompare(b.name));
+
   return (
     <div className="space-y-8 animate-fade-in">
       <div>
         <h1 className="text-2xl lg:text-3xl font-bold text-text-primary">Configuración</h1>
-        <p className="text-text-muted text-sm mt-1">Tipo de cambio, categorías y presupuestos</p>
+        <p className="text-text-muted text-sm mt-1">Tipo de cambio, categorías, presupuestos y más</p>
       </div>
 
       {/* Exchange Rates */}
@@ -207,43 +239,153 @@ export default function ConfigClient({ exchangeRates, categories, budgetConfigs 
         </div>
       </section>
 
-      {/* Budget Config */}
+      {/* Budget Config - for all profiles */}
       <section className="glass-card p-4 lg:p-6 space-y-4">
         <h2 className="text-lg font-semibold text-text-primary">💳 Presupuesto Quincenal</h2>
-        {budgetConfigs.map((config) => (
-          <BudgetConfigForm key={config.id} config={config} onSave={handleBudgetUpdate} isPending={isPending} />
-        ))}
+        <p className="text-xs text-text-muted">Configurá el límite de gasto para cada integrante. Si no querés límite, dejalo desactivado.</p>
+        {profiles.map((profile) => {
+          const config = budgetConfigs.find((c) => c.profileId === profile.id);
+          return (
+            <BudgetConfigForm
+              key={profile.id}
+              profile={profile}
+              config={config || null}
+              onSave={handleBudgetUpdate}
+              isPending={isPending}
+            />
+          );
+        })}
+      </section>
+
+      {/* Split Mode */}
+      <section className="glass-card p-4 lg:p-6 space-y-4">
+        <h2 className="text-lg font-semibold text-text-primary">🤝 Gastos Compartidos</h2>
+        <p className="text-xs text-text-muted">Elegí cómo se dividen los gastos compartidos entre los integrantes.</p>
+
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => setSplitMode('FONDO_COMUN')}
+            className={`p-4 rounded-xl text-sm font-medium transition-all border ${
+              splitMode === 'FONDO_COMUN'
+                ? 'bg-accent/20 text-accent border-accent/30'
+                : 'bg-bg-input text-text-secondary border-border hover:border-accent/20'
+            }`}
+          >
+            <span className="text-lg block mb-1">🏦</span>
+            Fondo Común
+            <span className="block text-xs text-text-muted mt-1">100% va al fondo compartido</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setSplitMode('PORCENTAJE')}
+            className={`p-4 rounded-xl text-sm font-medium transition-all border ${
+              splitMode === 'PORCENTAJE'
+                ? 'bg-accent/20 text-accent border-accent/30'
+                : 'bg-bg-input text-text-secondary border-border hover:border-accent/20'
+            }`}
+          >
+            <span className="text-lg block mb-1">📊</span>
+            Porcentaje
+            <span className="block text-xs text-text-muted mt-1">Cada uno paga su %</span>
+          </button>
+        </div>
+
+        {splitMode === 'PORCENTAJE' && sortedProfiles.length >= 2 && (
+          <div className="p-3 bg-bg-input rounded-xl space-y-3 animate-fade-in">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-text-muted mb-1">{sortedProfiles[0].name} (%)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={percentA}
+                  onChange={(e) => {
+                    setPercentA(e.target.value);
+                    setPercentB((100 - parseFloat(e.target.value || '0')).toString());
+                  }}
+                  className="input-field"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-text-muted mb-1">{sortedProfiles[1].name} (%)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={percentB}
+                  onChange={(e) => {
+                    setPercentB(e.target.value);
+                    setPercentA((100 - parseFloat(e.target.value || '0')).toString());
+                  }}
+                  className="input-field"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        <button
+          onClick={handleSplitMode}
+          disabled={isPending}
+          className="gradient-btn px-6 py-2 text-sm disabled:opacity-50"
+        >
+          {isPending ? 'Guardando...' : 'Guardar Modo'}
+        </button>
       </section>
     </div>
   );
 }
 
 function BudgetConfigForm({
+  profile,
   config,
   onSave,
   isPending,
 }: {
-  config: BudgetConfig;
-  onSave: (config: BudgetConfig, first: string, second: string) => void;
+  profile: ProfileData;
+  config: BudgetConfig | null;
+  onSave: (profileId: string, first: string, second: string, isActive: boolean) => void;
   isPending: boolean;
 }) {
-  const [first, setFirst] = useState(config.firstHalfBudget.toString());
-  const [second, setSecond] = useState(config.secondHalfBudget.toString());
+  const [first, setFirst] = useState(config?.firstHalfBudget.toString() || '');
+  const [second, setSecond] = useState(config?.secondHalfBudget.toString() || '');
+  const [isActive, setIsActive] = useState(config?.isActive ?? false);
 
   return (
     <div className="p-3 bg-bg-input rounded-xl space-y-3">
-      <p className="text-sm font-medium text-text-secondary">{config.profile.name}</p>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs text-text-muted mb-1">1ra Quincena (ARS)</label>
-          <input type="number" value={first} onChange={(e) => setFirst(e.target.value)} className="input-field" />
-        </div>
-        <div>
-          <label className="block text-xs text-text-muted mb-1">2da Quincena (ARS)</label>
-          <input type="number" value={second} onChange={(e) => setSecond(e.target.value)} className="input-field" />
-        </div>
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium text-text-secondary">{profile.avatar} {profile.name}</p>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <span className="text-xs text-text-muted">{isActive ? 'Activo' : 'Inactivo'}</span>
+          <div
+            className={`relative w-10 h-5 rounded-full transition-colors ${isActive ? 'bg-accent' : 'bg-border'}`}
+            onClick={() => setIsActive(!isActive)}
+          >
+            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${isActive ? 'translate-x-5' : 'translate-x-0.5'}`} />
+          </div>
+        </label>
       </div>
-      <button onClick={() => onSave(config, first, second)} disabled={isPending} className="gradient-btn px-4 py-2 text-sm disabled:opacity-50">
+      {isActive && (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-text-muted mb-1">1ra Quincena (ARS)</label>
+              <input type="number" value={first} onChange={(e) => setFirst(e.target.value)} className="input-field" placeholder="50000" />
+            </div>
+            <div>
+              <label className="block text-xs text-text-muted mb-1">2da Quincena (ARS)</label>
+              <input type="number" value={second} onChange={(e) => setSecond(e.target.value)} className="input-field" placeholder="50000" />
+            </div>
+          </div>
+        </>
+      )}
+      <button
+        onClick={() => onSave(profile.id, first, second, isActive)}
+        disabled={isPending}
+        className="gradient-btn px-4 py-2 text-sm disabled:opacity-50"
+      >
         Guardar
       </button>
     </div>

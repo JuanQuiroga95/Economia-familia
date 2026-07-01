@@ -10,7 +10,7 @@ interface DashboardClientProps {
   stats: { totalIncome: number; totalExpenses: number; balance: number };
   categoryData: CategoryBreakdown[];
   monthlyData: { name: string; ingresos: number; gastos: number }[];
-  budgetStatus: BudgetStatus | null;
+  budgetStatuses: BudgetStatus[];
   sharedFundStats: SharedFundStats;
   profiles: { id: string; name: string; avatar: string | null }[];
   currentMonth: number;
@@ -26,7 +26,7 @@ export default function DashboardClient({
   stats,
   categoryData,
   monthlyData,
-  budgetStatus,
+  budgetStatuses,
   sharedFundStats,
   currentMonth,
   currentYear,
@@ -96,8 +96,10 @@ export default function DashboardClient({
         </div>
       </div>
 
-      {/* Budget Tracker (solo Juan) */}
-      <BudgetTracker status={budgetStatus} />
+      {/* Budget Trackers (for all profiles with active budget) */}
+      {budgetStatuses.map((status) => (
+        <BudgetTracker key={status.profileId} status={status} />
+      ))}
 
       {/* Shared Fund */}
       <SharedFundCard stats={sharedFundStats} />

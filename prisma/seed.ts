@@ -1,29 +1,86 @@
 import { prisma } from '../src/lib/prisma';
+import bcrypt from 'bcryptjs';
 
 async function main() {
-  // Crear perfiles
+  // ==========================================
+  // Cuenta 1: Juan & Tania (contraseña actual)
+  // ==========================================
+  // Use existing password hash from env if available (preserves current credentials)
+  const juantaniaPassword = process.env.MASTER_PASSWORD_HASH || await bcrypt.hash('juantania123', 10);
+
+  const accountJT = await prisma.account.upsert({
+    where: { username: 'juantania' },
+    update: {},
+    create: {
+      username: 'juantania',
+      password: juantaniaPassword,
+      label: 'Juan & Tania',
+    },
+  });
+
   const juan = await prisma.profile.upsert({
-    where: { name: 'Juan' },
+    where: { name_accountId: { name: 'Juan', accountId: accountJT.id } },
     update: {},
     create: {
       name: 'Juan',
       avatar: '👨',
+      accountId: accountJT.id,
     },
   });
 
   const tania = await prisma.profile.upsert({
-    where: { name: 'Tania' },
+    where: { name_accountId: { name: 'Tania', accountId: accountJT.id } },
     update: {},
     create: {
       name: 'Tania',
       avatar: '👩',
+      accountId: accountJT.id,
     },
   });
 
-  console.log('Perfiles creados:', { juan, tania });
+  console.log('Cuenta Juan & Tania creada:', { juan, tania });
 
-  // Crear categorías por defecto
-  const categories = [
+  // ==========================================
+  // Cuenta 2: Edu & Mai
+  // ==========================================
+  const edumaiPassword = await bcrypt.hash('123456', 10);
+
+  const accountEM = await prisma.account.upsert({
+    where: { username: 'edumai' },
+    update: {},
+    create: {
+      username: 'edumai',
+      password: edumaiPassword,
+      label: 'Edu & Mai',
+    },
+  });
+
+  const edu = await prisma.profile.upsert({
+    where: { name_accountId: { name: 'Edu', accountId: accountEM.id } },
+    update: {},
+    create: {
+      name: 'Edu',
+      avatar: '👨',
+      accountId: accountEM.id,
+    },
+  });
+
+  const mai = await prisma.profile.upsert({
+    where: { name_accountId: { name: 'Mai', accountId: accountEM.id } },
+    update: {},
+    create: {
+      name: 'Mai',
+      avatar: '👩',
+      accountId: accountEM.id,
+    },
+  });
+
+  console.log('Cuenta Edu & Mai creada:', { edu, mai });
+
+  // ==========================================
+  // Categorías por defecto (para ambas cuentas)
+  // ==========================================
+  const defaultCategories = [
     { name: 'Supermercado', icon: '🛒', color: '#22c55e' },
     { name: 'Servicios', icon: '💡', color: '#3b82f6' },
     { name: 'Salidas', icon: '🍽️', color: '#f59e0b' },
@@ -36,17 +93,21 @@ async function main() {
     { name: 'Otros', icon: '📦', color: '#6b7280' },
   ];
 
-  for (const cat of categories) {
-    await prisma.category.upsert({
-      where: { name: cat.name },
-      update: {},
-      create: cat,
-    });
+  for (const account of [accountJT, accountEM]) {
+    for (const cat of defaultCategories) {
+      await prisma.category.upsert({
+        where: { name_accountId: { name: cat.name, accountId: account.id } },
+        update: {},
+        create: { ...cat, accountId: account.id },
+      });
+    }
   }
 
-  console.log('Categorías creadas:', categories.length);
+  console.log('Categorías creadas para ambas cuentas');
 
-  // Configurar presupuesto quincenal de Juan
+  // ==========================================
+  // Presupuesto quincenal de Juan
+  // ==========================================
   await prisma.budgetConfig.upsert({
     where: { profileId: juan.id },
     update: {},
@@ -61,7 +122,9 @@ async function main() {
 
   console.log('Presupuesto quincenal de Juan configurado');
 
-  // Crear tipo de cambio inicial (mes actual)
+  // ==========================================
+  // Tipo de cambio inicial
+  // ==========================================
   const now = new Date();
   await prisma.exchangeRate.upsert({
     where: {

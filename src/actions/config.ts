@@ -3,6 +3,7 @@
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import type { ExchangeRateData } from '@/types';
+import { getAccountId } from '@/lib/session';
 
 export async function upsertExchangeRate(data: ExchangeRateData) {
   try {
@@ -66,7 +67,12 @@ export async function getCurrentExchangeRate() {
 // Categorías
 export async function createCategory(data: { name: string; icon: string; color: string }) {
   try {
-    const category = await prisma.category.create({ data });
+    const accountId = await getAccountId();
+    if (!accountId) return { success: false, error: 'No autenticado' };
+
+    const category = await prisma.category.create({
+      data: { ...data, accountId },
+    });
     revalidatePath('/configuracion');
     revalidatePath('/gastos');
     return { success: true, data: category };
@@ -92,6 +98,7 @@ export async function updateBudgetConfig(data: {
   profileId: string;
   firstHalfBudget: number;
   secondHalfBudget: number;
+  isActive?: boolean;
 }) {
   try {
     const config = await prisma.budgetConfig.upsert({
@@ -99,12 +106,13 @@ export async function updateBudgetConfig(data: {
       update: {
         firstHalfBudget: data.firstHalfBudget,
         secondHalfBudget: data.secondHalfBudget,
+        ...(data.isActive !== undefined && { isActive: data.isActive }),
       },
       create: {
         profileId: data.profileId,
         firstHalfBudget: data.firstHalfBudget,
         secondHalfBudget: data.secondHalfBudget,
-        isActive: true,
+        isActive: data.isActive ?? true,
       },
     });
     revalidatePath('/configuracion');
@@ -113,5 +121,32 @@ export async function updateBudgetConfig(data: {
   } catch (error) {
     console.error('Error updating budget config:', error);
     return { success: false, error: 'Error al actualizar presupuesto' };
+  }
+}
+
+// Split Mode Config
+export async function updateSplitMode(data: {
+  splitMode: 'FONDO_COMUN' | 'PORCENTAJE';
+  splitPercentA: number;
+  splitPercentB: number;
+}) {
+  try {
+    const accountId = await getAccountId();
+    if (!accountId) return { success: false, error: 'No autenticado' };
+
+    await prisma.account.update({
+      where: { id: accountId },
+      data: {
+        splitMode: data.splitMode,
+        splitPercentA: data.splitPercentA,
+        splitPercentB: data.splitPercentB,
+      },
+    });
+    revalidatePath('/configuracion');
+    revalidatePath('/dashboard');
+    return { success: true };
+  } catch (error) {
+    console.error('Error updating split mode:', error);
+    return { success: false, error: 'Error al actualizar modo de división' };
   }
 }

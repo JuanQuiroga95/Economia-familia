@@ -5,23 +5,35 @@ import DashboardClient from './DashboardClient';
 import { getDashboardStats, getCategoryBreakdown, getMonthlyComparison, getBudgetStatus, getSharedFundStats } from '@/actions/dashboard';
 import { prisma } from '@/lib/prisma';
 import { getCurrentFinancialMonth, getArgDate } from '@/lib/dateUtils';
+import { getAccountId } from '@/lib/session';
 
 export default async function DashboardPage() {
   const now = getArgDate();
   const { month, year } = getCurrentFinancialMonth(now);
+  const accountId = await getAccountId();
+
+  if (!accountId) {
+    return <div>No autenticado</div>;
+  }
 
   // Fetch all data server-side
-  const [stats, categoryData, monthlyData, profiles, sharedFundStats] = await Promise.all([
+  const profiles = await prisma.profile.findMany({
+    where: { accountId },
+    orderBy: { name: 'asc' },
+  });
+
+  const [stats, categoryData, monthlyData, sharedFundStats] = await Promise.all([
     getDashboardStats(month, year),
     getCategoryBreakdown(month, year),
     getMonthlyComparison(),
-    prisma.profile.findMany(),
     getSharedFundStats(month, year),
   ]);
 
-  // Get budget status for Juan
-  const juanProfile = profiles.find((p) => p.name === 'Juan');
-  const budgetStatus = juanProfile ? await getBudgetStatus(juanProfile.id) : null;
+  // Get budget status for ALL profiles that have an active budget config
+  const budgetStatuses = await Promise.all(
+    profiles.map((p) => getBudgetStatus(p.id))
+  );
+  const activeBudgets = budgetStatuses.filter((b) => b !== null);
 
   return (
     <AppLayout>
@@ -29,7 +41,7 @@ export default async function DashboardPage() {
         stats={stats}
         categoryData={categoryData}
         monthlyData={monthlyData}
-        budgetStatus={budgetStatus}
+        budgetStatuses={activeBudgets}
         sharedFundStats={sharedFundStats}
         profiles={profiles}
         currentMonth={month}

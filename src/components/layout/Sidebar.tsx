@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 
 const navItems = [
   { href: '/dashboard', label: 'Inicio', icon: '🏠' },
@@ -13,6 +14,8 @@ const navItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { data: session } = useSession();
+  const accountLabel = session?.user?.name || 'EconoApp';
 
   return (
     <aside className="hidden lg:flex flex-col w-64 h-screen fixed left-0 top-0 bg-bg-secondary border-r border-border z-40">
@@ -71,9 +74,10 @@ export default function Sidebar() {
       {/* Footer */}
       <div className="p-4 border-t border-border">
         <p className="text-xs text-text-muted text-center">
-          Juan & Tania © {new Date().getFullYear()}
+          {accountLabel} © {new Date().getFullYear()}
         </p>
       </div>
     </aside>
   );
 }
+

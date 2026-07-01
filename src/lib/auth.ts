@@ -1,49 +1,65 @@
 import type { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import bcrypt from 'bcryptjs';
+import { prisma } from '@/lib/prisma';
 
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
       name: 'Credentials',
       credentials: {
-        email: { label: 'Email', type: 'email' },
+        username: { label: 'Usuario', type: 'text' },
         password: { label: 'Contraseña', type: 'password' },
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) {
+        if (!credentials?.username || !credentials?.password) {
           return null;
         }
 
-        const masterEmail = process.env.MASTER_EMAIL;
-        const masterPasswordHash = process.env.MASTER_PASSWORD_HASH;
+        try {
+          const account = await prisma.account.findUnique({
+            where: { username: credentials.username },
+          });
 
-        if (!masterEmail || !masterPasswordHash) {
-          console.error('MASTER_EMAIL or MASTER_PASSWORD_HASH not set');
+          if (!account) {
+            return null;
+          }
+
+          const isValid = await bcrypt.compare(
+            credentials.password,
+            account.password
+          );
+
+          if (!isValid) {
+            return null;
+          }
+
+          return {
+            id: account.id,
+            name: account.label,
+            email: account.username, // NextAuth requires email field, we use username
+          };
+        } catch (error) {
+          console.error('Auth error:', error);
           return null;
         }
-
-        if (credentials.email !== masterEmail) {
-          return null;
-        }
-
-        const isValid = await bcrypt.compare(
-          credentials.password,
-          masterPasswordHash
-        );
-
-        if (!isValid) {
-          return null;
-        }
-
-        return {
-          id: '1',
-          email: masterEmail,
-          name: 'Admin',
-        };
       },
     }),
   ],
+  callbacks: {
+    async jwt({ token, user }) {
+      if (user) {
+        token.accountId = user.id;
+      }
+      return token;
+    },
+    async session({ session, token }) {
+      if (session.user) {
+        (session.user as Record<string, unknown>).accountId = token.accountId;
+      }
+      return session;
+    },
+  },
   session: {
     strategy: 'jwt',
     maxAge: 30 * 24 * 60 * 60, // 30 días
