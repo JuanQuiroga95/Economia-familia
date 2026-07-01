@@ -111,9 +111,10 @@ export async function getCategoryBreakdown(
 export async function getMonthlyComparison(profileId?: string) {
   try {
     const current = getCurrentFinancialMonth(getArgDate());
-    const data = [];
+    const months = [];
     const accountId = await getAccountId();
     if (!accountId) throw new Error('No account id');
+
     
     const currentMonth = current.month;
     const currentYear = current.year;
@@ -250,7 +251,7 @@ export async function getSharedFundStats(month: number, year: number): Promise<S
     });
 
     if (!account || account.profiles.length < 2) {
-      return { totalShared: 0, profileA: { name: 'A', paid: 0, owes: 0 }, profileB: { name: 'B', paid: 0, owes: 0 } };
+      return { totalSharedExpenses: 0, debts: [], currency: 'ARS' };
     }
 
     const [profileA, profileB] = account.profiles.sort((a, b) => a.name.localeCompare(b.name));
