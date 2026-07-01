@@ -49,18 +49,12 @@ export async function getExchangeRates() {
 
 export async function fetchLiveExchangeRates() {
   try {
-    const [usdRes, eurRes] = await Promise.all([
-      fetch('https://dolarapi.com/v1/dolares/blue', { next: { revalidate: 3600 } }),
-      fetch('https://dolarapi.com/v1/euros/blue', { next: { revalidate: 3600 } })
-    ]);
-    
-    if (!usdRes.ok || !eurRes.ok) throw new Error('API fetching failed');
+    const res = await fetch('https://api.bluelytics.com.ar/v2/latest', { next: { revalidate: 3600 } });
+    if (!res.ok) throw new Error('API fetching failed');
 
-    const usdData = await usdRes.json();
-    const eurData = await eurRes.json();
-
-    const usdToArs = usdData.venta;
-    const eurToArs = eurData.venta;
+    const data = await res.json();
+    const usdToArs = data.blue.value_sell;
+    const eurToArs = data.blue_euro.value_sell;
     const eurToUsd = Number((eurToArs / usdToArs).toFixed(4));
 
     return { usdToArs, eurToArs, eurToUsd };
