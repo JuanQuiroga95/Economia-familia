@@ -123,8 +123,8 @@ export async function distributeSurplus(data: {
     const accountId = await getAccountId();
     if (!accountId) return { success: false, error: 'No autenticado' };
 
-    let category = await prisma.category.findUnique({
-      where: { name_accountId: { name: 'Ahorro / Inversión', accountId } },
+    let category = await prisma.category.findFirst({
+      where: { name: 'Ahorro / Inversión', accountId },
     });
     if (!category) {
       category = await prisma.category.create({
