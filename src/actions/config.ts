@@ -51,7 +51,7 @@ export async function fetchLiveExchangeRates() {
   try {
     const [usdRes, eurRes] = await Promise.all([
       fetch('https://dolarapi.com/v1/dolares/blue', { next: { revalidate: 3600 } }),
-      fetch('https://dolarapi.com/v1/cotizaciones/eur', { next: { revalidate: 3600 } })
+      fetch('https://dolarapi.com/v1/euros/blue', { next: { revalidate: 3600 } })
     ]);
     
     if (!usdRes.ok || !eurRes.ok) throw new Error('API fetching failed');
@@ -88,8 +88,8 @@ export async function getCurrentExchangeRate() {
     const todayStr = now.toISOString().split('T')[0];
     const rateUpdatedStr = rate ? rate.updatedAt.toISOString().split('T')[0] : null;
 
-    // Si no hay cotización para el mes o no se actualizó hoy, traemos de la API
-    if (!rate || rateUpdatedStr !== todayStr) {
+    // Si no hay cotización para el mes, no se actualizó hoy, o es la de prueba (1200) traemos de la API
+    if (!rate || rateUpdatedStr !== todayStr || rate.usdToArs === 1200) {
       const liveRates = await fetchLiveExchangeRates();
       if (liveRates) {
         return await prisma.exchangeRate.upsert({
