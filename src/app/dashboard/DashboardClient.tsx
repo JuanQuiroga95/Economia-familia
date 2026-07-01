@@ -28,8 +28,9 @@ export default function DashboardClient({
   monthlyData,
   budgetStatus,
   sharedFundStats,
+  currentMonth,
+  currentYear,
 }: DashboardClientProps) {
-  const now = new Date();
 
   return (
     <div className="space-y-6 animate-fade-in">
