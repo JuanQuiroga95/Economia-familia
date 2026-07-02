@@ -146,7 +146,7 @@ async function parseImagesWithAI(
     messages: [
       { role: 'user', content: contentArray },
     ],
-    model: 'llama-3.2-11b-vision-preview',
+    model: 'llama-3.2-11b-vision',
     temperature: 0.1,
     max_tokens: 500
   });
