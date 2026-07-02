@@ -111,10 +111,23 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
 
   const handleSplitChange = (profileId: string, val: string) => {
-    setMonthlySplits(prev => ({
-      ...prev,
-      [profileId]: parseFloat(val) || 0
-    }));
+    const newVal = parseFloat(val) || 0;
+    setMonthlySplits(prev => {
+      const newSplits = { ...prev, [profileId]: newVal };
+      if (profiles.length === 2) {
+        const otherProfileId = profiles.find(p => p.id !== profileId)?.id;
+        if (otherProfileId) {
+          const tAmt = parseFloat(targetAmount) || 0;
+          const mths = parseInt(monthsToAchieve) || 1;
+          const monthlyTotal = tAmt > 0 && mths > 0 ? tAmt / mths : 0;
+          
+          if (monthlyTotal > 0) {
+            newSplits[otherProfileId] = Math.max(0, Number((monthlyTotal - newVal).toFixed(2)));
+          }
+        }
+      }
+      return newSplits;
+    });
   };
 
   const handleAmountOrMonthsChange = (newTargetAmount: string, newMonths: string) => {
