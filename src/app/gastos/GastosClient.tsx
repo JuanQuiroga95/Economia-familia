@@ -67,6 +67,27 @@ export default function GastosClient({ initialExpenses, categories, savings = []
   const [fundingSource, setFundingSource] = useState('balance');
   const [splitPercentage, setSplitPercentage] = useState<string>('');
 
+  const handleCreateCategory = () => {
+    const name = window.prompt('Nombre de la nueva categoría (ej: Alimento perro):');
+    if (!name || !name.trim()) return;
+    
+    startTransition(async () => {
+      const { createCategory } = await import('@/actions/config');
+      const res = await createCategory({
+        name: name.trim(),
+        icon: '🏷️',
+        color: '#8b5cf6'
+      });
+      if (res.success && res.data) {
+        toast.success('Categoría creada');
+        setCategoryId(res.data.id);
+        router.refresh();
+      } else {
+        toast.error(res.error || 'Error al crear categoría');
+      }
+    });
+  };
+
   // Handle setting default split percentage when choosing COMPARTIDO
   const handleTypeChange = (newType: 'PROPIO' | 'COMPARTIDO') => {
     setType(newType);
@@ -335,6 +356,15 @@ export default function GastosClient({ initialExpenses, categories, savings = []
                   <span className="truncate">{cat.name}</span>
                 </button>
               ))}
+              <button
+                type="button"
+                onClick={handleCreateCategory}
+                disabled={isPending}
+                className="flex items-center justify-center gap-1 px-3 py-2 rounded-xl text-sm transition-all bg-bg-card text-accent border border-dashed border-accent/50 hover:bg-accent/10"
+              >
+                <span>➕</span>
+                <span className="truncate">Nueva</span>
+              </button>
             </div>
           </div>
 
