@@ -86,8 +86,9 @@ REGLAS DE EXTRACCIÓN (Aplica siempre que el dato exista o pueda inferirse, incl
 - pague_yo: por defecto TRUE (asumiendo que el usuario actual lo pagó). Solo será false si el usuario indica explícitamente que NO lo pagó él, o que lo pagó la otra persona. (Aplica a gastos compartidos)
 - Multiplicadores: "mil" o "k" = x1000, "luca(s)" = x1000.
 - Si analizas IMÁGENES de comprobantes o listas, es OBLIGATORIO que crees una "accion" separada en el array "acciones" por CADA movimiento individual que figure en el texto/imagen (no importa si son 2 o 10).
+- REGLA CRÍTICA PARA IMÁGENES: NUNCA omitas el primer elemento de la lista ni el último. Lee cuidadosamente desde el principio hasta el final. Si hay 5 transacciones en la imagen, el JSON DEBE tener 5 acciones.
 - NO agrupes, NO sumes, y NO omitas transacciones a menos que el usuario te pida EXPLÍCITAMENTE "sumalos" o "juntalos en uno solo".
-- Para identificar el tipo: si dice "pago", "enviada" o tiene un monto negativo (-), es "gasto". Si dice "rendimiento", "recibida", "deposito" o tiene un monto positivo (+), es "ingreso".
+- Para identificar el tipo: si dice "pago", "enviada", "transferencia enviada", "QR" o tiene un monto negativo (-), es "gasto". Si dice "rendimiento", "recibida", "deposito" o tiene un monto positivo (+), es "ingreso".
 
 Devuelve ÚNICAMENTE un JSON válido (sin texto extra) con esta estructura:
 {

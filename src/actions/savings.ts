@@ -111,6 +111,34 @@ export async function addSavingsTransaction(data: {
 
 export async function deleteSavingsGoal(id: string) {
   try {
+    const goal = await prisma.savingsGoal.findUnique({
+      where: { id },
+      include: { transactions: true },
+    });
+
+    if (goal) {
+      // Find and delete associated expenses for distributed surplus
+      for (const tx of goal.transactions) {
+        if (tx.description === 'Distribución de sobrante del mes') {
+          const expenses = await prisma.expense.findMany({
+            where: {
+              amount: tx.amount,
+              description: { startsWith: 'Distribución de sobrante' },
+              profileId: tx.profileId,
+            },
+          });
+          
+          for (const exp of expenses) {
+            const diff = Math.abs(exp.createdAt.getTime() - tx.createdAt.getTime());
+            if (diff < 10000) {
+              await prisma.expense.delete({ where: { id: exp.id } });
+              break;
+            }
+          }
+        }
+      }
+    }
+
     await prisma.savingsGoal.delete({
       where: { id },
     });
@@ -143,6 +171,24 @@ export async function deleteSavingsTransaction(id: string) {
           where: { id: tx.savingsGoalId },
           data: { currentAmount: Math.max(0, revertAmount) },
         });
+      }
+
+      if (tx.description === 'Distribución de sobrante del mes') {
+        const expenses = await prisma.expense.findMany({
+          where: {
+            amount: tx.amount,
+            description: { startsWith: 'Distribución de sobrante' },
+            profileId: tx.profileId,
+          },
+        });
+        
+        for (const exp of expenses) {
+          const diff = Math.abs(exp.createdAt.getTime() - tx.createdAt.getTime());
+          if (diff < 10000) {
+            await prisma.expense.delete({ where: { id: exp.id } });
+            break;
+          }
+        }
       }
 
       await prisma.savingsTransaction.delete({ where: { id } });
