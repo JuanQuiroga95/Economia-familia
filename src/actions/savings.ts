@@ -280,6 +280,12 @@ export async function distributeSurplus(data: {
     const accountId = await getAccountId();
     if (!accountId) return { success: false, error: 'No autenticado' };
 
+    const goal = await prisma.savingsGoal.findUnique({ where: { id: data.savingsGoalId } });
+    if (!goal) return { success: false, error: 'Meta no encontrada' };
+    if (goal.currency !== data.currency) {
+      return { success: false, error: `La moneda de la meta (${goal.currency}) no coincide con el sobrante (${data.currency})` };
+    }
+
     let category = await prisma.category.findFirst({
       where: { name: 'Ahorro / Inversión', accountId },
     });
@@ -316,13 +322,10 @@ export async function distributeSurplus(data: {
     });
 
     // 4. Actualizar el saldo de la meta
-    const goal = await prisma.savingsGoal.findUnique({ where: { id: data.savingsGoalId } });
-    if (goal) {
-      await prisma.savingsGoal.update({
-        where: { id: data.savingsGoalId },
-        data: { currentAmount: goal.currentAmount + data.amount },
-      });
-    }
+    await prisma.savingsGoal.update({
+      where: { id: data.savingsGoalId },
+      data: { currentAmount: goal.currentAmount + data.amount },
+    });
 
     revalidatePath('/ahorros');
     revalidatePath('/dashboard');

@@ -64,7 +64,12 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
   const [isPending, startTransition] = useTransition();
   const [activeTab, setActiveTab] = useState<'patrimonio' | 'metas'>('patrimonio');
   
-  // Modal for distributing surplus
+  const [expandedGoals, setExpandedGoals] = useState<Record<string, boolean>>({});
+
+  const toggleGoal = (id: string) => {
+    setExpandedGoals(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
   const [distributeModal, setDistributeModal] = useState<{ currency: string; amount: number } | null>(null);
   const [distributeAmount, setDistributeAmount] = useState('');
   const [distributeGoalId, setDistributeGoalId] = useState('');
@@ -583,125 +588,107 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
                     {currencyFlags[cur]} OBJETIVO DE AHORRO EN {cur}
                   </h2>
                 </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm text-left">
-                    <thead className="bg-bg-card text-text-secondary border-b border-border">
-                      <tr>
-                        <th className="px-4 py-3 font-semibold uppercase min-w-[200px]">Detalle</th>
-                        {goalsList.map(g => (
-                          <th key={g.id} className="px-4 py-3 font-semibold text-right min-w-[150px] group">
-                            <div className="flex justify-end items-center gap-2">
-                              <span>{g.name}</span>
-                              <div className="flex gap-2 mt-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                                <button onClick={() => handleEditGoal(g)} className="text-accent bg-bg-card px-2 py-1 rounded border border-border text-xs" title="Editar">✏️ Editar</button>
-                                <button onClick={() => handleDeleteGoal(g.id)} className="text-danger bg-bg-card px-2 py-1 rounded border border-border text-xs" title="Eliminar">🗑️ Borrar</button>
-                              </div>
+                <div className="p-4 space-y-4 bg-bg-main/50">
+                  {goalsList.map(g => (
+                    <div key={g.id} className="glass-card overflow-hidden border border-border rounded-xl transition-all duration-300">
+                      {/* Accordion Header */}
+                      <button 
+                        onClick={() => toggleGoal(g.id)}
+                        className="w-full flex items-center justify-between p-4 bg-bg-card hover:bg-bg-input/50 transition-colors text-left"
+                      >
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3">
+                            <span className="text-lg font-bold text-text-primary">{g.name}</span>
+                            {(g as any).isPiggyBank && <span className="text-xs px-2 py-0.5 rounded-full bg-accent/20 text-accent">Chanchito 🐷</span>}
+                          </div>
+                          <div className="text-sm text-text-muted mt-1">
+                            Acumulado: <span className="text-accent font-semibold">${formatCurrency(g.currentAmount)}</span>
+                            {!(g as any).isPiggyBank && g.targetAmount > 0 && ` / $${formatCurrency(g.targetAmount)}`}
+                          </div>
+                        </div>
+                        <div className="text-xl text-text-muted">
+                          {expandedGoals[g.id] ? '▴' : '▾'}
+                        </div>
+                      </button>
+
+                      {/* Accordion Body */}
+                      {expandedGoals[g.id] && (
+                        <div className="p-4 border-t border-border bg-bg-card/50 space-y-4 animate-slide-up">
+                          <div className="flex justify-end gap-2 mb-2">
+                            <button onClick={() => handleEditGoal(g)} className="text-accent bg-bg-input px-3 py-1.5 rounded-lg border border-border text-xs hover:bg-accent/10 transition-colors">✏️ Editar</button>
+                            <button onClick={() => handleDeleteGoal(g.id)} className="text-danger bg-bg-input px-3 py-1.5 rounded-lg border border-border text-xs hover:bg-danger/10 transition-colors">🗑️ Borrar</button>
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div className="bg-bg-input p-3 rounded-lg border border-border">
+                              <span className="text-text-muted block text-xs mb-1 uppercase">Meses para lograrlo</span>
+                              <span className="font-semibold text-text-primary">{(g as any).isPiggyBank ? '-' : (g.monthsToAchieve || '-')}</span>
                             </div>
-                            <div className="text-xs text-text-muted font-normal mt-2">Acumulado: ${formatCurrency(g.currentAmount)}</div>
-                          </th>
-                        ))}
-                        <th className="px-4 py-3 font-semibold text-right text-accent min-w-[120px]">TOTAL</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      <tr className="hover:bg-bg-input/50 transition-colors">
-                        <td className="px-4 py-3 font-medium text-text-primary">{cur} QUE NECESITAMOS</td>
-                        {goalsList.map(g => (
-                          <td key={g.id} className="px-4 py-3 text-right font-medium">
-                            {(g as any).isPiggyBank ? <span className="text-xs text-text-muted">Chanchito 🐷</span> : `$${formatCurrency(g.targetAmount || 0)}`}
-                          </td>
-                        ))}
-                        <td className="px-4 py-3 text-right font-bold text-accent">
-                          ${formatCurrency(goalsList.reduce((acc, g) => acc + (!(g as any).isPiggyBank ? (g.targetAmount || 0) : 0), 0))}
-                        </td>
-                      </tr>
-                      <tr className="hover:bg-bg-input/50 transition-colors">
-                        <td className="px-4 py-3 font-medium text-text-primary">MESES PARA LOGRARLO</td>
-                        {goalsList.map(g => (
-                          <td key={g.id} className="px-4 py-3 text-right text-text-secondary">
-                            {(g as any).isPiggyBank ? '-' : (g.monthsToAchieve || '-')}
-                          </td>
-                        ))}
-                        <td className="px-4 py-3 text-right text-text-secondary">-</td>
-                      </tr>
-                      <tr className="hover:bg-bg-input/50 transition-colors bg-bg-input/20">
-                        <td className="px-4 py-3 font-bold text-text-primary">AHORRO POR MES</td>
-                        {goalsList.map(g => {
-                          const perMonth = g.targetAmount && g.monthsToAchieve && !(g as any).isPiggyBank ? g.targetAmount / g.monthsToAchieve : 0;
-                          return <td key={g.id} className="px-4 py-3 text-right font-semibold text-text-primary">
-                            {(g as any).isPiggyBank ? '-' : `$${formatCurrency(perMonth)}`}
-                          </td>;
-                        })}
-                        <td className="px-4 py-3 text-right font-bold text-accent">
-                          ${formatCurrency(goalsList.reduce((acc, g) => {
-                            const perMonth = g.targetAmount && g.monthsToAchieve && !(g as any).isPiggyBank ? g.targetAmount / g.monthsToAchieve : 0;
-                            return acc + perMonth;
-                          }, 0))}
-                        </td>
-                      </tr>
-                      {/* Filas por perfil */}
-                      {profiles.map(p => {
-                        return (
-                          <tr key={p.id} className="hover:bg-bg-input/50 transition-colors">
-                            <td className="px-4 py-3 font-medium text-text-primary uppercase flex items-center gap-2">
-                              <span>👤</span> {p.name}
-                            </td>
-                            {goalsList.map(g => {
-                              const split = g.monthlySplits ? (g.monthlySplits[p.id] || 0) : 0;
-                              return <td key={g.id} className="px-4 py-3 text-right text-text-secondary">${formatCurrency(split)}</td>;
-                            })}
-                            <td className="px-4 py-3 text-right font-semibold text-text-secondary">
-                              ${formatCurrency(goalsList.reduce((acc, g) => {
-                                return acc + (g.monthlySplits ? (g.monthlySplits[p.id] || 0) : 0);
-                              }, 0))}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                      {/* Action Row for Transacting */}
-                      <tr className="bg-bg-card">
-                        <td className="px-4 py-4 text-xs text-text-muted">Operaciones rápidas</td>
-                        {goalsList.map(g => (
-                          <td key={g.id} className="px-4 py-4 text-right">
-                             {showTransactionForm === g.id ? (
-                                <div className="p-3 bg-bg-input rounded-xl space-y-2 text-left animate-fade-in shadow-lg border border-border">
-                                  <div className="flex gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => setTxType('DEPOSITO')}
-                                      className={`flex-1 py-1 rounded text-xs font-medium transition-all ${
-                                        txType === 'DEPOSITO' ? 'bg-success text-white' : 'bg-bg-card border border-border'
-                                      }`}
-                                    >⬆️ Depósito</button>
-                                    <button
-                                      type="button"
-                                      onClick={() => setTxType('RETIRO')}
-                                      className={`flex-1 py-1 rounded text-xs font-medium transition-all ${
-                                        txType === 'RETIRO' ? 'bg-danger text-white' : 'bg-bg-card border border-border'
-                                      }`}
-                                    >⬇️ Retiro</button>
+                            <div className="bg-bg-input p-3 rounded-lg border border-border">
+                              <span className="text-text-muted block text-xs mb-1 uppercase">Ahorro por mes</span>
+                              <span className="font-semibold text-text-primary">
+                                {(g as any).isPiggyBank ? '-' : `$${formatCurrency(g.targetAmount && g.monthsToAchieve ? g.targetAmount / g.monthsToAchieve : 0)}`}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Splits por perfil */}
+                          <div className="bg-bg-input p-3 rounded-lg border border-border">
+                            <span className="text-text-muted block text-xs mb-2 uppercase">Aporte por integrante</span>
+                            <div className="space-y-2">
+                              {profiles.map(p => {
+                                const split = g.monthlySplits ? (g.monthlySplits[p.id] || 0) : 0;
+                                return (
+                                  <div key={p.id} className="flex justify-between items-center text-sm">
+                                    <span className="text-text-primary flex items-center gap-2">👤 {p.name}</span>
+                                    <span className="font-semibold text-text-secondary">${formatCurrency(split)}</span>
                                   </div>
-                                  <CurrencyInput value={txAmount} onChange={(e) => setTxAmount(e.target.value)} className="input-field py-1 text-xs" placeholder="Monto" />
-                                  <input type="text" value={txDescription} onChange={(e) => setTxDescription(e.target.value)} className="input-field py-1 text-xs" placeholder="Detalle (opcional)" />
-                                  <div className="flex gap-2 pt-1">
-                                    <button onClick={() => setShowTransactionForm(null)} className="flex-1 py-1 text-xs text-text-muted hover:text-text-primary">Cancelar</button>
-                                    <button onClick={() => handleAddTransaction(g.id)} disabled={isPending || !txAmount} className="flex-1 gradient-btn py-1 text-xs disabled:opacity-50">Guardar</button>
-                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Operaciones rápidas */}
+                          <div className="pt-2">
+                            <h4 className="text-xs text-text-muted uppercase mb-3">Operaciones rápidas</h4>
+                            {showTransactionForm === g.id ? (
+                              <div className="p-4 bg-bg-input rounded-xl space-y-3 animate-fade-in shadow-lg border border-border">
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setTxType('DEPOSITO')}
+                                    className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
+                                      txType === 'DEPOSITO' ? 'bg-success text-white' : 'bg-bg-card border border-border'
+                                    }`}
+                                  >⬆️ Depósito</button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setTxType('RETIRO')}
+                                    className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
+                                      txType === 'RETIRO' ? 'bg-danger text-white' : 'bg-bg-card border border-border'
+                                    }`}
+                                  >⬇️ Retiro</button>
                                 </div>
-                             ) : (
+                                <CurrencyInput value={txAmount} onChange={(e) => setTxAmount(e.target.value)} className="input-field" placeholder="Monto" />
+                                <input type="text" value={txDescription} onChange={(e) => setTxDescription(e.target.value)} className="input-field" placeholder="Detalle (opcional)" />
+                                <div className="flex gap-2 pt-2">
+                                  <button onClick={() => setShowTransactionForm(null)} className="flex-1 py-2 text-sm text-text-muted hover:text-text-primary transition-colors">Cancelar</button>
+                                  <button onClick={() => handleAddTransaction(g.id)} disabled={isPending || !txAmount} className="flex-1 gradient-btn py-2 text-sm disabled:opacity-50">Guardar</button>
+                                </div>
+                              </div>
+                            ) : (
                               <button
                                 onClick={() => setShowTransactionForm(g.id)}
-                                className="px-3 py-1.5 rounded-lg bg-accent/10 text-accent text-xs font-medium hover:bg-accent/20 transition-all border border-accent/20"
+                                className="w-full py-2.5 rounded-xl bg-accent/10 text-accent text-sm font-medium hover:bg-accent/20 transition-all border border-accent/20 flex justify-center items-center gap-2"
                               >
-                                + Movimiento
+                                <span>➕</span> Agregar Movimiento
                               </button>
-                             )}
-                          </td>
-                        ))}
-                        <td></td>
-                      </tr>
-                    </tbody>
-                  </table>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
             ))
@@ -748,11 +735,16 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
                   className="input-field"
                   required
                 >
-                  <option value="" disabled>Seleccioná un destino...</option>
-                  {initialGoals.map((g) => (
-                    <option key={g.id} value={g.id}>{g.name} ({g.currency}) - Saldo: ${formatCurrency(g.currentAmount)}</option>
+                  <option value="" disabled>Seleccioná adónde enviar la plata</option>
+                  {initialGoals
+                    .filter(g => g.currency === distributeModal.currency)
+                    .map(g => (
+                    <option key={g.id} value={g.id}>{g.name} (Saldo: ${formatCurrency(g.currentAmount)})</option>
                   ))}
                 </select>
+                {initialGoals.filter(g => g.currency === distributeModal.currency).length === 0 && (
+                  <p className="text-xs text-danger mt-2">No tenés metas de ahorro en {distributeModal.currency}. Creá una primero.</p>
+                )}
                 <div className="mt-2 text-right">
                   <span className="text-xs text-text-muted">¿Querés invertirlo? </span>
                   <Link href="/inversiones" className="text-xs text-accent hover:underline font-medium">
