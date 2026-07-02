@@ -7,7 +7,6 @@ import crypto from 'crypto';
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
 const GROQ_API_KEY = process.env.GROQ_API_KEY!;
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://economia-familia.vercel.app'; // Ajustar según prod
 
 // ============================================
 // Telegram helpers
@@ -62,15 +61,7 @@ interface ParsedAction {
   persona?: string;
 }
 
-async function parseTransactionWithAI(
-  text: string,
-  profileName: string,
-  categories: string[],
-  context: string
-): Promise<ParsedAction> {
-  const groq = new Groq({ apiKey: GROQ_API_KEY });
-
-  const systemPrompt = `Sos el cerebro de un bot financiero para Telegram de EconoApp. Tu trabajo es interpretar la intención del usuario.
+const SYSTEM_PROMPT_BASE = (profileName: string, categories: string[], context: string) => `Sos el cerebro de un bot financiero para Telegram de EconoApp. Tu trabajo es interpretar la intención del usuario.
 
 El usuario actual se llama "${profileName}".
 Categorías disponibles: ${categories.join(', ')}.
@@ -79,7 +70,7 @@ CONTEXTO DE ÚLTIMOS MOVIMIENTOS:
 ${context}
 
 REGLAS DE CLASIFICACIÓN DE ACCIÓN:
-1. accion = "crear": El usuario reporta un nuevo gasto o ingreso. (Ej: "Gasto 5000 en nafta", "Cobré 20 lucas").
+1. accion = "crear": El usuario reporta un nuevo gasto o ingreso. (Ej: "Gasto 5000 en nafta", "Cobré 20 lucas", o provee imágenes).
 2. accion = "modificar": El usuario pide corregir o editar un movimiento existente. (Ej: "El gasto de la nafta era de 6000").
    -> DEBES identificar el 'entidad_id' usando el CONTEXTO DE ÚLTIMOS MOVIMIENTOS y proveer todos los datos corregidos (los que no menciona se mantienen igual que en el contexto).
 3. accion = "eliminar": El usuario pide borrar un movimiento. (Ej: "Borrá el último gasto", "Eliminá el ingreso de ayer").
@@ -92,12 +83,13 @@ REGLAS DE EXTRACCIÓN (para crear/modificar):
 - moneda: "ARS", "USD" o "EUR" (por defecto "ARS")
 - persona: nombre de quien lo hace (por defecto "${profileName}")
 - Multiplicadores: "mil" o "k" = x1000, "luca(s)" = x1000.
+- Si analizas IMÁGENES de comprobantes/tickets, SUMA el total de todos ellos para el "monto" y crea una "descripcion" general resumida que mencione los ítems.
 
 Devuelve ÚNICAMENTE un JSON válido (sin texto extra):
 {
   "accion": "crear" | "modificar" | "eliminar" | "link",
-  "entidad_id": "id_string (solo si modifica/elimina)",
-  "tipo": "gasto" o "ingreso",
+  "entidad_id": "id_string",
+  "tipo": "gasto" | "ingreso",
   "monto": numero,
   "moneda": "ARS",
   "descripcion": "texto",
@@ -106,9 +98,16 @@ Devuelve ÚNICAMENTE un JSON válido (sin texto extra):
   "persona": "nombre"
 }`;
 
+async function parseTransactionWithAI(
+  text: string,
+  profileName: string,
+  categories: string[],
+  context: string
+): Promise<ParsedAction> {
+  const groq = new Groq({ apiKey: GROQ_API_KEY });
   const completion = await groq.chat.completions.create({
     messages: [
-      { role: 'system', content: systemPrompt },
+      { role: 'system', content: SYSTEM_PROMPT_BASE(profileName, categories, context) },
       { role: 'user', content: text },
     ],
     model: 'llama-3.3-70b-versatile',
@@ -118,6 +117,50 @@ Devuelve ÚNICAMENTE un JSON válido (sin texto extra):
   });
 
   const content = completion.choices[0]?.message?.content || '{}';
+  return JSON.parse(content);
+}
+
+async function parseImagesWithAI(
+  fileIds: string[],
+  profileName: string,
+  categories: string[],
+  context: string
+): Promise<ParsedAction> {
+  const groq = new Groq({ apiKey: GROQ_API_KEY });
+  
+  const contentArray: any[] = [
+    { type: 'text', text: 'Extraé los datos de estas imágenes en un único JSON (sumando los montos si son varios tickets) según las reglas del sistema.' }
+  ];
+  
+  for (const id of fileIds) {
+    const buffer = await downloadTelegramFile(id);
+    const base64 = buffer.toString('base64');
+    contentArray.push({
+      type: 'image_url',
+      image_url: { url: `data:image/jpeg;base64,${base64}` }
+    });
+  }
+
+  const completion = await groq.chat.completions.create({
+    messages: [
+      { role: 'system', content: SYSTEM_PROMPT_BASE(profileName, categories, context) },
+      { role: 'user', content: contentArray },
+    ],
+    model: 'llama-3.2-90b-vision-preview',
+    temperature: 0.1,
+    max_tokens: 500
+  });
+
+  let content = completion.choices[0]?.message?.content || '{}';
+  content = content.replace(/\`\`\`json/g, '').replace(/\`\`\`/g, '').trim();
+  
+  // Try to find the JSON object if there's surrounding text
+  const startIdx = content.indexOf('{');
+  const endIdx = content.lastIndexOf('}');
+  if (startIdx !== -1 && endIdx !== -1) {
+    content = content.substring(startIdx, endIdx + 1);
+  }
+  
   return JSON.parse(content);
 }
 
@@ -179,13 +222,13 @@ async function getBudgetRemaining(profileId: string): Promise<string> {
   }
 }
 
-async function createMagicLink(accountId: string, path: string = '/gastos') {
+async function createMagicLink(accountId: string, path: string = '/gastos', appUrl: string) {
   const token = crypto.randomUUID();
   await prisma.account.update({
     where: { id: accountId },
     data: { magicToken: token },
   });
-  return `${APP_URL}/magic?token=${token}&redirect=${path}`;
+  return `${appUrl}/magic?token=${token}&redirect=${path}`;
 }
 
 // ============================================
@@ -194,13 +237,14 @@ async function createMagicLink(accountId: string, path: string = '/gastos') {
 
 export async function POST(request: NextRequest) {
   try {
+    const appUrl = request.nextUrl.origin || process.env.NEXT_PUBLIC_APP_URL || 'https://economia-familia.vercel.app';
     const body = await request.json();
     
     // Handle callback query (inline buttons)
     if (body.callback_query) {
       const cb = body.callback_query;
       const chatId = cb.message.chat.id;
-      const data = cb.data; // e.g. "undo_expense_123"
+      const data = cb.data; 
       
       if (data.startsWith('undo_expense_')) {
         const id = data.replace('undo_expense_', '');
@@ -212,7 +256,6 @@ export async function POST(request: NextRequest) {
         await sendTelegramMessage(chatId, '🗑️ Ingreso eliminado con éxito.');
       }
       
-      // Answer callback query to remove loading state
       await fetch(`${TELEGRAM_API}/answerCallbackQuery`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -224,7 +267,7 @@ export async function POST(request: NextRequest) {
     const message = body.message;
     if (!message) return NextResponse.json({ ok: true });
 
-    const chatId = message.chat.id;
+    const chatId = message.chat.id.toString();
     const fromId = message.from.id.toString();
     const text = message.text || '';
 
@@ -258,7 +301,7 @@ export async function POST(request: NextRequest) {
         });
         await sendTelegramMessage(
           chatId,
-          `✅ ¡Vinculación exitosa!\n👤 Perfil: <b>${profile.name}</b>\n🏠 Cuenta: <b>${profile.account?.label}</b>\n\nAhora podés enviarme tus gastos e ingresos por texto o audio. 🎙️`
+          `✅ ¡Vinculación exitosa!\n👤 Perfil: <b>${profile.name}</b>\n🏠 Cuenta: <b>${profile.account?.label}</b>\n\nAhora podés enviarme tus gastos e ingresos por texto, fotos o audio. 🎙️📸`
         );
       } else {
         await sendTelegramMessage(chatId, '❌ Código no válido o ya expirado.');
@@ -284,8 +327,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // ─── Process voice note or text ───
-    let messageText = text;
+    // ─── Process Photos (Draft logic) ───
+    if (message.photo) {
+      const photo = message.photo[message.photo.length - 1]; // highest res
+      let draft = await prisma.telegramDraft.findUnique({ where: { chatId } });
+      if (draft) {
+        await prisma.telegramDraft.update({
+          where: { chatId },
+          data: { fileIds: { push: photo.file_id } }
+        });
+      } else {
+        await prisma.telegramDraft.create({
+          data: { chatId, fileIds: [photo.file_id] }
+        });
+      }
+      
+      await sendTelegramMessage(chatId, '📸 <i>Imagen guardada en borrador.</i>\n\nPodés mandarme <b>más fotos</b> si querés agruparlas, o escribí <b>"procesar"</b> para unirlas todas en un solo gasto.');
+      return NextResponse.json({ ok: true });
+    }
+
+    let messageText = text.trim();
 
     if (message.voice) {
       try {
@@ -298,7 +359,28 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (!messageText || messageText.trim().length === 0) return NextResponse.json({ ok: true });
+    // ─── Process Draft ───
+    const isProcesar = messageText.toLowerCase().replace(/[^a-z]/g, '') === 'procesar';
+    let fileIdsToProcess: string[] = [];
+    
+    if (isProcesar) {
+      const draft = await prisma.telegramDraft.findUnique({ where: { chatId } });
+      if (draft && draft.fileIds.length > 0) {
+        fileIdsToProcess = draft.fileIds;
+        await prisma.telegramDraft.delete({ where: { chatId } });
+        await sendTelegramMessage(chatId, `🔍 Analizando ${fileIdsToProcess.length} imagen/es con IA Visual...`);
+      } else {
+        await sendTelegramMessage(chatId, '⚠️ No tenés imágenes guardadas para procesar. Mandame una foto primero.');
+        return NextResponse.json({ ok: true });
+      }
+    } else if (messageText.length === 0) {
+       return NextResponse.json({ ok: true });
+    }
+
+    // Si el usuario escribe algo que NO es "procesar" pero tenía imágenes, las limpiamos para evitar confusiones
+    if (!isProcesar && messageText.length > 0) {
+      await prisma.telegramDraft.deleteMany({ where: { chatId } });
+    }
 
     // ─── Get categories and recent context ───
     const categories = await prisma.category.findMany({ where: { accountId: profile.accountId } });
@@ -315,15 +397,19 @@ export async function POST(request: NextRequest) {
     // ─── Parse with AI ───
     let parsed: ParsedAction;
     try {
-      parsed = await parseTransactionWithAI(messageText, profile.name, categoryNames, contextStr);
+      if (fileIdsToProcess.length > 0) {
+        parsed = await parseImagesWithAI(fileIdsToProcess, profile.name, categoryNames, contextStr);
+      } else {
+        parsed = await parseTransactionWithAI(messageText, profile.name, categoryNames, contextStr);
+      }
     } catch (error) {
-      await sendTelegramMessage(chatId, '❌ No pude interpretar tu mensaje.');
+      await sendTelegramMessage(chatId, '❌ No pude interpretar la solicitud.');
       return NextResponse.json({ ok: true });
     }
 
     // ─── Link Action ───
     if (parsed.accion === 'link') {
-      const link = await createMagicLink(profile.accountId, parsed.tipo === 'ingreso' ? '/ingresos' : '/gastos');
+      const link = await createMagicLink(profile.accountId, parsed.tipo === 'ingreso' ? '/ingresos' : '/gastos', appUrl);
       await sendTelegramMessage(chatId, `🪄 <b>Acceso rápido a EconoApp</b>`, {
         inline_keyboard: [[{ text: `Abrir app (${parsed.tipo || 'Gastos'})`, url: link }]]
       });
@@ -362,7 +448,6 @@ export async function POST(request: NextRequest) {
       
       let updated = false;
       
-      // Intentar actualizar gasto
       try {
         const exp = await prisma.expense.findUnique({ where: { id: parsed.entidad_id }});
         if (exp) {
@@ -380,7 +465,6 @@ export async function POST(request: NextRequest) {
         }
       } catch (e) {}
 
-      // Intentar actualizar ingreso
       if (!updated) {
         try {
           const inc = await prisma.income.findUnique({ where: { id: parsed.entidad_id }});
@@ -425,7 +509,7 @@ export async function POST(request: NextRequest) {
       const inc = await prisma.income.create({
         data: { amount: parsed.monto, currency: parsed.moneda || 'ARS', date: parseArgDate(dateStr), description: parsed.descripcion || 'Ingreso desde Telegram', profileId: targetProfile.id },
       });
-      const link = await createMagicLink(profile.accountId, '/ingresos');
+      const link = await createMagicLink(profile.accountId, '/ingresos', appUrl);
       await sendTelegramMessage(
         chatId,
         `✅ <b>Ingreso registrado</b>\n\n💰 Monto: <b>$${formatCurrency(parsed.monto)}</b> ${parsed.moneda}\n📝 Descripción: ${parsed.descripcion}\n👤 Perfil: ${targetProfile.name}`,
@@ -436,7 +520,7 @@ export async function POST(request: NextRequest) {
         data: { amount: parsed.monto, currency: parsed.moneda || 'ARS', date: parseArgDate(dateStr), description: parsed.descripcion || 'Gasto desde Telegram', categoryId: matchedCategory.id, profileId: targetProfile.id, type: parsed.tipo_gasto === 'compartido' ? 'COMPARTIDO' : 'PROPIO', paidFromPersonalBudget: false },
       });
       const budgetInfo = await getBudgetRemaining(targetProfile.id);
-      const link = await createMagicLink(profile.accountId, '/gastos');
+      const link = await createMagicLink(profile.accountId, '/gastos', appUrl);
       await sendTelegramMessage(
         chatId,
         `✅ <b>Gasto registrado</b>\n\n💸 Monto: <b>$${formatCurrency(parsed.monto)}</b> ${parsed.moneda}\n📂 Categoría: ${matchedCategory.icon} ${matchedCategory.name}\n📝 ${parsed.descripcion}\n${parsed.tipo_gasto === 'compartido' ? '👥 Compartido' : '👤 Propio'} · ${targetProfile.name}${budgetInfo}`,

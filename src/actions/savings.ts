@@ -4,10 +4,12 @@ import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import type { SavingsGoalFormData } from '@/types';
 import { getAccountId } from '@/lib/session';
-import { getArgDate } from '@/lib/dateUtils';
 
 export async function createSavingsGoal(data: SavingsGoalFormData) {
   try {
+    const accountId = await getAccountId();
+    if (!accountId) throw new Error('No account id');
+
     const initialAmount = data.initialAmount || 0;
     const goal = await prisma.savingsGoal.create({
       data: {
@@ -15,21 +17,25 @@ export async function createSavingsGoal(data: SavingsGoalFormData) {
         targetAmount: data.targetAmount,
         currentAmount: initialAmount,
         currency: data.currency,
-        profileId: data.profileId,
+        accountId: accountId,
+        monthsToAchieve: data.monthsToAchieve,
+        monthlySplits: data.monthlySplits || {},
       },
     });
 
-    // Si hay monto inicial, crear una transacción de depósito inicial
     if (initialAmount > 0) {
-      await prisma.savingsTransaction.create({
-        data: {
-          amount: initialAmount,
-          type: 'DEPOSITO',
-          description: 'Saldo inicial',
-          savingsGoalId: goal.id,
-          profileId: data.profileId,
-        },
-      });
+      const firstProfile = await prisma.profile.findFirst({ where: { accountId } });
+      if (firstProfile) {
+        await prisma.savingsTransaction.create({
+          data: {
+            amount: initialAmount,
+            type: 'DEPOSITO',
+            description: 'Saldo inicial',
+            savingsGoalId: goal.id,
+            profileId: firstProfile.id,
+          },
+        });
+      }
     }
 
     revalidatePath('/ahorros');
@@ -40,22 +46,18 @@ export async function createSavingsGoal(data: SavingsGoalFormData) {
   }
 }
 
-export async function getSavingsGoals(profileId?: string) {
+export async function getSavingsGoals() {
   try {
     const accountId = await getAccountId();
     if (!accountId) throw new Error('No account id');
 
-    const where: any = {
-      profile: { accountId },
-    };
-    if (profileId) {
-      where.profileId = profileId;
-    }
     return await prisma.savingsGoal.findMany({
-      where,
+      where: { accountId },
       include: {
-        profile: true,
-        transactions: { orderBy: { date: 'desc' } },
+        transactions: { 
+          orderBy: { date: 'desc' },
+          include: { profile: true }
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -73,7 +75,6 @@ export async function addSavingsTransaction(data: {
   profileId: string;
 }) {
   try {
-    // Crear la transacción
     await prisma.savingsTransaction.create({
       data: {
         amount: data.amount,
@@ -84,7 +85,6 @@ export async function addSavingsTransaction(data: {
       },
     });
 
-    // Actualizar el monto actual de la meta
     const goal = await prisma.savingsGoal.findUnique({
       where: { id: data.savingsGoalId },
     });
@@ -102,71 +102,19 @@ export async function addSavingsTransaction(data: {
     }
 
     revalidatePath('/ahorros');
-    revalidatePath('/dashboard');
     return { success: true };
   } catch (error) {
     console.error('Error adding savings transaction:', error);
-    return { success: false, error: 'Error al registrar movimiento' };
-  }
-}
-
-export async function updateSavingsTransaction(
-  id: string,
-  data: {
-    amount?: number;
-    description?: string;
-    type?: 'DEPOSITO' | 'RETIRO';
-  }
-) {
-  try {
-    const existing = await prisma.savingsTransaction.findUnique({ where: { id } });
-    if (!existing) throw new Error('Transaction not found');
-
-    // Restore old amount logically
-    const goal = await prisma.savingsGoal.findUnique({ where: { id: existing.savingsGoalId } });
-    if (goal) {
-      // Revert previous transaction impact
-      let revertAmount = goal.currentAmount;
-      if (existing.type === 'DEPOSITO') revertAmount -= existing.amount;
-      else revertAmount += existing.amount;
-
-      // Apply new transaction impact
-      const newType = data.type || existing.type;
-      const newAmount = data.amount !== undefined ? data.amount : existing.amount;
-      
-      let finalAmount = revertAmount;
-      if (newType === 'DEPOSITO') finalAmount += newAmount;
-      else finalAmount -= newAmount;
-
-      await prisma.savingsGoal.update({
-        where: { id: existing.savingsGoalId },
-        data: { currentAmount: Math.max(0, finalAmount) }
-      });
-    }
-
-    await prisma.savingsTransaction.update({
-      where: { id },
-      data: {
-        amount: data.amount,
-        description: data.description,
-        type: data.type,
-      },
-    });
-
-    revalidatePath('/ahorros');
-    revalidatePath('/dashboard');
-    return { success: true };
-  } catch (error) {
-    console.error('Error updating savings transaction:', error);
-    return { success: false, error: 'Error al actualizar movimiento' };
+    return { success: false, error: 'Error al agregar transacción' };
   }
 }
 
 export async function deleteSavingsGoal(id: string) {
   try {
-    await prisma.savingsGoal.delete({ where: { id } });
+    await prisma.savingsGoal.delete({
+      where: { id },
+    });
     revalidatePath('/ahorros');
-    revalidatePath('/dashboard');
     return { success: true };
   } catch (error) {
     console.error('Error deleting savings goal:', error);
@@ -174,21 +122,57 @@ export async function deleteSavingsGoal(id: string) {
   }
 }
 
-export async function updateSavingsGoal(id: string, data: Partial<SavingsGoalFormData>) {
+export async function deleteSavingsTransaction(id: string) {
   try {
-    const updateData: any = {};
-    if (data.name !== undefined) updateData.name = data.name;
-    if (data.targetAmount !== undefined) updateData.targetAmount = data.targetAmount;
-    if (data.currency !== undefined) updateData.currency = data.currency;
-
-    const goal = await prisma.savingsGoal.update({
+    const tx = await prisma.savingsTransaction.findUnique({
       where: { id },
-      data: updateData,
     });
-    
+
+    if (tx) {
+      const goal = await prisma.savingsGoal.findUnique({
+        where: { id: tx.savingsGoalId },
+      });
+
+      if (goal) {
+        const revertAmount =
+          tx.type === 'DEPOSITO'
+            ? goal.currentAmount - tx.amount
+            : goal.currentAmount + tx.amount;
+
+        await prisma.savingsGoal.update({
+          where: { id: tx.savingsGoalId },
+          data: { currentAmount: Math.max(0, revertAmount) },
+        });
+      }
+
+      await prisma.savingsTransaction.delete({ where: { id } });
+    }
+
     revalidatePath('/ahorros');
-    revalidatePath('/dashboard');
-    return { success: true, data: goal };
+    return { success: true };
+  } catch (error) {
+    console.error('Error deleting savings transaction:', error);
+    return { success: false, error: 'Error al eliminar transacción' };
+  }
+}
+
+export async function updateSavingsGoal(
+  id: string,
+  data: Partial<SavingsGoalFormData>
+) {
+  try {
+    await prisma.savingsGoal.update({
+      where: { id },
+      data: {
+        name: data.name,
+        targetAmount: data.targetAmount,
+        currency: data.currency,
+        monthsToAchieve: data.monthsToAchieve,
+        monthlySplits: data.monthlySplits || {},
+      },
+    });
+    revalidatePath('/ahorros');
+    return { success: true };
   } catch (error) {
     console.error('Error updating savings goal:', error);
     return { success: false, error: 'Error al actualizar meta de ahorro' };
@@ -218,10 +202,11 @@ export async function withdrawToBalanceFromSavings(savingsGoalId: string, amount
     });
 
     // 2. Ingreso al balance mensual (asume que la fecha es el mes actual para impactar el Dashboard)
+    const { getArgDate } = await import('@/lib/dateUtils');
     await prisma.income.create({
       data: {
         amount,
-        currency: goal.currency,
+        currency: goal.currency as "ARS" | "USD" | "EUR",
         date: getArgDate(),
         description: `Rescate desde ahorros: ${goal.name}`,
         profileId,
@@ -258,15 +243,17 @@ export async function distributeSurplus(data: {
     }
 
     // 2. Crear el "gasto" para descontarlo del sobrante del mes
+    const { getArgDate } = await import('@/lib/dateUtils');
     await prisma.expense.create({
       data: {
         amount: data.amount,
-        currency: data.currency,
-        date: require('@/lib/dateUtils').getArgDate(),
+        currency: data.currency as "ARS" | "USD" | "EUR",
+        date: getArgDate(),
         description: 'Distribución de sobrante',
         categoryId: category.id,
         profileId: data.profileId,
         type: 'PROPIO',
+        paidFromPersonalBudget: false,
       },
     });
 
@@ -306,7 +293,7 @@ export async function getPatrimonioStats() {
 
     // 1. Total en metas de ahorro (agrupado por moneda)
     const savingsGoals = await prisma.savingsGoal.findMany({
-      where: { profile: { accountId } },
+      where: { accountId },
     });
     const savingsByCurrency: Record<string, number> = {};
     savingsGoals.forEach((goal) => {
@@ -323,7 +310,7 @@ export async function getPatrimonioStats() {
     });
 
     // 3. Sobrante del mes actual (ingresos - gastos de este mes)
-    const { getCurrentFinancialMonth, getFinancialMonthRange, getArgDate } = require('@/lib/dateUtils');
+    const { getCurrentFinancialMonth, getFinancialMonthRange, getArgDate } = await import('@/lib/dateUtils');
     const now = getArgDate();
     const current = getCurrentFinancialMonth(now);
     const { startDate, endDate } = getFinancialMonthRange(current.month, current.year);

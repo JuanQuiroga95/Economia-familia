@@ -13,14 +13,17 @@ interface SavingsGoal {
   targetAmount: number;
   currentAmount: number;
   currency: string;
-  profileId: string;
-  profile: { id: string; name: string; avatar: string | null };
+  accountId: string;
+  monthsToAchieve: number | null;
+  monthlySplits: Record<string, number> | null;
   transactions: {
     id: string;
     amount: number;
     type: string;
     description: string | null;
     date: string;
+    profileId: string;
+    profile: { id: string; name: string; avatar: string | null };
   }[];
 }
 
@@ -33,10 +36,17 @@ interface PatrimonioStats {
   investmentsCount: number;
 }
 
+interface ProfileData {
+  id: string;
+  name: string;
+  avatar: string | null;
+}
+
 interface AhorrosClientProps {
   initialGoals: SavingsGoal[];
   patrimonio: PatrimonioStats;
   rates?: { usdToArs: number; eurToArs: number } | null;
+  profiles?: ProfileData[];
 }
 
 const currencyFlags: Record<string, string> = {
@@ -45,7 +55,7 @@ const currencyFlags: Record<string, string> = {
   EUR: '🇪🇺',
 };
 
-export default function AhorrosClient({ initialGoals, patrimonio, rates }: AhorrosClientProps) {
+export default function AhorrosClient({ initialGoals, patrimonio, rates, profiles = [] }: AhorrosClientProps) {
   const { activeProfile } = useProfile();
   const [showGoalForm, setShowGoalForm] = useState(false);
   const [showTransactionForm, setShowTransactionForm] = useState<string | null>(null);
@@ -91,14 +101,27 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates }: Ahorr
   const [targetAmount, setTargetAmount] = useState('');
   const [initialAmount, setInitialAmount] = useState('');
   const [currency, setCurrency] = useState('ARS');
+  const [monthsToAchieve, setMonthsToAchieve] = useState('');
+  
+  // State for monthly splits: Record<profileId, amount>
+  const [monthlySplits, setMonthlySplits] = useState<Record<string, number>>({});
   
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
+
+  const handleSplitChange = (profileId: string, val: string) => {
+    setMonthlySplits(prev => ({
+      ...prev,
+      [profileId]: parseFloat(val) || 0
+    }));
+  };
 
   const resetGoalForm = () => {
     setGoalName('');
     setTargetAmount('');
     setInitialAmount('');
     setCurrency('ARS');
+    setMonthsToAchieve('');
+    setMonthlySplits({});
     setEditingGoalId(null);
   };
 
@@ -122,6 +145,8 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates }: Ahorr
         initialAmount: initialAmount ? parseFloat(initialAmount) : 0,
         currency: currency as 'ARS' | 'USD' | 'EUR',
         profileId: activeProfile.id,
+        monthsToAchieve: monthsToAchieve ? parseInt(monthsToAchieve) : null,
+        monthlySplits
       };
 
       const result = editingGoalId 
@@ -144,6 +169,8 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates }: Ahorr
     setGoalName(goal.name);
     setTargetAmount(goal.targetAmount.toString());
     setCurrency(goal.currency);
+    setMonthsToAchieve(goal.monthsToAchieve?.toString() || '');
+    setMonthlySplits(goal.monthlySplits || {});
     setInitialAmount(''); // Initial amount only makes sense when creating
     setShowGoalForm(true);
     setActiveTab('metas');
@@ -214,6 +241,13 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates }: Ahorr
   const hasInvestments = Object.values(patrimonio.investmentsByCurrency).some((v) => v > 0);
   const hasSurplus = Object.values(patrimonio.surplusByCurrency).some((v) => v !== 0);
 
+  // Agrupamos metas por moneda para la nueva vista tipo Excel
+  const goalsByCurrency = initialGoals.reduce((acc, goal) => {
+    if (!acc[goal.currency]) acc[goal.currency] = [];
+    acc[goal.currency].push(goal);
+    return acc;
+  }, {} as Record<string, SavingsGoal[]>);
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
@@ -269,15 +303,14 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates }: Ahorr
               value={goalName}
               onChange={(e) => setGoalName(e.target.value)}
               className="input-field"
-              placeholder="Ej: Viaje a Italia, Cuenta general, etc."
+              placeholder="Ej: Vacaciones, Auto, etc."
               required
             />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm text-text-secondary mb-1">
-                Monto Objetivo
-                <span className="text-text-muted text-xs ml-1">(opcional)</span>
+                Que Necesitamos
               </label>
               <input
                 type="number"
@@ -285,7 +318,19 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates }: Ahorr
                 value={targetAmount}
                 onChange={(e) => setTargetAmount(e.target.value)}
                 className="input-field"
-                placeholder="0 = sin objetivo"
+                placeholder="Monto objetivo"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-text-secondary mb-1">
+                Meses Para Lograrlo
+              </label>
+              <input
+                type="number"
+                value={monthsToAchieve}
+                onChange={(e) => setMonthsToAchieve(e.target.value)}
+                className="input-field"
+                placeholder="Ej: 3"
               />
             </div>
             <div>
@@ -296,14 +341,34 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates }: Ahorr
                 <option value="EUR">🇪🇺 EUR</option>
               </select>
             </div>
+            {!editingGoalId && (
+              <div>
+                <label className="block text-sm text-text-secondary mb-1">Ahorro inicial</label>
+                <input type="number" step="0.01" value={initialAmount} onChange={(e) => setInitialAmount(e.target.value)} className="input-field" placeholder="Monto ya ahorrado" />
+              </div>
+            )}
           </div>
-          {!editingGoalId && (
-            <div>
-              <label className="block text-sm text-text-secondary mb-1">Ahorro inicial (opcional)</label>
-              <input type="number" step="0.01" value={initialAmount} onChange={(e) => setInitialAmount(e.target.value)} className="input-field" placeholder="Monto ya ahorrado" />
+
+          <div className="pt-2 border-t border-border mt-4">
+            <h4 className="text-sm font-medium text-text-primary mb-2">Aporte Mensual por Persona (Opcional)</h4>
+            <div className="grid grid-cols-2 gap-4">
+              {profiles.map(p => (
+                <div key={p.id}>
+                  <label className="block text-xs text-text-secondary mb-1">{p.name}</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={monthlySplits[p.id] || ''}
+                    onChange={(e) => handleSplitChange(p.id, e.target.value)}
+                    className="input-field py-2"
+                    placeholder={`Aporte de ${p.name}`}
+                  />
+                </div>
+              ))}
             </div>
-          )}
-          <button type="submit" disabled={isPending} className="w-full gradient-btn py-3 disabled:opacity-50">
+          </div>
+
+          <button type="submit" disabled={isPending} className="w-full gradient-btn py-3 disabled:opacity-50 mt-4">
             {isPending ? 'Guardando...' : (editingGoalId ? 'Actualizar Meta' : 'Crear Meta')}
           </button>
         </form>
@@ -435,139 +500,136 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates }: Ahorr
 
       {/* ========== TAB: METAS ========== */}
       {activeTab === 'metas' && (
-        <div className="space-y-4 animate-fade-in">
+        <div className="space-y-6 animate-fade-in">
           {initialGoals.length === 0 ? (
             <div className="glass-card p-8 text-center">
               <span className="text-4xl">🎯</span>
               <p className="text-text-muted mt-2">No hay metas de ahorro creadas</p>
             </div>
           ) : (
-            initialGoals.map((goal) => {
-              const progress = goal.targetAmount > 0
-                ? (goal.currentAmount / goal.targetAmount) * 100
-                : 0;
-
-              return (
-                <div key={goal.id} className="glass-card p-4 lg:p-6 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-base font-semibold text-text-primary">🎯 {goal.name}</h3>
-                      <p className="text-xs text-text-muted">{goal.profile.name} • {goal.currency}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => setShowTransactionForm(showTransactionForm === goal.id ? null : goal.id)}
-                        className="px-3 py-1.5 rounded-lg bg-accent/20 text-accent text-xs font-medium hover:bg-accent/30 transition-all"
-                      >
-                        💵 Movimiento
-                      </button>
-                      <button
-                        onClick={() => handleWithdrawToBalance(goal.id, goal.currentAmount)}
-                        className="p-1.5 rounded-lg text-text-muted hover:text-accent hover:bg-accent/10 transition-all text-xs"
-                        title="Transferir a Balance"
-                      >
-                        🏦
-                      </button>
-                      <button
-                        onClick={() => handleEditGoal(goal)}
-                        className="p-1.5 rounded-lg text-text-muted hover:text-accent hover:bg-accent/10 transition-all text-xs"
-                        title="Editar Meta"
-                      >
-                        ✏️
-                      </button>
-                      <button
-                        onClick={() => handleDeleteGoal(goal.id)}
-                        className="p-1.5 rounded-lg text-text-muted hover:text-danger hover:bg-danger/10 transition-all"
-                      >
-                        🗑️
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Progress */}
-                  <div>
-                    {goal.targetAmount > 0 ? (
-                      <>
-                        <div className="flex justify-between text-sm mb-1">
-                          <span className="text-text-secondary">
-                            ${formatCurrency(goal.currentAmount)}
-                          </span>
-                          <span className="text-text-muted">
-                            de ${formatCurrency(goal.targetAmount)}
-                          </span>
-                        </div>
-                        <div className="w-full h-3 bg-bg-input rounded-full overflow-hidden">
-                          <div
-                            className="h-full rounded-full bg-gradient-to-r from-accent to-purple-500 transition-all duration-500"
-                            style={{ width: `${Math.min(progress, 100)}%` }}
-                          />
-                        </div>
-                        <p className="text-xs text-text-muted text-right mt-1">{progress.toFixed(1)}%</p>
-                      </>
-                    ) : (
-                      <div className="flex items-center justify-between p-3 rounded-xl bg-bg-input">
-                        <span className="text-sm text-text-secondary">Saldo actual</span>
-                        <span className="text-lg font-bold text-accent">
-                          ${formatCurrency(goal.currentAmount)}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Transaction form */}
-                  {showTransactionForm === goal.id && (
-                    <div className="p-3 bg-bg-input rounded-xl space-y-3 animate-fade-in">
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setTxType('DEPOSITO')}
-                          className={`py-2 rounded-lg text-sm font-medium transition-all ${
-                            txType === 'DEPOSITO'
-                              ? 'bg-success text-white'
-                              : 'bg-bg-card text-text-secondary border border-border'
-                          }`}
-                        >
-                          ⬆️ Depósito
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setTxType('RETIRO')}
-                          className={`py-2 rounded-lg text-sm font-medium transition-all ${
-                            txType === 'RETIRO'
-                              ? 'bg-danger text-white'
-                              : 'bg-bg-card text-text-secondary border border-border'
-                          }`}
-                        >
-                          ⬇️ Retiro
-                        </button>
-                      </div>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={txAmount}
-                        onChange={(e) => setTxAmount(e.target.value)}
-                        className="input-field"
-                        placeholder="Monto"
-                      />
-                      <input
-                        type="text"
-                        value={txDescription}
-                        onChange={(e) => setTxDescription(e.target.value)}
-                        className="input-field"
-                        placeholder="Descripción (opcional)"
-                      />
-                      <button
-                        onClick={() => handleAddTransaction(goal.id)}
-                        disabled={isPending || !txAmount}
-                        className="w-full gradient-btn py-2 text-sm disabled:opacity-50"
-                      >
-                        {isPending ? 'Guardando...' : 'Registrar'}
-                      </button>
-                    </div>
-                  )}
+            Object.entries(goalsByCurrency).map(([cur, goalsList]) => (
+              <div key={cur} className="glass-card overflow-hidden">
+                <div className="bg-bg-input p-4 border-b border-border">
+                  <h2 className="text-lg font-bold text-text-primary uppercase tracking-wider">
+                    {currencyFlags[cur]} OBJETIVO DE AHORRO EN {cur}
+                  </h2>
                 </div>
-              );
-            })
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-bg-card text-text-secondary border-b border-border">
+                      <tr>
+                        <th className="px-4 py-3 font-semibold uppercase min-w-[200px]">Detalle</th>
+                        {goalsList.map(g => (
+                          <th key={g.id} className="px-4 py-3 font-semibold text-right min-w-[150px]">
+                            <div className="flex justify-end items-center gap-2">
+                              <span>{g.name}</span>
+                              <div className="flex gap-1 opacity-0 hover:opacity-100 transition-opacity">
+                                <button onClick={() => handleEditGoal(g)} className="text-accent" title="Editar">✏️</button>
+                                <button onClick={() => handleDeleteGoal(g.id)} className="text-danger" title="Eliminar">🗑️</button>
+                              </div>
+                            </div>
+                            <div className="text-xs text-text-muted font-normal mt-1">Acumulado: ${formatCurrency(g.currentAmount)}</div>
+                          </th>
+                        ))}
+                        <th className="px-4 py-3 font-semibold text-right text-accent min-w-[120px]">TOTAL</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      <tr className="hover:bg-bg-input/50 transition-colors">
+                        <td className="px-4 py-3 font-medium text-text-primary">{cur} QUE NECESITAMOS</td>
+                        {goalsList.map(g => (
+                          <td key={g.id} className="px-4 py-3 text-right font-medium">${formatCurrency(g.targetAmount)}</td>
+                        ))}
+                        <td className="px-4 py-3 text-right font-bold text-accent">
+                          ${formatCurrency(goalsList.reduce((acc, g) => acc + (g.targetAmount || 0), 0))}
+                        </td>
+                      </tr>
+                      <tr className="hover:bg-bg-input/50 transition-colors">
+                        <td className="px-4 py-3 font-medium text-text-primary">MESES PARA LOGRARLO</td>
+                        {goalsList.map(g => (
+                          <td key={g.id} className="px-4 py-3 text-right text-text-secondary">{g.monthsToAchieve || '-'}</td>
+                        ))}
+                        <td className="px-4 py-3 text-right text-text-secondary">-</td>
+                      </tr>
+                      <tr className="hover:bg-bg-input/50 transition-colors bg-bg-input/20">
+                        <td className="px-4 py-3 font-bold text-text-primary">AHORRO POR MES</td>
+                        {goalsList.map(g => {
+                          const perMonth = g.targetAmount && g.monthsToAchieve ? g.targetAmount / g.monthsToAchieve : 0;
+                          return <td key={g.id} className="px-4 py-3 text-right font-semibold text-text-primary">${formatCurrency(perMonth)}</td>;
+                        })}
+                        <td className="px-4 py-3 text-right font-bold text-accent">
+                          ${formatCurrency(goalsList.reduce((acc, g) => {
+                            const perMonth = g.targetAmount && g.monthsToAchieve ? g.targetAmount / g.monthsToAchieve : 0;
+                            return acc + perMonth;
+                          }, 0))}
+                        </td>
+                      </tr>
+                      {/* Filas por perfil */}
+                      {profiles.map(p => {
+                        return (
+                          <tr key={p.id} className="hover:bg-bg-input/50 transition-colors">
+                            <td className="px-4 py-3 font-medium text-text-primary uppercase flex items-center gap-2">
+                              <span>👤</span> {p.name}
+                            </td>
+                            {goalsList.map(g => {
+                              const split = g.monthlySplits ? (g.monthlySplits[p.id] || 0) : 0;
+                              return <td key={g.id} className="px-4 py-3 text-right text-text-secondary">${formatCurrency(split)}</td>;
+                            })}
+                            <td className="px-4 py-3 text-right font-semibold text-text-secondary">
+                              ${formatCurrency(goalsList.reduce((acc, g) => {
+                                return acc + (g.monthlySplits ? (g.monthlySplits[p.id] || 0) : 0);
+                              }, 0))}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {/* Action Row for Transacting */}
+                      <tr className="bg-bg-card">
+                        <td className="px-4 py-4 text-xs text-text-muted">Operaciones rápidas</td>
+                        {goalsList.map(g => (
+                          <td key={g.id} className="px-4 py-4 text-right">
+                             {showTransactionForm === g.id ? (
+                                <div className="p-3 bg-bg-input rounded-xl space-y-2 text-left animate-fade-in shadow-lg border border-border">
+                                  <div className="flex gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => setTxType('DEPOSITO')}
+                                      className={`flex-1 py-1 rounded text-xs font-medium transition-all ${
+                                        txType === 'DEPOSITO' ? 'bg-success text-white' : 'bg-bg-card border border-border'
+                                      }`}
+                                    >⬆️ Depósito</button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setTxType('RETIRO')}
+                                      className={`flex-1 py-1 rounded text-xs font-medium transition-all ${
+                                        txType === 'RETIRO' ? 'bg-danger text-white' : 'bg-bg-card border border-border'
+                                      }`}
+                                    >⬇️ Retiro</button>
+                                  </div>
+                                  <input type="number" step="0.01" value={txAmount} onChange={(e) => setTxAmount(e.target.value)} className="input-field py-1 text-xs" placeholder="Monto" />
+                                  <input type="text" value={txDescription} onChange={(e) => setTxDescription(e.target.value)} className="input-field py-1 text-xs" placeholder="Detalle (opcional)" />
+                                  <div className="flex gap-2 pt-1">
+                                    <button onClick={() => setShowTransactionForm(null)} className="flex-1 py-1 text-xs text-text-muted hover:text-text-primary">Cancelar</button>
+                                    <button onClick={() => handleAddTransaction(g.id)} disabled={isPending || !txAmount} className="flex-1 gradient-btn py-1 text-xs disabled:opacity-50">Guardar</button>
+                                  </div>
+                                </div>
+                             ) : (
+                              <button
+                                onClick={() => setShowTransactionForm(g.id)}
+                                className="px-3 py-1.5 rounded-lg bg-accent/10 text-accent text-xs font-medium hover:bg-accent/20 transition-all border border-accent/20"
+                              >
+                                + Movimiento
+                              </button>
+                             )}
+                          </td>
+                        ))}
+                        <td></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))
           )}
         </div>
       )}

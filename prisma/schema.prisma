@@ -24,6 +24,7 @@ model Account {
   splitPercentB Float     @default(50) // % del segundo perfil
 
   categoryBudgets CategoryBudget[]
+  savingsGoals    SavingsGoal[]
 }
 
 enum SplitMode {
@@ -46,7 +47,6 @@ model Profile {
   incomes             Income[]
   expenses            Expense[]
   savingsTransactions SavingsTransaction[]
-  savingsGoals        SavingsGoal[]
   investments         Investment[]
   budgetConfigs       BudgetConfig[]
 }
@@ -109,15 +109,19 @@ enum ExpenseType {
 }
 
 model SavingsGoal {
-  id            String   @id @default(cuid())
-  name          String
-  targetAmount  Float
-  currency      String   @default("ARS")
-  currentAmount Float    @default(0)
-  profileId     String
-  profile       Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  id              String   @id @default(cuid())
+  name            String
+  targetAmount    Float
+  currency        String   @default("ARS")
+  currentAmount   Float    @default(0)
+  
+  accountId       String
+  account         Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
-  transactions  SavingsTransaction[]
+  monthsToAchieve Int?
+  monthlySplits   Json?    // { profileId: amount }
+
+  transactions    SavingsTransaction[]
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -202,4 +206,12 @@ model CategoryBudget {
   amount     Float    // Límite mensual
 
   @@unique([categoryId, month, year])
+}
+
+model TelegramDraft {
+  id           String   @id @default(cuid())
+  chatId       String   @unique
+  fileIds      String[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }

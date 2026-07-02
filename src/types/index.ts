@@ -91,7 +91,8 @@ export interface SavingsGoalFormData {
   targetAmount: number;
   initialAmount?: number;
   currency: Currency;
-  profileId: string;
+  monthsToAchieve?: number | null;
+  monthlySplits?: Record<string, number> | null;
 }
 
 export interface InvestmentFormData {

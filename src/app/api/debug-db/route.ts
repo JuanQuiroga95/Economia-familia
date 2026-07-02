@@ -14,7 +14,7 @@ export async function GET() {
     });
 
     const savings = await prisma.savingsGoal.findMany({
-      include: { profile: true }
+      include: { account: true }
     });
 
     return NextResponse.json({
