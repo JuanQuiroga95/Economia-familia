@@ -107,6 +107,7 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
   
   // State for monthly splits: Record<profileId, amount>
   const [monthlySplits, setMonthlySplits] = useState<Record<string, number>>({});
+  const [isFreeEditMode, setIsFreeEditMode] = useState(false);
   
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
 
@@ -114,7 +115,7 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
     const newVal = parseFloat(val) || 0;
     setMonthlySplits(prev => {
       const newSplits = { ...prev, [profileId]: newVal };
-      if (profiles.length === 2) {
+      if (!isFreeEditMode && profiles.length === 2) {
         const otherProfileId = profiles.find(p => p.id !== profileId)?.id;
         if (otherProfileId) {
           const tAmt = parseFloat(targetAmount) || 0;
@@ -386,7 +387,18 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
           </div>
 
           <div className="pt-2 border-t border-border mt-4">
-            <h4 className="text-sm font-medium text-text-primary mb-2">Aporte Mensual por Persona (Opcional)</h4>
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-medium text-text-primary">Aporte Mensual por Persona</h4>
+              <label className="flex items-center gap-2 cursor-pointer text-xs text-text-secondary hover:text-text-primary transition-colors">
+                <input 
+                  type="checkbox" 
+                  checked={isFreeEditMode}
+                  onChange={(e) => setIsFreeEditMode(e.target.checked)}
+                  className="rounded border-border text-accent focus:ring-accent/30 bg-bg-input"
+                />
+                Edición libre
+              </label>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               {profiles.map(p => (
                 <div key={p.id}>

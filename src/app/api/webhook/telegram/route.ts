@@ -83,7 +83,7 @@ REGLAS DE EXTRACCIÓN (Aplica siempre que el dato exista o pueda inferirse, incl
 - tipo_gasto: "compartido" o "propio" (por defecto "propio")
 - moneda: "ARS", "USD" o "EUR" (por defecto "ARS")
 - persona: nombre de quien lo hace (por defecto "${profileName}")
-- pague_yo: true si el usuario indica "pago yo", "lo pagué yo", "pague con mi plata". Caso contrario false. (Aplica a gastos compartidos)
+- pague_yo: por defecto TRUE (asumiendo que el usuario actual lo pagó). Solo será false si el usuario indica explícitamente que NO lo pagó él, o que lo pagó la otra persona. (Aplica a gastos compartidos)
 - Multiplicadores: "mil" o "k" = x1000, "luca(s)" = x1000.
 - Si analizas IMÁGENES de comprobantes o listas, es OBLIGATORIO que crees una "accion" separada en el array "acciones" por CADA movimiento individual que figure en el texto/imagen (no importa si son 2 o 10).
 - NO agrupes, NO sumes, y NO omitas transacciones a menos que el usuario te pida EXPLÍCITAMENTE "sumalos" o "juntalos en uno solo".
