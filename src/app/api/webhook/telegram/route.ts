@@ -77,13 +77,13 @@ REGLAS DE CLASIFICACIÓN DE ACCIÓN:
    -> DEBES identificar el 'entidad_id' usando el contexto.
 4. accion = "link": El usuario escribe palabras cortas como "app", "gasto", "ingreso", "menu", "modificar" solas, pidiendo acceder a la app.
 
-REGLAS DE EXTRACCIÓN (para crear/modificar):
+REGLAS DE EXTRACCIÓN (Aplica siempre que el dato exista o pueda inferirse, incluso para la acción "link"):
 - tipo: "gasto" o "ingreso"
 - tipo_gasto: "compartido" o "propio" (por defecto "propio")
 - moneda: "ARS", "USD" o "EUR" (por defecto "ARS")
 - persona: nombre de quien lo hace (por defecto "${profileName}")
 - Multiplicadores: "mil" o "k" = x1000, "luca(s)" = x1000.
-- Si analizas IMÁGENES de comprobantes/tickets, SUMA el total de todos ellos para el "monto" y crea una "descripcion" general resumida que mencione los ítems.
+- Si analizas IMÁGENES de comprobantes/tickets, SUMA el total de todos ellos para el "monto", identifica si son ingresos o gastos, y crea una "descripcion" general.
 
 Devuelve ÚNICAMENTE un JSON válido (sin texto extra):
 {
@@ -124,12 +124,13 @@ async function parseImagesWithAI(
   fileIds: string[],
   profileName: string,
   categories: string[],
-  context: string
+  context: string,
+  userInstruction: string = ''
 ): Promise<ParsedAction> {
   const groq = new Groq({ apiKey: GROQ_API_KEY });
   
   const contentArray: any[] = [
-    { type: 'text', text: 'Extraé los datos de estas imágenes en un único JSON (sumando los montos si son varios tickets) según las reglas del sistema.' }
+    { type: 'text', text: `Extraé los datos de estas imágenes en un único JSON (sumando los montos si son varios tickets) según las reglas del sistema.${userInstruction ? `\nInstrucción adicional del usuario: "${userInstruction}"` : ''}` }
   ];
   
   for (const id of fileIds) {
@@ -346,7 +347,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    let messageText = text.trim();
+    let messageText = (message.text || message.caption || '').trim();
 
     if (message.voice) {
       try {
@@ -362,24 +363,22 @@ export async function POST(request: NextRequest) {
     // ─── Process Draft ───
     const isProcesar = messageText.toLowerCase().replace(/[^a-z]/g, '') === 'procesar';
     let fileIdsToProcess: string[] = [];
+    let customInstruction = '';
     
-    if (isProcesar) {
-      const draft = await prisma.telegramDraft.findUnique({ where: { chatId } });
-      if (draft && draft.fileIds.length > 0) {
+    const draft = await prisma.telegramDraft.findUnique({ where: { chatId } });
+    if (draft && draft.fileIds.length > 0) {
+      // Si hay un draft, cualquier texto que llegue (o si dice procesar) gatilla el procesamiento.
+      if (isProcesar || messageText.length > 0) {
         fileIdsToProcess = draft.fileIds;
+        customInstruction = isProcesar ? '' : messageText;
         await prisma.telegramDraft.delete({ where: { chatId } });
         await sendTelegramMessage(chatId, `🔍 Analizando ${fileIdsToProcess.length} imagen/es con IA Visual...`);
-      } else {
-        await sendTelegramMessage(chatId, '⚠️ No tenés imágenes guardadas para procesar. Mandame una foto primero.');
+      } else if (!message.photo) {
+        // No hay foto ni texto nuevo, no hacemos nada
         return NextResponse.json({ ok: true });
       }
-    } else if (messageText.length === 0) {
+    } else if (messageText.length === 0 && !message.photo) {
        return NextResponse.json({ ok: true });
-    }
-
-    // Si el usuario escribe algo que NO es "procesar" pero tenía imágenes, las limpiamos para evitar confusiones
-    if (!isProcesar && messageText.length > 0) {
-      await prisma.telegramDraft.deleteMany({ where: { chatId } });
     }
 
     // ─── Get categories and recent context ───
@@ -398,7 +397,7 @@ export async function POST(request: NextRequest) {
     let parsed: ParsedAction;
     try {
       if (fileIdsToProcess.length > 0) {
-        parsed = await parseImagesWithAI(fileIdsToProcess, profile.name, categoryNames, contextStr);
+        parsed = await parseImagesWithAI(fileIdsToProcess, profile.name, categoryNames, contextStr, customInstruction);
       } else {
         parsed = await parseTransactionWithAI(messageText, profile.name, categoryNames, contextStr);
       }

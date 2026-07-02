@@ -47,6 +47,7 @@ interface AhorrosClientProps {
   patrimonio: PatrimonioStats;
   rates?: { usdToArs: number; eurToArs: number } | null;
   profiles?: ProfileData[];
+  accountSplits?: { a: number; b: number };
 }
 
 const currencyFlags: Record<string, string> = {
@@ -55,7 +56,7 @@ const currencyFlags: Record<string, string> = {
   EUR: '🇪🇺',
 };
 
-export default function AhorrosClient({ initialGoals, patrimonio, rates, profiles = [] }: AhorrosClientProps) {
+export default function AhorrosClient({ initialGoals, patrimonio, rates, profiles = [], accountSplits }: AhorrosClientProps) {
   const { activeProfile } = useProfile();
   const [showGoalForm, setShowGoalForm] = useState(false);
   const [showTransactionForm, setShowTransactionForm] = useState<string | null>(null);
@@ -113,6 +114,23 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
       ...prev,
       [profileId]: parseFloat(val) || 0
     }));
+  };
+
+  const handleAmountOrMonthsChange = (newTargetAmount: string, newMonths: string) => {
+    const tAmt = parseFloat(newTargetAmount) || 0;
+    const mths = parseInt(newMonths) || 1; // Default to 1 to avoid infinity
+
+    if (tAmt > 0 && mths > 0 && accountSplits && profiles.length >= 2) {
+      const monthlyTotal = tAmt / mths;
+      const sortedProfiles = [...profiles].sort((a, b) => a.name.localeCompare(b.name));
+      const splitA = (accountSplits.a / 100) * monthlyTotal;
+      const splitB = (accountSplits.b / 100) * monthlyTotal;
+      
+      setMonthlySplits({
+        [sortedProfiles[0].id]: splitA,
+        [sortedProfiles[1].id]: splitB,
+      });
+    }
   };
 
   const resetGoalForm = () => {
@@ -316,7 +334,10 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
                 type="number"
                 step="0.01"
                 value={targetAmount}
-                onChange={(e) => setTargetAmount(e.target.value)}
+                onChange={(e) => {
+                  setTargetAmount(e.target.value);
+                  handleAmountOrMonthsChange(e.target.value, monthsToAchieve);
+                }}
                 className="input-field"
                 placeholder="Monto objetivo"
               />
@@ -328,7 +349,10 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
               <input
                 type="number"
                 value={monthsToAchieve}
-                onChange={(e) => setMonthsToAchieve(e.target.value)}
+                onChange={(e) => {
+                  setMonthsToAchieve(e.target.value);
+                  handleAmountOrMonthsChange(targetAmount, e.target.value);
+                }}
                 className="input-field"
                 placeholder="Ej: 3"
               />
@@ -654,19 +678,17 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
               </p>
               
               <div>
-                <label className="block text-sm text-text-secondary mb-1">Monto a distribuir</label>
                 <input
                   type="number"
                   step="0.01"
                   max={distributeModal.amount}
                   value={distributeAmount}
                   onChange={(e) => setDistributeAmount(e.target.value)}
-                  className="input-field"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
                   placeholder={`Ej: ${distributeModal.amount}`}
                   required
                 />
               </div>
-
               <div>
                 <label className="block text-sm text-text-secondary mb-1">Destino (Meta o Cuenta)</label>
                 <select

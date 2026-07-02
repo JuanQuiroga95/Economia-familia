@@ -12,11 +12,12 @@ export default async function AhorrosPage() {
   const current = getCurrentFinancialMonth(now);
   
   const accountId = await (await import('@/lib/session')).getAccountId();
-  const [goals, patrimonio, rates, profiles] = await Promise.all([
+  const [goals, patrimonio, rates, profiles, account] = await Promise.all([
     getSavingsGoals(),
     getPatrimonioStats(),
     getCurrentExchangeRate(),
-    accountId ? prisma.profile.findMany({ where: { accountId } }) : Promise.resolve([]),
+    accountId ? prisma.profile.findMany({ where: { accountId }, orderBy: { name: 'asc' } }) : Promise.resolve([]),
+    accountId ? prisma.account.findUnique({ where: { id: accountId } }) : Promise.resolve(null),
   ]);
 
   return (
@@ -26,6 +27,7 @@ export default async function AhorrosPage() {
         patrimonio={patrimonio}
         rates={rates}
         profiles={profiles}
+        accountSplits={account ? { a: account.splitPercentA, b: account.splitPercentB } : undefined}
       />
     </AppLayout>
   );
