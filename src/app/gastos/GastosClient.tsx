@@ -23,6 +23,7 @@ interface Expense {
   description: string;
   type: string;
   paidFromPersonalBudget: boolean;
+  splitPercentage?: number;
   receiptUrl: string | null;
   profile: { id: string; name: string; avatar: string | null };
   category: { id: string; name: string; icon: string; color: string };
@@ -176,6 +177,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
     setCategoryId(expense.category.id);
     setType(expense.type as 'PROPIO' | 'COMPARTIDO');
     setPaidFromPersonal(expense.paidFromPersonalBudget);
+    setSplitPercentage(expense.splitPercentage?.toString() || '');
     setReceiptUrl(expense.receiptUrl || '');
     setFundingSource('balance');
     setShowForm(true);
@@ -396,7 +398,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
                     type="number"
                     min="0"
                     max="100"
-                    step="1"
+                    step="any"
                     value={splitPercentage}
                     onChange={(e) => setSplitPercentage(e.target.value)}
                     className="input-field"

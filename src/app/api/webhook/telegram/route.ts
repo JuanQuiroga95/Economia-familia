@@ -59,6 +59,7 @@ interface ParsedAction {
   categoria?: string;
   tipo_gasto?: 'propio' | 'compartido';
   persona?: string;
+  pague_yo?: boolean;
 }
 
 const SYSTEM_PROMPT_BASE = (profileName: string, categories: string[], context: string) => `Sos el cerebro de un bot financiero para Telegram de EconoApp. Tu trabajo es interpretar la intención del usuario.
@@ -82,6 +83,7 @@ REGLAS DE EXTRACCIÓN (Aplica siempre que el dato exista o pueda inferirse, incl
 - tipo_gasto: "compartido" o "propio" (por defecto "propio")
 - moneda: "ARS", "USD" o "EUR" (por defecto "ARS")
 - persona: nombre de quien lo hace (por defecto "${profileName}")
+- pague_yo: true si el usuario indica "pago yo", "lo pagué yo", "pague con mi plata". Caso contrario false. (Aplica a gastos compartidos)
 - Multiplicadores: "mil" o "k" = x1000, "luca(s)" = x1000.
 - Si analizas IMÁGENES de comprobantes o listas, es OBLIGATORIO que crees una "accion" separada en el array "acciones" por CADA movimiento individual que figure en el texto/imagen (no importa si son 2 o 10).
 - NO agrupes, NO sumes, y NO omitas transacciones a menos que el usuario te pida EXPLÍCITAMENTE "sumalos" o "juntalos en uno solo".
@@ -99,7 +101,8 @@ Devuelve ÚNICAMENTE un JSON válido (sin texto extra) con esta estructura:
       "descripcion": "texto",
       "categoria": "categoria",
       "tipo_gasto": "propio" | "compartido",
-      "persona": "nombre"
+      "persona": "nombre",
+      "pague_yo": boolean
     }
   ]
 }`;
@@ -561,8 +564,9 @@ export async function POST(request: NextRequest) {
           { inline_keyboard: [[{ text: '🗑️ Deshacer', callback_data: `undo_income_${inc.id}` }, { text: '✏️ Editar en App', url: link }]] }
         );
       } else {
+        const isPagueYo = action.pague_yo === true;
         const exp = await prisma.expense.create({
-          data: { amount: action.monto, currency: action.moneda || 'ARS', date: parseArgDate(dateStr), description: action.descripcion || 'Gasto desde Telegram', categoryId: matchedCategory.id, profileId: targetProfile.id, type: action.tipo_gasto === 'compartido' ? 'COMPARTIDO' : 'PROPIO', paidFromPersonalBudget: false },
+          data: { amount: action.monto, currency: action.moneda || 'ARS', date: parseArgDate(dateStr), description: action.descripcion || 'Gasto desde Telegram', categoryId: matchedCategory.id, profileId: targetProfile.id, type: action.tipo_gasto === 'compartido' ? 'COMPARTIDO' : 'PROPIO', paidFromPersonalBudget: isPagueYo },
         });
         const budgetInfo = await getBudgetRemaining(targetProfile.id);
         const link = await createMagicLink(profile.accountId, '/gastos', appUrl);

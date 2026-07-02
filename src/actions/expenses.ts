@@ -167,10 +167,27 @@ export async function getCategories() {
   try {
     const { getAccountId } = require('@/lib/session');
     const accountId = await getAccountId();
-    return await prisma.category.findMany({
+    let cats = await prisma.category.findMany({
       where: accountId ? { accountId } : {},
       orderBy: { name: 'asc' },
     });
+
+    if (cats.length === 0 && accountId) {
+       const defaultCats = [
+         { name: 'Supermercado', icon: '🛒', color: '#3b82f6', accountId },
+         { name: 'Transporte', icon: '🚌', color: '#8b5cf6', accountId },
+         { name: 'Servicios', icon: '💡', color: '#eab308', accountId },
+         { name: 'Comida', icon: '🍔', color: '#f97316', accountId },
+         { name: 'Salud', icon: '💊', color: '#ef4444', accountId },
+         { name: 'Educación', icon: '📚', color: '#06b6d4', accountId },
+         { name: 'Ocio', icon: '🎭', color: '#ec4899', accountId },
+         { name: 'Otros', icon: '📦', color: '#6366f1', accountId },
+       ];
+       await prisma.category.createMany({ data: defaultCats });
+       cats = await prisma.category.findMany({ where: { accountId }, orderBy: { name: 'asc' } });
+    }
+
+    return cats;
   } catch (error) {
     console.error('Error fetching categories:', error);
     return [];
