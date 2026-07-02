@@ -111,6 +111,10 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates }: Ahorr
     e.preventDefault();
     if (!activeProfile) { toast.error('Seleccioná un perfil'); return; }
 
+    if (editingGoalId) {
+      if (!window.confirm('¿Estás seguro que querés guardar estos cambios?')) return;
+    }
+
     startTransition(async () => {
       const payload = {
         name: goalName,
@@ -194,6 +198,7 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates }: Ahorr
   };
 
   const handleDeleteGoal = (id: string) => {
+    if (!window.confirm('¿Estás seguro que querés eliminar esta meta?')) return;
     startTransition(async () => {
       const result = await deleteSavingsGoal(id);
       if (result.success) {

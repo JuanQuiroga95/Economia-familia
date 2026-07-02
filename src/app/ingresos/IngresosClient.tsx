@@ -76,6 +76,10 @@ export default function IngresosClient({ initialIncomes }: IngresosClientProps) 
       return;
     }
 
+    if (editingIncomeId) {
+      if (!window.confirm('¿Estás seguro que querés guardar estos cambios?')) return;
+    }
+
     startTransition(async () => {
       const incomeData = {
         amount: parseFloat(amount),
@@ -121,6 +125,7 @@ export default function IngresosClient({ initialIncomes }: IngresosClientProps) 
   };
 
   const handleDelete = (id: string) => {
+    if (!window.confirm('¿Estás seguro que querés eliminar este ingreso?')) return;
     startTransition(async () => {
       const result = await deleteIncome(id);
       if (result.success) {

@@ -13,6 +13,8 @@ model Account {
   label     String   // Ej: "Juan & Tania", "Edu & Mai"
   createdAt DateTime @default(now())
 
+  magicToken String? @unique
+
   profiles   Profile[]
   categories Category[]
 

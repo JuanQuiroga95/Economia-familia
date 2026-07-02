@@ -66,6 +66,10 @@ export default function InversionesClient({ initialInvestments, rates }: Inversi
     e.preventDefault();
     if (!activeProfile) { toast.error('Seleccioná un perfil'); return; }
 
+    if (editingId) {
+      if (!window.confirm('¿Estás seguro que querés guardar estos cambios?')) return;
+    }
+
     startTransition(async () => {
       const payload = {
         name,
@@ -110,6 +114,7 @@ export default function InversionesClient({ initialInvestments, rates }: Inversi
   };
 
   const handleDelete = (id: string) => {
+    if (!window.confirm('¿Estás seguro que querés eliminar esta inversión?')) return;
     startTransition(async () => {
       const result = await deleteInvestment(id);
       if (result.success) { toast.success('Inversión eliminada'); router.refresh(); }

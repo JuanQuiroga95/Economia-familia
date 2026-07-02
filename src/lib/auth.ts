@@ -10,8 +10,33 @@ export const authOptions: NextAuthOptions = {
       credentials: {
         username: { label: 'Usuario', type: 'text' },
         password: { label: 'Contraseña', type: 'password' },
+        token: { label: 'Token', type: 'text' }
       },
       async authorize(credentials) {
+        if (credentials?.token) {
+          try {
+            const account = await prisma.account.findUnique({
+              where: { magicToken: credentials.token },
+            });
+            if (!account) return null;
+
+            // Invalida el token después de usarlo por seguridad (opcional, pero recomendado)
+            await prisma.account.update({
+              where: { id: account.id },
+              data: { magicToken: null }
+            });
+
+            return {
+              id: account.id,
+              name: account.label,
+              email: account.username,
+            };
+          } catch (error) {
+            console.error('Magic link error:', error);
+            return null;
+          }
+        }
+
         if (!credentials?.username || !credentials?.password) {
           return null;
         }

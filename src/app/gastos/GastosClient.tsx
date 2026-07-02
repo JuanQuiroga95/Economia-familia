@@ -118,6 +118,10 @@ export default function GastosClient({ initialExpenses, categories, savings = []
       return;
     }
 
+    if (editingExpenseId) {
+      if (!window.confirm('¿Estás seguro que querés guardar estos cambios?')) return;
+    }
+
     startTransition(async () => {
       const expenseData = {
         amount: parseFloat(amount),
@@ -190,6 +194,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
   };
 
   const handleDelete = (id: string) => {
+    if (!window.confirm('¿Estás seguro que querés eliminar este gasto?')) return;
     startTransition(async () => {
       const result = await deleteExpense(id);
       if (result.success) {
