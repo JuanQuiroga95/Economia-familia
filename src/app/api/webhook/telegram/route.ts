@@ -410,10 +410,27 @@ export async function POST(request: NextRequest) {
 
     // ─── Link Action ───
     if (parsed.accion === 'link') {
-      const isIngreso = parsed.tipo?.toLowerCase().includes('ingreso');
-      const link = await createMagicLink(profile.accountId, isIngreso ? '/ingresos' : '/gastos', appUrl);
+      const textLower = messageText.toLowerCase();
+      let path = '/gastos';
+      let label = 'Gastos';
+      
+      if (parsed.tipo?.toLowerCase().includes('ingreso') || textLower.includes('ingreso')) {
+        path = '/ingresos';
+        label = 'Ingresos';
+      } else if (textLower.includes('ahorro') || parsed.tipo?.toLowerCase().includes('ahorro')) {
+        path = '/ahorros';
+        label = 'Ahorros';
+      } else if (textLower.includes('inversion') || textLower.includes('inversión')) {
+        path = '/inversiones';
+        label = 'Inversiones';
+      } else if (textLower.includes('config')) {
+        path = '/configuracion';
+        label = 'Configuración';
+      }
+
+      const link = await createMagicLink(profile.accountId, path, appUrl);
       await sendTelegramMessage(chatId, `🪄 <b>Acceso rápido a EconoApp</b>`, {
-        inline_keyboard: [[{ text: `Abrir app (${isIngreso ? 'Ingresos' : 'Gastos'})`, url: link }]]
+        inline_keyboard: [[{ text: `Abrir app (${label})`, url: link }]]
       });
       return NextResponse.json({ ok: true });
     }
