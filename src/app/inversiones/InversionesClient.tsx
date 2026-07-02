@@ -5,6 +5,7 @@ import { useProfile } from '@/hooks/useProfile';
 import { createInvestment, deleteInvestment, updateInvestment, withdrawToBalanceFromInvestment } from '@/actions/investments';
 import toast from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
+import { CurrencyInput } from '@/components/CurrencyInput';
 
 interface Investment {
   id: string;
@@ -211,7 +212,7 @@ export default function InversionesClient({ initialInvestments, rates }: Inversi
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-text-secondary mb-1">Monto</label>
-              <input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} className="input-field" placeholder="0.00" required />
+              <CurrencyInput value={amount} onChange={(e) => setAmount(e.target.value)} className="input-field" placeholder="0.00" required />
             </div>
             <div>
               <label className="block text-sm text-text-secondary mb-1">Moneda</label>

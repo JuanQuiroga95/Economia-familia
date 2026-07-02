@@ -5,6 +5,7 @@ import { upsertExchangeRate, createCategory, deleteCategory, updateBudgetConfig,
 import { generateTelegramLinkCode, unlinkTelegram } from '@/actions/telegram';
 import toast from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
+import { CurrencyInput } from '@/components/CurrencyInput';
 
 interface ExchangeRate {
   id: string;
@@ -458,11 +459,11 @@ function BudgetConfigForm({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-text-muted mb-1">1ra Quincena (ARS)</label>
-              <input type="number" value={first} onChange={(e) => setFirst(e.target.value)} className="input-field" placeholder="50000" />
+              <CurrencyInput value={first} onChange={(e) => setFirst(e.target.value)} className="input-field" placeholder="50000" />
             </div>
             <div>
               <label className="block text-xs text-text-muted mb-1">2da Quincena (ARS)</label>
-              <input type="number" value={second} onChange={(e) => setSecond(e.target.value)} className="input-field" placeholder="50000" />
+              <CurrencyInput value={second} onChange={(e) => setSecond(e.target.value)} className="input-field" placeholder="50000" />
             </div>
           </div>
         </>

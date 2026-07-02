@@ -6,6 +6,7 @@ import { createExpense, deleteExpense, updateExpense } from '@/actions/expenses'
 import toast from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
+import { CurrencyInput } from '@/components/CurrencyInput';
 
 interface Category {
   id: string;
@@ -250,9 +251,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-text-secondary mb-1">Monto</label>
-              <input
-                type="number"
-                step="0.01"
+              <CurrencyInput
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 className="input-field"

@@ -6,6 +6,7 @@ import { createSavingsGoal, addSavingsTransaction, deleteSavingsGoal, distribute
 import toast from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { CurrencyInput } from '@/components/CurrencyInput';
 
 interface SavingsGoal {
   id: string;
@@ -330,9 +331,7 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
               <label className="block text-sm text-text-secondary mb-1">
                 Que Necesitamos
               </label>
-              <input
-                type="number"
-                step="0.01"
+              <CurrencyInput
                 value={targetAmount}
                 onChange={(e) => {
                   setTargetAmount(e.target.value);
@@ -368,7 +367,7 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
             {!editingGoalId && (
               <div>
                 <label className="block text-sm text-text-secondary mb-1">Ahorro inicial</label>
-                <input type="number" step="0.01" value={initialAmount} onChange={(e) => setInitialAmount(e.target.value)} className="input-field" placeholder="Monto ya ahorrado" />
+                <CurrencyInput value={initialAmount} onChange={(e) => setInitialAmount(e.target.value)} className="input-field" placeholder="Monto ya ahorrado" />
               </div>
             )}
           </div>
@@ -630,7 +629,7 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
                                       }`}
                                     >⬇️ Retiro</button>
                                   </div>
-                                  <input type="number" step="0.01" value={txAmount} onChange={(e) => setTxAmount(e.target.value)} className="input-field py-1 text-xs" placeholder="Monto" />
+                                  <CurrencyInput value={txAmount} onChange={(e) => setTxAmount(e.target.value)} className="input-field py-1 text-xs" placeholder="Monto" />
                                   <input type="text" value={txDescription} onChange={(e) => setTxDescription(e.target.value)} className="input-field py-1 text-xs" placeholder="Detalle (opcional)" />
                                   <div className="flex gap-2 pt-1">
                                     <button onClick={() => setShowTransactionForm(null)} className="flex-1 py-1 text-xs text-text-muted hover:text-text-primary">Cancelar</button>
