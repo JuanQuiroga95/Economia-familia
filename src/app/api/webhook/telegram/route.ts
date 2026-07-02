@@ -83,19 +83,23 @@ REGLAS DE EXTRACCIÓN (Aplica siempre que el dato exista o pueda inferirse, incl
 - moneda: "ARS", "USD" o "EUR" (por defecto "ARS")
 - persona: nombre de quien lo hace (por defecto "${profileName}")
 - Multiplicadores: "mil" o "k" = x1000, "luca(s)" = x1000.
-- Si analizas IMÁGENES de comprobantes/tickets, SUMA el total de todos ellos para el "monto", identifica si son ingresos o gastos, y crea una "descripcion" general.
+- Si analizas IMÁGENES de comprobantes, crea una acción separada para CADA movimiento, a menos que el usuario explícitamente pida juntarlos/sumarlos en un solo registro.
 
-Devuelve ÚNICAMENTE un JSON válido (sin texto extra):
+Devuelve ÚNICAMENTE un JSON válido (sin texto extra) con esta estructura:
 {
-  "accion": "crear" | "modificar" | "eliminar" | "link",
-  "entidad_id": "id_string",
-  "tipo": "gasto" | "ingreso",
-  "monto": numero,
-  "moneda": "ARS",
-  "descripcion": "texto",
-  "categoria": "categoria",
-  "tipo_gasto": "propio" | "compartido",
-  "persona": "nombre"
+  "acciones": [
+    {
+      "accion": "crear" | "modificar" | "eliminar" | "link",
+      "entidad_id": "id_string",
+      "tipo": "gasto" | "ingreso",
+      "monto": numero,
+      "moneda": "ARS",
+      "descripcion": "texto",
+      "categoria": "categoria",
+      "tipo_gasto": "propio" | "compartido",
+      "persona": "nombre"
+    }
+  ]
 }`;
 
 async function parseTransactionWithAI(
@@ -103,7 +107,7 @@ async function parseTransactionWithAI(
   profileName: string,
   categories: string[],
   context: string
-): Promise<ParsedAction> {
+): Promise<{ acciones: ParsedAction[] }> {
   const groq = new Groq({ apiKey: GROQ_API_KEY });
   const completion = await groq.chat.completions.create({
     messages: [
@@ -126,11 +130,11 @@ async function parseImagesWithAI(
   categories: string[],
   context: string,
   userInstruction: string = ''
-): Promise<ParsedAction> {
+): Promise<{ acciones: ParsedAction[] }> {
   const groq = new Groq({ apiKey: GROQ_API_KEY });
   
   const contentArray: any[] = [
-    { type: 'text', text: `Eres un asistente experto en finanzas. Extrae los datos solicitados de las imágenes.\n\nInstrucción: Extraé un resumen general y la suma de los montos totales de estas imágenes.${userInstruction ? `\n\nInstrucción especial del usuario: "${userInstruction}"` : ''}` }
+    { type: 'text', text: `Eres un asistente experto en finanzas. Analiza cuidadosamente estas imágenes y extrae TODO el texto y datos financieros relevantes (montos, descripciones, si son ingresos o gastos, etc).${userInstruction ? `\n\nInstrucción especial del usuario: "${userInstruction}"` : ''}` }
   ];
   
   for (const id of fileIds) {
@@ -400,7 +404,7 @@ export async function POST(request: NextRequest) {
     ].join('\n');
 
     // ─── Parse with AI ───
-    let parsed: ParsedAction;
+    let parsed: { acciones: ParsedAction[] };
     try {
       if (fileIdsToProcess.length > 0) {
         parsed = await parseImagesWithAI(fileIdsToProcess, profile.name, categoryNames, contextStr, customInstruction);
@@ -421,13 +425,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // ─── Link Action ───
-    if (parsed.accion === 'link') {
-      const textLower = messageText.toLowerCase();
-      let path = '/gastos';
-      let label = 'Gastos';
-      
-      if (parsed.tipo?.toLowerCase().includes('ingreso') || textLower.includes('ingreso')) {
+    // ─── Execute Actions ───
+    if (!parsed.acciones || !Array.isArray(parsed.acciones) || parsed.acciones.length === 0) {
+      await sendTelegramMessage(chatId, '❌ No encontré ninguna acción válida.');
+      return NextResponse.json({ ok: true });
+    }
+
+    for (const action of parsed.acciones) {
+      // ─── Link Action ───
+      if (action.accion === 'link') {
+        const textLower = messageText.toLowerCase();
+        let path = '/gastos';
+        let label = 'Gastos';
+        
+        if (action.tipo?.toLowerCase().includes('ingreso') || textLower.includes('ingreso')) {
         path = '/ingresos';
         label = 'Ingresos';
       } else if (textLower.includes('ahorro') || parsed.tipo?.toLowerCase().includes('ahorro')) {
@@ -441,124 +452,125 @@ export async function POST(request: NextRequest) {
         label = 'Configuración';
       }
 
-      const link = await createMagicLink(profile.accountId, path, appUrl);
-      await sendTelegramMessage(chatId, `🪄 <b>Acceso rápido a EconoApp</b>`, {
-        inline_keyboard: [[{ text: `Abrir app (${label})`, url: link }]]
-      });
-      return NextResponse.json({ ok: true });
-    }
+        const link = await createMagicLink(profile.accountId, path, appUrl);
+        await sendTelegramMessage(chatId, `🪄 <b>Acceso rápido a EconoApp</b>`, {
+          inline_keyboard: [[{ text: `Abrir app (${label})`, url: link }]]
+        });
+        continue;
+      }
 
-    // ─── Delete Action ───
-    if (parsed.accion === 'eliminar') {
-      if (!parsed.entidad_id) {
-        await sendTelegramMessage(chatId, '❌ No encontré el registro a eliminar en tus últimos movimientos.');
-        return NextResponse.json({ ok: true });
-      }
-      try {
-        await prisma.expense.delete({ where: { id: parsed.entidad_id } }).catch(() => {});
-        await prisma.income.delete({ where: { id: parsed.entidad_id } }).catch(() => {});
-        await sendTelegramMessage(chatId, '🗑️ Registro eliminado correctamente.');
-        return NextResponse.json({ ok: true });
-      } catch (e) {
-        await sendTelegramMessage(chatId, '❌ Error al eliminar.');
-        return NextResponse.json({ ok: true });
-      }
-    }
-
-    // ─── Modify Action ───
-    if (parsed.accion === 'modificar') {
-      if (!parsed.entidad_id) {
-        await sendTelegramMessage(chatId, '❌ No encontré el registro a modificar en tus últimos movimientos.');
-        return NextResponse.json({ ok: true });
-      }
-      
-      const { parseArgDate, getArgDate } = require('@/lib/dateUtils');
-      const today = getArgDate();
-      const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-      
-      const matchedCategory = categories.find(c => c.name.toLowerCase() === parsed.categoria?.toLowerCase()) || categories.find((c) => c.name === 'Otros') || categories[0];
-      
-      let updated = false;
-      
-      try {
-        const exp = await prisma.expense.findUnique({ where: { id: parsed.entidad_id }});
-        if (exp) {
-          await prisma.expense.update({
-            where: { id: parsed.entidad_id },
-            data: {
-              amount: parsed.monto || exp.amount,
-              description: parsed.descripcion || exp.description,
-              categoryId: matchedCategory.id,
-              type: parsed.tipo_gasto === 'compartido' ? 'COMPARTIDO' : 'PROPIO'
-            }
-          });
-          await sendTelegramMessage(chatId, `✏️ <b>Gasto modificado:</b>\nNuevo monto: $${formatCurrency(parsed.monto || exp.amount)}\nDesc: ${parsed.descripcion || exp.description}`);
-          updated = true;
+      // ─── Delete Action ───
+      if (action.accion === 'eliminar') {
+        if (!action.entidad_id) {
+          await sendTelegramMessage(chatId, '❌ No encontré el registro a eliminar en tus últimos movimientos.');
+          continue;
         }
-      } catch (e) {}
-
-      if (!updated) {
         try {
-          const inc = await prisma.income.findUnique({ where: { id: parsed.entidad_id }});
-          if (inc) {
-            await prisma.income.update({
-              where: { id: parsed.entidad_id },
+          await prisma.expense.delete({ where: { id: action.entidad_id } }).catch(() => {});
+          await prisma.income.delete({ where: { id: action.entidad_id } }).catch(() => {});
+          await sendTelegramMessage(chatId, '🗑️ Registro eliminado correctamente.');
+          continue;
+        } catch (e) {
+          await sendTelegramMessage(chatId, '❌ Error al eliminar.');
+          continue;
+        }
+      }
+
+      // ─── Modify Action ───
+      if (action.accion === 'modificar') {
+        if (!action.entidad_id) {
+          await sendTelegramMessage(chatId, '❌ No encontré el registro a modificar en tus últimos movimientos.');
+          continue;
+        }
+        
+        const { parseArgDate, getArgDate } = require('@/lib/dateUtils');
+        const today = getArgDate();
+        const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        
+        const matchedCategory = categories.find(c => c.name.toLowerCase() === action.categoria?.toLowerCase()) || categories.find((c) => c.name === 'Otros') || categories[0];
+        
+        let updated = false;
+        
+        try {
+          const exp = await prisma.expense.findUnique({ where: { id: action.entidad_id }});
+          if (exp) {
+            await prisma.expense.update({
+              where: { id: action.entidad_id },
               data: {
-                amount: parsed.monto || inc.amount,
-                description: parsed.descripcion || inc.description,
+                amount: action.monto || exp.amount,
+                description: action.descripcion || exp.description,
+                categoryId: matchedCategory.id,
+                type: action.tipo_gasto === 'compartido' ? 'COMPARTIDO' : 'PROPIO'
               }
             });
-            await sendTelegramMessage(chatId, `✏️ <b>Ingreso modificado:</b>\nNuevo monto: $${formatCurrency(parsed.monto || inc.amount)}\nDesc: ${parsed.descripcion || inc.description}`);
+            await sendTelegramMessage(chatId, `✏️ <b>Gasto modificado:</b>\nNuevo monto: $${formatCurrency(action.monto || exp.amount)}\nDesc: ${action.descripcion || exp.description}`);
             updated = true;
           }
         } catch (e) {}
+
+        if (!updated) {
+          try {
+            const inc = await prisma.income.findUnique({ where: { id: action.entidad_id }});
+            if (inc) {
+              await prisma.income.update({
+                where: { id: action.entidad_id },
+                data: {
+                  amount: action.monto || inc.amount,
+                  description: action.descripcion || inc.description,
+                }
+              });
+              await sendTelegramMessage(chatId, `✏️ <b>Ingreso modificado:</b>\nNuevo monto: $${formatCurrency(action.monto || inc.amount)}\nDesc: ${action.descripcion || inc.description}`);
+              updated = true;
+            }
+          } catch (e) {}
+        }
+
+        if (!updated) await sendTelegramMessage(chatId, '❌ No se pudo modificar. ¿Seguro que es un registro reciente?');
+        continue;
       }
 
-      if (!updated) await sendTelegramMessage(chatId, '❌ No se pudo modificar. ¿Seguro que es un registro reciente?');
-      return NextResponse.json({ ok: true });
-    }
+      // ─── Create Action ───
+      if (!action.monto || action.monto <= 0) {
+        await sendTelegramMessage(chatId, '❌ No pude detectar un monto válido.');
+        continue;
+      }
 
-    // ─── Create Action ───
-    if (!parsed.monto || parsed.monto <= 0) {
-      await sendTelegramMessage(chatId, '❌ No pude detectar un monto válido.');
-      return NextResponse.json({ ok: true });
-    }
+      const matchedCategory = categories.find((c) => c.name.toLowerCase() === action.categoria?.toLowerCase()) || categories.find((c) => c.name === 'Otros') || categories[0];
+      
+      let targetProfile = profile;
+      if (action.persona && action.persona.toLowerCase() !== profile.name.toLowerCase()) {
+        const otherProfile = await prisma.profile.findFirst({ where: { accountId: profile.accountId, name: { contains: action.persona, mode: 'insensitive' } } });
+        if (otherProfile) targetProfile = { ...otherProfile, account: profile.account, accountId: profile.accountId };
+      }
 
-    const matchedCategory = categories.find((c) => c.name.toLowerCase() === parsed.categoria?.toLowerCase()) || categories.find((c) => c.name === 'Otros') || categories[0];
-    
-    let targetProfile = profile;
-    if (parsed.persona && parsed.persona.toLowerCase() !== profile.name.toLowerCase()) {
-      const otherProfile = await prisma.profile.findFirst({ where: { accountId: profile.accountId, name: { contains: parsed.persona, mode: 'insensitive' } } });
-      if (otherProfile) targetProfile = { ...otherProfile, account: profile.account, accountId: profile.accountId };
-    }
+      const { parseArgDate, getArgDate } = require('@/lib/dateUtils');
+      const { revalidatePath } = require('next/cache');
+      const today = getArgDate();
+      const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
-    const { parseArgDate, getArgDate } = require('@/lib/dateUtils');
-    const { revalidatePath } = require('next/cache');
-    const today = getArgDate();
-    const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-
-    if (parsed.tipo === 'ingreso') {
-      const inc = await prisma.income.create({
-        data: { amount: parsed.monto, currency: parsed.moneda || 'ARS', date: parseArgDate(dateStr), description: parsed.descripcion || 'Ingreso desde Telegram', profileId: targetProfile.id },
-      });
-      const link = await createMagicLink(profile.accountId, '/ingresos', appUrl);
-      await sendTelegramMessage(
-        chatId,
-        `✅ <b>Ingreso registrado</b>\n\n💰 Monto: <b>$${formatCurrency(parsed.monto)}</b> ${parsed.moneda}\n📝 Descripción: ${parsed.descripcion}\n👤 Perfil: ${targetProfile.name}`,
-        { inline_keyboard: [[{ text: '🗑️ Deshacer', callback_data: `undo_income_${inc.id}` }, { text: '✏️ Editar en App', url: link }]] }
-      );
-    } else {
-      const exp = await prisma.expense.create({
-        data: { amount: parsed.monto, currency: parsed.moneda || 'ARS', date: parseArgDate(dateStr), description: parsed.descripcion || 'Gasto desde Telegram', categoryId: matchedCategory.id, profileId: targetProfile.id, type: parsed.tipo_gasto === 'compartido' ? 'COMPARTIDO' : 'PROPIO', paidFromPersonalBudget: false },
-      });
-      const budgetInfo = await getBudgetRemaining(targetProfile.id);
-      const link = await createMagicLink(profile.accountId, '/gastos', appUrl);
-      await sendTelegramMessage(
-        chatId,
-        `✅ <b>Gasto registrado</b>\n\n💸 Monto: <b>$${formatCurrency(parsed.monto)}</b> ${parsed.moneda}\n📂 Categoría: ${matchedCategory.icon} ${matchedCategory.name}\n📝 ${parsed.descripcion}\n${parsed.tipo_gasto === 'compartido' ? '👥 Compartido' : '👤 Propio'} · ${targetProfile.name}${budgetInfo}`,
-        { inline_keyboard: [[{ text: '🗑️ Deshacer', callback_data: `undo_expense_${exp.id}` }, { text: '✏️ Editar en App', url: link }]] }
-      );
-    }
+      if (action.tipo === 'ingreso') {
+        const inc = await prisma.income.create({
+          data: { amount: action.monto, currency: action.moneda || 'ARS', date: parseArgDate(dateStr), description: action.descripcion || 'Ingreso desde Telegram', profileId: targetProfile.id },
+        });
+        const link = await createMagicLink(profile.accountId, '/ingresos', appUrl);
+        await sendTelegramMessage(
+          chatId,
+          `✅ <b>Ingreso registrado</b>\n\n💰 Monto: <b>$${formatCurrency(action.monto)}</b> ${action.moneda || 'ARS'}\n📝 Descripción: ${action.descripcion}\n👤 Perfil: ${targetProfile.name}`,
+          { inline_keyboard: [[{ text: '🗑️ Deshacer', callback_data: `undo_income_${inc.id}` }, { text: '✏️ Editar en App', url: link }]] }
+        );
+      } else {
+        const exp = await prisma.expense.create({
+          data: { amount: action.monto, currency: action.moneda || 'ARS', date: parseArgDate(dateStr), description: action.descripcion || 'Gasto desde Telegram', categoryId: matchedCategory.id, profileId: targetProfile.id, type: action.tipo_gasto === 'compartido' ? 'COMPARTIDO' : 'PROPIO', paidFromPersonalBudget: false },
+        });
+        const budgetInfo = await getBudgetRemaining(targetProfile.id);
+        const link = await createMagicLink(profile.accountId, '/gastos', appUrl);
+        await sendTelegramMessage(
+          chatId,
+          `✅ <b>Gasto registrado</b>\n\n💸 Monto: <b>$${formatCurrency(action.monto)}</b> ${action.moneda || 'ARS'}\n📂 Categoría: ${matchedCategory.icon} ${matchedCategory.name}\n📝 ${action.descripcion}\n${action.tipo_gasto === 'compartido' ? '👥 Compartido' : '👤 Propio'} · ${targetProfile.name}${budgetInfo}`,
+          { inline_keyboard: [[{ text: '🗑️ Deshacer', callback_data: `undo_expense_${exp.id}` }, { text: '✏️ Editar en App', url: link }]] }
+        );
+      }
+    } // End of for (const action of parsed.acciones)
 
     revalidatePath('/gastos');
     revalidatePath('/ingresos');
