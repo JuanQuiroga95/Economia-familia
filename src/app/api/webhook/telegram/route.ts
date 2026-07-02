@@ -146,7 +146,7 @@ async function parseImagesWithAI(
     messages: [
       { role: 'user', content: contentArray },
     ],
-    model: 'llama-3.2-90b-vision-preview',
+    model: 'llama-3.2-11b-vision-preview',
     temperature: 0.1,
     max_tokens: 500
   });
@@ -407,8 +407,9 @@ export async function POST(request: NextRequest) {
       } else {
         parsed = await parseTransactionWithAI(messageText, profile.name, categoryNames, contextStr);
       }
-    } catch (error) {
-      await sendTelegramMessage(chatId, '❌ No pude interpretar la solicitud.');
+    } catch (error: any) {
+      console.error('Parse Error:', error);
+      await sendTelegramMessage(chatId, `❌ No pude interpretar la solicitud.\nDetalle del error: ${error.message || 'Desconocido'}`);
       return NextResponse.json({ ok: true });
     }
 
