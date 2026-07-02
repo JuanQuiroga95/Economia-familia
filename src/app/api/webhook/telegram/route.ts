@@ -409,7 +409,15 @@ export async function POST(request: NextRequest) {
       }
     } catch (error: any) {
       console.error('Parse Error:', error);
-      await sendTelegramMessage(chatId, `❌ No pude interpretar la solicitud.\nDetalle del error: ${error.message || 'Desconocido'}`);
+      let activeModels = 'No se pudo obtener la lista de modelos.';
+      try {
+        const groq = new Groq({ apiKey: GROQ_API_KEY });
+        const models = await groq.models.list();
+        activeModels = models.data.map(m => m.id).filter(id => id.includes('vision') || id.includes('llama') || id.includes('qwen')).join(', ');
+      } catch (e) {
+        console.error('Error fetching models:', e);
+      }
+      await sendTelegramMessage(chatId, `❌ Falló la IA.\nError: ${error.message || 'Desconocido'}\nModelos activos en Groq: ${activeModels}`);
       return NextResponse.json({ ok: true });
     }
 
