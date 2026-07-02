@@ -544,15 +544,15 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
                       <tr>
                         <th className="px-4 py-3 font-semibold uppercase min-w-[200px]">Detalle</th>
                         {goalsList.map(g => (
-                          <th key={g.id} className="px-4 py-3 font-semibold text-right min-w-[150px]">
+                          <th key={g.id} className="px-4 py-3 font-semibold text-right min-w-[150px] group">
                             <div className="flex justify-end items-center gap-2">
                               <span>{g.name}</span>
-                              <div className="flex gap-1 opacity-0 hover:opacity-100 transition-opacity">
-                                <button onClick={() => handleEditGoal(g)} className="text-accent" title="Editar">✏️</button>
-                                <button onClick={() => handleDeleteGoal(g.id)} className="text-danger" title="Eliminar">🗑️</button>
+                              <div className="flex gap-2 mt-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                                <button onClick={() => handleEditGoal(g)} className="text-accent bg-bg-card px-2 py-1 rounded border border-border text-xs" title="Editar">✏️ Editar</button>
+                                <button onClick={() => handleDeleteGoal(g.id)} className="text-danger bg-bg-card px-2 py-1 rounded border border-border text-xs" title="Eliminar">🗑️ Borrar</button>
                               </div>
                             </div>
-                            <div className="text-xs text-text-muted font-normal mt-1">Acumulado: ${formatCurrency(g.currentAmount)}</div>
+                            <div className="text-xs text-text-muted font-normal mt-2">Acumulado: ${formatCurrency(g.currentAmount)}</div>
                           </th>
                         ))}
                         <th className="px-4 py-3 font-semibold text-right text-accent min-w-[120px]">TOTAL</th>

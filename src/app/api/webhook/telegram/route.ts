@@ -328,6 +328,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
+    let messageText = (message.text || message.caption || '').trim();
+
     // ─── Process Photos (Draft logic) ───
     if (message.photo) {
       const photo = message.photo[message.photo.length - 1]; // highest res
@@ -343,11 +345,11 @@ export async function POST(request: NextRequest) {
         });
       }
       
-      await sendTelegramMessage(chatId, '📸 <i>Imagen guardada en borrador.</i>\n\nPodés mandarme <b>más fotos</b> si querés agruparlas, o escribí <b>"procesar"</b> para unirlas todas en un solo gasto.');
-      return NextResponse.json({ ok: true });
+      if (messageText.length === 0) {
+        await sendTelegramMessage(chatId, '📸 <i>Imagen guardada en borrador.</i>\n\nPodés mandarme <b>más fotos</b> si querés agruparlas, o escribí <b>"procesar"</b> para unirlas todas en un solo gasto.');
+        return NextResponse.json({ ok: true });
+      }
     }
-
-    let messageText = (message.text || message.caption || '').trim();
 
     if (message.voice) {
       try {
