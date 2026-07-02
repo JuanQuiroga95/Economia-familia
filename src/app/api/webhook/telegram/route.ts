@@ -130,7 +130,7 @@ async function parseImagesWithAI(
   const groq = new Groq({ apiKey: GROQ_API_KEY });
   
   const contentArray: any[] = [
-    { type: 'text', text: `Extraé los datos de estas imágenes en un único JSON (sumando los montos si son varios tickets) según las reglas del sistema.${userInstruction ? `\nInstrucción adicional del usuario: "${userInstruction}"` : ''}` }
+    { type: 'text', text: `Eres un asistente experto en finanzas. Extrae los datos solicitados de las imágenes.\n\nInstrucción: Extraé un resumen general y la suma de los montos totales de estas imágenes.${userInstruction ? `\n\nInstrucción especial del usuario: "${userInstruction}"` : ''}` }
   ];
   
   for (const id of fileIds) {
@@ -144,7 +144,6 @@ async function parseImagesWithAI(
 
   const completion = await groq.chat.completions.create({
     messages: [
-      { role: 'system', content: "Sos un asistente experto en finanzas. Extrae los datos solicitados de las imágenes basándote en la siguiente instrucción. Trata de extraer un resumen general y los montos totales." },
       { role: 'user', content: contentArray },
     ],
     model: 'llama-3.2-90b-vision-preview',
