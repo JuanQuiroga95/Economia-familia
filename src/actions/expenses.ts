@@ -165,7 +165,6 @@ export async function deleteExpense(id: string) {
 
 export async function getCategories() {
   try {
-    const { getAccountId } = require('@/lib/session');
     const accountId = await getAccountId();
     let cats = await prisma.category.findMany({
       where: accountId ? { accountId } : {},
