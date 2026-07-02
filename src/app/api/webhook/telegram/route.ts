@@ -441,7 +441,7 @@ export async function POST(request: NextRequest) {
         if (action.tipo?.toLowerCase().includes('ingreso') || textLower.includes('ingreso')) {
         path = '/ingresos';
         label = 'Ingresos';
-      } else if (textLower.includes('ahorro') || parsed.tipo?.toLowerCase().includes('ahorro')) {
+      } else if (textLower.includes('ahorro') || action.tipo?.toLowerCase().includes('ahorro')) {
         path = '/ahorros';
         label = 'Ahorros';
       } else if (textLower.includes('inversion') || textLower.includes('inversión')) {
@@ -572,6 +572,7 @@ export async function POST(request: NextRequest) {
       }
     } // End of for (const action of parsed.acciones)
 
+    const { revalidatePath } = require('next/cache');
     revalidatePath('/gastos');
     revalidatePath('/ingresos');
     revalidatePath('/dashboard');
