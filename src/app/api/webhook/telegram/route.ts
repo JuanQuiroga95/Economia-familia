@@ -410,9 +410,10 @@ export async function POST(request: NextRequest) {
 
     // ─── Link Action ───
     if (parsed.accion === 'link') {
-      const link = await createMagicLink(profile.accountId, parsed.tipo === 'ingreso' ? '/ingresos' : '/gastos', appUrl);
+      const isIngreso = parsed.tipo?.toLowerCase().includes('ingreso');
+      const link = await createMagicLink(profile.accountId, isIngreso ? '/ingresos' : '/gastos', appUrl);
       await sendTelegramMessage(chatId, `🪄 <b>Acceso rápido a EconoApp</b>`, {
-        inline_keyboard: [[{ text: `Abrir app (${parsed.tipo || 'Gastos'})`, url: link }]]
+        inline_keyboard: [[{ text: `Abrir app (${isIngreso ? 'Ingresos' : 'Gastos'})`, url: link }]]
       });
       return NextResponse.json({ ok: true });
     }
