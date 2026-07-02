@@ -14,7 +14,8 @@ export async function createSavingsGoal(data: SavingsGoalFormData) {
     const goal = await prisma.savingsGoal.create({
       data: {
         name: data.name,
-        targetAmount: data.targetAmount,
+        targetAmount: data.targetAmount || null,
+        isPiggyBank: data.isPiggyBank || false,
         currentAmount: initialAmount,
         currency: data.currency,
         accountId: accountId,

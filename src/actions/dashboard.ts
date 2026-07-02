@@ -299,6 +299,13 @@ export async function getSharedFundStats(month: number, year: number): Promise<S
       include: { profile: true },
     });
 
+    const fundPayments = await prisma.sharedFundPayment.findMany({
+      where: {
+        date: { gte: startDate, lte: endDate },
+        accountId,
+      },
+    });
+
     const totalSharedExpenses = sharedExpenses.reduce((sum, exp) => sum + exp.amount, 0);
 
     if (account.splitMode === 'FONDO_COMUN') {
@@ -317,13 +324,16 @@ export async function getSharedFundStats(month: number, year: number): Promise<S
           }
         }
       });
-      const debts = Array.from(debtMap.entries()).map(([profileId, data]) => ({
-        profileId,
-        profileName: data.profileName,
-        profileAvatar: data.profileAvatar,
-        amount: data.amount,
-        currency: 'ARS',
-      }));
+      const debts = Array.from(debtMap.entries()).map(([profileId, data]) => {
+        const paymentsReceived = fundPayments.filter(p => p.profileId === profileId).reduce((sum, p) => sum + p.amount, 0);
+        return {
+          profileId,
+          profileName: data.profileName,
+          profileAvatar: data.profileAvatar,
+          amount: Math.max(0, data.amount - paymentsReceived),
+          currency: 'ARS',
+        };
+      }).filter(d => d.amount > 0);
       return { totalSharedExpenses, debts, currency: 'ARS' };
     } else {
       // PORCENTAJE mode: person-to-person debt
@@ -344,6 +354,12 @@ export async function getSharedFundStats(month: number, year: number): Promise<S
       });
       
       const debts = [];
+      
+      const paymentsToA = fundPayments.filter(p => p.profileId === profileA.id).reduce((sum, p) => sum + p.amount, 0);
+      const paymentsToB = fundPayments.filter(p => p.profileId === profileB.id).reduce((sum, p) => sum + p.amount, 0);
+      
+      balanceA = balanceA - paymentsToA + paymentsToB; // Adjusted by payments
+      
       if (balanceA > 0) {
         // B owes A
         debts.push({

@@ -100,6 +100,7 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
 
   // Goal form
   const [goalName, setGoalName] = useState('');
+  const [isPiggyBank, setIsPiggyBank] = useState(false);
   const [targetAmount, setTargetAmount] = useState('');
   const [initialAmount, setInitialAmount] = useState('');
   const [currency, setCurrency] = useState('ARS');
@@ -150,6 +151,7 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
 
   const resetGoalForm = () => {
     setGoalName('');
+    setIsPiggyBank(false);
     setTargetAmount('');
     setInitialAmount('');
     setCurrency('ARS');
@@ -174,12 +176,13 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
     startTransition(async () => {
       const payload = {
         name: goalName,
-        targetAmount: targetAmount ? parseFloat(targetAmount) : 0,
+        targetAmount: (targetAmount && !isPiggyBank) ? parseFloat(targetAmount) : undefined,
+        isPiggyBank,
         initialAmount: initialAmount ? parseFloat(initialAmount) : 0,
         currency: currency as 'ARS' | 'USD' | 'EUR',
         profileId: activeProfile.id,
-        monthsToAchieve: monthsToAchieve ? parseInt(monthsToAchieve) : null,
-        monthlySplits
+        monthsToAchieve: (monthsToAchieve && !isPiggyBank) ? parseInt(monthsToAchieve) : null,
+        monthlySplits: isPiggyBank ? {} : monthlySplits
       };
 
       const result = editingGoalId 
@@ -200,7 +203,9 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
   const handleEditGoal = (goal: SavingsGoal) => {
     setEditingGoalId(goal.id);
     setGoalName(goal.name);
-    setTargetAmount(goal.targetAmount.toString());
+    // Use optional chaining or type assertion since targetAmount can be null in the schema
+    setTargetAmount((goal as any).targetAmount ? (goal as any).targetAmount.toString() : '');
+    setIsPiggyBank((goal as any).isPiggyBank || false);
     setCurrency(goal.currency);
     setMonthsToAchieve(goal.monthsToAchieve?.toString() || '');
     setMonthlySplits(goal.monthlySplits || {});
@@ -340,36 +345,50 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
               required
             />
           </div>
+          <label className="flex items-center gap-2 cursor-pointer mb-4 text-sm text-text-primary">
+            <input 
+              type="checkbox" 
+              checked={isPiggyBank}
+              onChange={(e) => setIsPiggyBank(e.target.checked)}
+              className="rounded border-border text-accent focus:ring-accent/30 bg-bg-input"
+            />
+            🐷 Chanchito / Ahorro Libre (Sin objetivo ni límite)
+          </label>
+
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div>
-              <label className="block text-sm text-text-secondary mb-1">
-                Que Necesitamos
-              </label>
-              <CurrencyInput
-                value={targetAmount}
-                onChange={(e) => {
-                  setTargetAmount(e.target.value);
-                  handleAmountOrMonthsChange(e.target.value, monthsToAchieve);
-                }}
-                className="input-field"
-                placeholder="Monto objetivo"
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-text-secondary mb-1">
-                Meses Para Lograrlo
-              </label>
-              <input
-                type="number"
-                value={monthsToAchieve}
-                onChange={(e) => {
-                  setMonthsToAchieve(e.target.value);
-                  handleAmountOrMonthsChange(targetAmount, e.target.value);
-                }}
-                className="input-field"
-                placeholder="Ej: 3"
-              />
-            </div>
+            {!isPiggyBank && (
+              <>
+                <div>
+                  <label className="block text-sm text-text-secondary mb-1">
+                    Que Necesitamos
+                  </label>
+                  <CurrencyInput
+                    value={targetAmount}
+                    onChange={(e) => {
+                      setTargetAmount(e.target.value);
+                      handleAmountOrMonthsChange(e.target.value, monthsToAchieve);
+                    }}
+                    className="input-field"
+                    placeholder="Monto objetivo"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-text-secondary mb-1">
+                    Meses Para Lograrlo
+                  </label>
+                  <input
+                    type="number"
+                    value={monthsToAchieve}
+                    onChange={(e) => {
+                      setMonthsToAchieve(e.target.value);
+                      handleAmountOrMonthsChange(targetAmount, e.target.value);
+                    }}
+                    className="input-field"
+                    placeholder="Ej: 3"
+                  />
+                </div>
+              </>
+            )}
             <div>
               <label className="block text-sm text-text-secondary mb-1">Moneda</label>
               <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="input-field">
@@ -386,35 +405,37 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
             )}
           </div>
 
-          <div className="pt-2 border-t border-border mt-4">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-sm font-medium text-text-primary">Aporte Mensual por Persona</h4>
-              <label className="flex items-center gap-2 cursor-pointer text-xs text-text-secondary hover:text-text-primary transition-colors">
-                <input 
-                  type="checkbox" 
-                  checked={isFreeEditMode}
-                  onChange={(e) => setIsFreeEditMode(e.target.checked)}
-                  className="rounded border-border text-accent focus:ring-accent/30 bg-bg-input"
-                />
-                Edición libre
-              </label>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              {profiles.map(p => (
-                <div key={p.id}>
-                  <label className="block text-xs text-text-secondary mb-1">{p.name}</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={monthlySplits[p.id] || ''}
-                    onChange={(e) => handleSplitChange(p.id, e.target.value)}
-                    className="input-field py-2"
-                    placeholder={`Aporte de ${p.name}`}
+          {!isPiggyBank && (
+            <div className="pt-2 border-t border-border mt-4">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-medium text-text-primary">Aporte Mensual por Persona</h4>
+                <label className="flex items-center gap-2 cursor-pointer text-xs text-text-secondary hover:text-text-primary transition-colors">
+                  <input 
+                    type="checkbox" 
+                    checked={isFreeEditMode}
+                    onChange={(e) => setIsFreeEditMode(e.target.checked)}
+                    className="rounded border-border text-accent focus:ring-accent/30 bg-bg-input"
                   />
-                </div>
-              ))}
+                  Edición libre
+                </label>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                {profiles.map(p => (
+                  <div key={p.id}>
+                    <label className="block text-xs text-text-secondary mb-1">{p.name}</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={monthlySplits[p.id] || ''}
+                      onChange={(e) => handleSplitChange(p.id, e.target.value)}
+                      className="input-field py-2"
+                      placeholder={`Aporte de ${p.name}`}
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           <button type="submit" disabled={isPending} className="w-full gradient-btn py-3 disabled:opacity-50 mt-4">
             {isPending ? 'Guardando...' : (editingGoalId ? 'Actualizar Meta' : 'Crear Meta')}
@@ -586,28 +607,34 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
                       <tr className="hover:bg-bg-input/50 transition-colors">
                         <td className="px-4 py-3 font-medium text-text-primary">{cur} QUE NECESITAMOS</td>
                         {goalsList.map(g => (
-                          <td key={g.id} className="px-4 py-3 text-right font-medium">${formatCurrency(g.targetAmount)}</td>
+                          <td key={g.id} className="px-4 py-3 text-right font-medium">
+                            {(g as any).isPiggyBank ? <span className="text-xs text-text-muted">Chanchito 🐷</span> : `$${formatCurrency(g.targetAmount || 0)}`}
+                          </td>
                         ))}
                         <td className="px-4 py-3 text-right font-bold text-accent">
-                          ${formatCurrency(goalsList.reduce((acc, g) => acc + (g.targetAmount || 0), 0))}
+                          ${formatCurrency(goalsList.reduce((acc, g) => acc + (!(g as any).isPiggyBank ? (g.targetAmount || 0) : 0), 0))}
                         </td>
                       </tr>
                       <tr className="hover:bg-bg-input/50 transition-colors">
                         <td className="px-4 py-3 font-medium text-text-primary">MESES PARA LOGRARLO</td>
                         {goalsList.map(g => (
-                          <td key={g.id} className="px-4 py-3 text-right text-text-secondary">{g.monthsToAchieve || '-'}</td>
+                          <td key={g.id} className="px-4 py-3 text-right text-text-secondary">
+                            {(g as any).isPiggyBank ? '-' : (g.monthsToAchieve || '-')}
+                          </td>
                         ))}
                         <td className="px-4 py-3 text-right text-text-secondary">-</td>
                       </tr>
                       <tr className="hover:bg-bg-input/50 transition-colors bg-bg-input/20">
                         <td className="px-4 py-3 font-bold text-text-primary">AHORRO POR MES</td>
                         {goalsList.map(g => {
-                          const perMonth = g.targetAmount && g.monthsToAchieve ? g.targetAmount / g.monthsToAchieve : 0;
-                          return <td key={g.id} className="px-4 py-3 text-right font-semibold text-text-primary">${formatCurrency(perMonth)}</td>;
+                          const perMonth = g.targetAmount && g.monthsToAchieve && !(g as any).isPiggyBank ? g.targetAmount / g.monthsToAchieve : 0;
+                          return <td key={g.id} className="px-4 py-3 text-right font-semibold text-text-primary">
+                            {(g as any).isPiggyBank ? '-' : `$${formatCurrency(perMonth)}`}
+                          </td>;
                         })}
                         <td className="px-4 py-3 text-right font-bold text-accent">
                           ${formatCurrency(goalsList.reduce((acc, g) => {
-                            const perMonth = g.targetAmount && g.monthsToAchieve ? g.targetAmount / g.monthsToAchieve : 0;
+                            const perMonth = g.targetAmount && g.monthsToAchieve && !(g as any).isPiggyBank ? g.targetAmount / g.monthsToAchieve : 0;
                             return acc + perMonth;
                           }, 0))}
                         </td>

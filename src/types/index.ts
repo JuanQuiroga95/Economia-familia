@@ -88,7 +88,8 @@ export interface ExpenseFormData {
 
 export interface SavingsGoalFormData {
   name: string;
-  targetAmount: number;
+  targetAmount?: number;
+  isPiggyBank?: boolean;
   initialAmount?: number;
   currency: Currency;
   monthsToAchieve?: number | null;

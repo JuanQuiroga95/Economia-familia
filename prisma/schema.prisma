@@ -26,6 +26,7 @@ model Account {
   categoryBudgets CategoryBudget[]
   savingsGoals    SavingsGoal[]
   wallets         Wallet[]
+  sharedFundPayments SharedFundPayment[]
 }
 
 enum SplitMode {
@@ -50,6 +51,7 @@ model Profile {
   savingsTransactions SavingsTransaction[]
   investments         Investment[]
   budgetConfigs       BudgetConfig[]
+  sharedFundPayments  SharedFundPayment[]
 }
 
 model Category {
@@ -131,7 +133,8 @@ enum ExpenseType {
 model SavingsGoal {
   id              String   @id @default(cuid())
   name            String
-  targetAmount    Float
+  targetAmount    Float?
+  isPiggyBank     Boolean  @default(false)
   currency        String   @default("ARS")
   currentAmount   Float    @default(0)
   
@@ -216,16 +219,34 @@ model BudgetConfig {
 }
 
 model CategoryBudget {
-  id         String   @id @default(cuid())
-  categoryId String
-  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  accountId  String
-  account    Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  month      Int
-  year       Int
-  amount     Float    // Límite mensual
+  id          String   @id @default(cuid())
+  month       Int
+  year        Int
+  amount      Float
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id])
+  accountId   String
+  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  @@unique([categoryId, month, year])
+  @@unique([accountId, categoryId, month, year])
+}
+
+model SharedFundPayment {
+  id          String   @id @default(cuid())
+  amount      Float
+  date        DateTime @default(now())
+  description String?
+  
+  profileId   String
+  profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  
+  accountId   String
+  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model TelegramDraft {

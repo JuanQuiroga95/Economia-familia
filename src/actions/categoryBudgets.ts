@@ -10,7 +10,8 @@ export async function setCategoryBudget(categoryId: string, month: number, year:
 
     await prisma.categoryBudget.upsert({
       where: {
-        categoryId_month_year: {
+        accountId_categoryId_month_year: {
+          accountId,
           categoryId,
           month,
           year,

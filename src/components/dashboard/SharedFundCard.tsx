@@ -2,10 +2,39 @@
 import { formatCurrency } from '@/lib/formatUtils';
 
 import type { SharedFundStats } from '@/types';
+import { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
+import { createFundPayment } from '@/actions/sharedFund';
+import { toast } from 'react-hot-toast';
 
 export default function SharedFundCard({ stats }: { stats: SharedFundStats }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
   const hasDebts = stats.debts.length > 0;
   const hasExpenses = stats.totalSharedExpenses > 0;
+
+  const handleReimburse = (profileId: string, maxAmount: number) => {
+    const amountStr = prompt(`¿Cuánto se le devolvió a este perfil? (Máximo: $${maxAmount})`);
+    if (!amountStr) return;
+    const amount = parseFloat(amountStr);
+    if (isNaN(amount) || amount <= 0 || amount > maxAmount) {
+      toast.error('Monto inválido');
+      return;
+    }
+
+    startTransition(async () => {
+      const result = await createFundPayment({
+        amount,
+        profileId,
+      });
+      if (result.success) {
+        toast.success('Devolución registrada');
+        router.refresh();
+      } else {
+        toast.error(result.error || 'Error al registrar devolución');
+      }
+    });
+  };
 
   if (!hasExpenses && !hasDebts) return null;
 
@@ -54,9 +83,18 @@ export default function SharedFundCard({ stats }: { stats: SharedFundStats }) {
                     </p>
                   </div>
                 </div>
-                <span className="text-lg font-bold text-warning">
-                  ${formatCurrency(debt.amount)}
-                </span>
+                <div className="flex flex-col items-end gap-2">
+                  <span className="text-lg font-bold text-warning">
+                    ${formatCurrency(debt.amount)}
+                  </span>
+                  <button
+                    onClick={() => handleReimburse(debt.profileId, debt.amount)}
+                    disabled={isPending}
+                    className="px-2 py-1 bg-warning/20 text-warning rounded text-xs font-medium hover:bg-warning/30 transition-colors disabled:opacity-50"
+                  >
+                    Registrar Devolución
+                  </button>
+                </div>
               </div>
             ))}
           </div>
