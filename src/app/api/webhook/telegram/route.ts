@@ -83,7 +83,9 @@ REGLAS DE EXTRACCIÓN (Aplica siempre que el dato exista o pueda inferirse, incl
 - moneda: "ARS", "USD" o "EUR" (por defecto "ARS")
 - persona: nombre de quien lo hace (por defecto "${profileName}")
 - Multiplicadores: "mil" o "k" = x1000, "luca(s)" = x1000.
-- Si analizas IMÁGENES de comprobantes, crea una acción separada para CADA movimiento, a menos que el usuario explícitamente pida juntarlos/sumarlos en un solo registro.
+- Si analizas IMÁGENES de comprobantes o listas, es OBLIGATORIO que crees una "accion" separada en el array "acciones" por CADA movimiento individual que figure en el texto/imagen (no importa si son 2 o 10).
+- NO agrupes, NO sumes, y NO omitas transacciones a menos que el usuario te pida EXPLÍCITAMENTE "sumalos" o "juntalos en uno solo".
+- Para identificar el tipo: si dice "pago", "enviada" o tiene un monto negativo (-), es "gasto". Si dice "rendimiento", "recibida", "deposito" o tiene un monto positivo (+), es "ingreso".
 
 Devuelve ÚNICAMENTE un JSON válido (sin texto extra) con esta estructura:
 {
@@ -134,7 +136,7 @@ async function parseImagesWithAI(
   const groq = new Groq({ apiKey: GROQ_API_KEY });
   
   const contentArray: any[] = [
-    { type: 'text', text: `Eres un asistente experto en finanzas. Analiza cuidadosamente estas imágenes y extrae TODO el texto y datos financieros relevantes (montos, descripciones, si son ingresos o gastos, etc).${userInstruction ? `\n\nInstrucción especial del usuario: "${userInstruction}"` : ''}` }
+    { type: 'text', text: `Eres un asistente experto en finanzas. Analiza cuidadosamente estas imágenes y extrae una LISTA DETALLADA Y EXHAUSTIVA de TODOS los movimientos financieros que aparezcan.\n\nPara CADA movimiento, indica claramente:\n1. Descripción exacta.\n2. Monto.\n3. Si es Ingreso o Gasto (por ejemplo, pagos o montos con signo '-' son Gastos; rendimientos, depósitos o montos con signo '+' son Ingresos).\n\nNO OMITAS NINGÚN MOVIMIENTO. Debes enumerar cada uno por separado.${userInstruction ? `\n\nInstrucción especial del usuario: "${userInstruction}"` : ''}` }
   ];
   
   for (const id of fileIds) {
