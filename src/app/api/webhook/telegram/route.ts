@@ -230,6 +230,7 @@ async function getBudgetRemaining(profileId: string): Promise<string> {
         date: { gte: startDate, lte: endDate },
         currency: config.currency,
         type: 'PROPIO',
+        category: { name: { notIn: ['Ahorro / Inversión', 'Ahorros'] } },
       },
       _sum: { amount: true },
     });

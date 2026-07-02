@@ -26,10 +26,15 @@ export async function getDashboardStats(month: number, year: number, profileId?:
 
     let totalExpenses = 0;
 
+    const expenseWhereBase = {
+      ...whereBase,
+      category: { name: { notIn: ['Ahorro / Inversión', 'Ahorros'] } },
+    };
+
     if (profileId) {
       // Si es la vista de un perfil específico: Gastos PROPIOS + Compartidos pagados por él
       const expenses = await prisma.expense.findMany({
-        where: whereBase,
+        where: expenseWhereBase,
       });
       totalExpenses = expenses
         .filter((e) => e.type === 'PROPIO' || (e.type === 'COMPARTIDO' && e.paidFromPersonalBudget))
@@ -37,7 +42,7 @@ export async function getDashboardStats(month: number, year: number, profileId?:
     } else {
       // Vista global (Dashboard): TODOS los gastos (Propios de ambos + Compartidos)
       const allExpenses = await prisma.expense.aggregate({
-        where: whereBase,
+        where: expenseWhereBase,
         _sum: { amount: true },
       });
       totalExpenses = allExpenses._sum.amount || 0;
@@ -104,6 +109,7 @@ export async function getCategoryBreakdown(
       where: {
         date: { gte: startDate, lte: endDate },
         profile: { accountId },
+        category: { name: { notIn: ['Ahorro / Inversión', 'Ahorros'] } },
         ...(profileId ? { profileId, type: 'PROPIO' } : {}),
       },
       include: { category: true },
@@ -176,6 +182,7 @@ export async function getMonthlyComparison(profileId?: string) {
         where: {
           date: { gte: startDate, lte: endDate },
           profile: { accountId },
+          category: { name: { notIn: ['Ahorro / Inversión', 'Ahorros'] } },
           ...(profileId ? { profileId, type: 'PROPIO' } : {}),
         },
         _sum: { amount: true },
@@ -239,6 +246,7 @@ export async function getBudgetStatus(profileId: string): Promise<BudgetStatus |
         date: { gte: startDate, lte: endDate },
         currency: config.currency,
         type: 'PROPIO',
+        category: { name: { notIn: ['Ahorro / Inversión', 'Ahorros'] } },
       },
     });
 
@@ -251,6 +259,7 @@ export async function getBudgetStatus(profileId: string): Promise<BudgetStatus |
         currency: config.currency,
         type: 'COMPARTIDO',
         paidFromPersonalBudget: true,
+        category: { name: { notIn: ['Ahorro / Inversión', 'Ahorros'] } },
       },
     });
 
@@ -399,6 +408,7 @@ export async function getUserExpenseBreakdown(month: number, year: number): Prom
       where: {
         date: { gte: startDate, lte: endDate },
         profile: { accountId },
+        category: { name: { notIn: ['Ahorro / Inversión', 'Ahorros'] } },
       },
       include: { profile: true },
     });
