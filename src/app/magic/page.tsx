@@ -1,15 +1,17 @@
 'use client';
 import { signIn } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
-import { useEffect, Suspense } from 'react';
+import { useEffect, Suspense, useRef } from 'react';
 
 function MagicLinkContent() {
   const searchParams = useSearchParams();
   const token = searchParams.get('token');
   const redirect = searchParams.get('redirect') || '/dashboard';
+  const hasAttemptedSignIn = useRef(false);
 
   useEffect(() => {
-    if (token) {
+    if (token && !hasAttemptedSignIn.current) {
+      hasAttemptedSignIn.current = true;
       signIn('credentials', { token, callbackUrl: redirect });
     }
   }, [token, redirect]);

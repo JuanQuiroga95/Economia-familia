@@ -144,7 +144,7 @@ async function parseImagesWithAI(
 
   const completion = await groq.chat.completions.create({
     messages: [
-      { role: 'system', content: SYSTEM_PROMPT_BASE(profileName, categories, context) },
+      { role: 'system', content: "Sos un asistente experto en finanzas. Extrae los datos solicitados de las imágenes basándote en la siguiente instrucción. Trata de extraer un resumen general y los montos totales." },
       { role: 'user', content: contentArray },
     ],
     model: 'llama-3.2-90b-vision-preview',
@@ -152,17 +152,22 @@ async function parseImagesWithAI(
     max_tokens: 500
   });
 
-  let content = completion.choices[0]?.message?.content || '{}';
-  content = content.replace(/\`\`\`json/g, '').replace(/\`\`\`/g, '').trim();
-  
-  // Try to find the JSON object if there's surrounding text
-  const startIdx = content.indexOf('{');
-  const endIdx = content.lastIndexOf('}');
-  if (startIdx !== -1 && endIdx !== -1) {
-    content = content.substring(startIdx, endIdx + 1);
-  }
-  
-  return JSON.parse(content);
+  const rawVisionText = completion.choices[0]?.message?.content || '';
+
+  // Paso 2: Forzar JSON con el modelo de texto
+  const jsonCompletion = await groq.chat.completions.create({
+    messages: [
+      { role: 'system', content: SYSTEM_PROMPT_BASE(profileName, categories, context) },
+      { role: 'user', content: `Basado en esta extracción de imagen, armá el JSON final:\n\n${rawVisionText}` },
+    ],
+    model: 'llama-3.3-70b-versatile',
+    temperature: 0.1,
+    max_tokens: 300,
+    response_format: { type: 'json_object' },
+  });
+
+  const jsonContent = jsonCompletion.choices[0]?.message?.content || '{}';
+  return JSON.parse(jsonContent);
 }
 
 // ============================================
