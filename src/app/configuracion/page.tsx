@@ -15,9 +15,13 @@ export default async function ConfiguracionPage() {
     redirect('/logout');
   }
 
-  const [exchangeRates, categories, budgetConfigs, account, profiles] = await Promise.all([
+  const [exchangeRates, categories, wallets, budgetConfigs, account, profiles] = await Promise.all([
     getExchangeRates(),
     prisma.category.findMany({
+      where: { accountId },
+      orderBy: { name: 'asc' },
+    }),
+    prisma.wallet.findMany({
       where: { accountId },
       orderBy: { name: 'asc' },
     }),
@@ -37,6 +41,7 @@ export default async function ConfiguracionPage() {
       <ConfigClient
         exchangeRates={JSON.parse(JSON.stringify(exchangeRates))}
         categories={JSON.parse(JSON.stringify(categories))}
+        wallets={JSON.parse(JSON.stringify(wallets))}
         budgetConfigs={JSON.parse(JSON.stringify(budgetConfigs))}
         profiles={JSON.parse(JSON.stringify(profiles))}
         splitMode={account?.splitMode || 'FONDO_COMUN'}

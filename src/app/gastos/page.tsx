@@ -10,6 +10,7 @@ import { prisma } from '@/lib/prisma';
 
 import { getSavingsGoals } from '@/actions/savings';
 import { getInvestments } from '@/actions/investments';
+import { getWallets } from '@/actions/wallets';
 
 export default async function GastosPage(props: { searchParams: Promise<{ month?: string; year?: string }> }) {
   const searchParams = await props.searchParams;
@@ -25,11 +26,12 @@ export default async function GastosPage(props: { searchParams: Promise<{ month?
     include: { profiles: { orderBy: { name: 'asc' } } }
   }) : null;
 
-  const [expenses, categories, savings, investments] = await Promise.all([
+  const [expenses, categories, savings, investments, wallets] = await Promise.all([
     getExpenses({ month, year }),
     getCategories(),
     getSavingsGoals(),
     getInvestments(),
+    getWallets(),
   ]);
 
   return (
@@ -40,6 +42,7 @@ export default async function GastosPage(props: { searchParams: Promise<{ month?
         categories={JSON.parse(JSON.stringify(categories))}
         savings={JSON.parse(JSON.stringify(savings))}
         investments={JSON.parse(JSON.stringify(investments))}
+        wallets={JSON.parse(JSON.stringify(wallets))}
         accountInfo={JSON.parse(JSON.stringify(account))}
       />
     </AppLayout>

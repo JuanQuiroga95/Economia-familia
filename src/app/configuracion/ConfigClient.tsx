@@ -23,6 +23,12 @@ interface Category {
   color: string;
 }
 
+interface Wallet {
+  id: string;
+  name: string;
+  currency: string;
+}
+
 interface BudgetConfig {
   id: string;
   profileId: string;
@@ -43,6 +49,7 @@ interface ProfileData {
 interface ConfigClientProps {
   exchangeRates: ExchangeRate[];
   categories: Category[];
+  wallets: Wallet[];
   budgetConfigs: BudgetConfig[];
   profiles: ProfileData[];
   splitMode: string;
@@ -52,7 +59,9 @@ interface ConfigClientProps {
 
 const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
-export default function ConfigClient({ exchangeRates, categories, budgetConfigs, profiles, splitMode: initialSplitMode, splitPercentA: initialPercentA, splitPercentB: initialPercentB }: ConfigClientProps) {
+import { createWallet, deleteWallet } from '@/actions/wallets';
+
+export default function ConfigClient({ exchangeRates, categories, wallets, budgetConfigs, profiles, splitMode: initialSplitMode, splitPercentA: initialPercentA, splitPercentB: initialPercentB }: ConfigClientProps) {
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
   const now = new Date();
@@ -69,6 +78,11 @@ export default function ConfigClient({ exchangeRates, categories, budgetConfigs,
   const [catName, setCatName] = useState('');
   const [catIcon, setCatIcon] = useState('📦');
   const [catColor, setCatColor] = useState('#6366f1');
+
+  // Wallet form
+  const [showWalletForm, setShowWalletForm] = useState(false);
+  const [walletName, setWalletName] = useState('');
+  const [walletCurrency, setWalletCurrency] = useState('ARS');
 
   // Split mode
   const [splitMode, setSplitMode] = useState(initialSplitMode);
@@ -103,9 +117,33 @@ export default function ConfigClient({ exchangeRates, categories, budgetConfigs,
   };
 
   const handleDeleteCategory = (id: string) => {
+    if (!confirm('¿Borrar categoría?')) return;
     startTransition(async () => {
       const result = await deleteCategory(id);
-      if (result.success) { toast.success('Categoría eliminada'); router.refresh(); }
+      if (result.success) { toast.success('Categoría borrada'); router.refresh(); }
+      else { toast.error(result.error || 'Error'); }
+    });
+  };
+
+  const handleCreateWallet = (e: React.FormEvent) => {
+    e.preventDefault();
+    startTransition(async () => {
+      const result = await createWallet({ name: walletName, currency: walletCurrency });
+      if (result.success) {
+        toast.success('Billetera creada');
+        setWalletName(''); setShowWalletForm(false);
+        router.refresh();
+      } else {
+        toast.error(result.error || 'Error');
+      }
+    });
+  };
+
+  const handleDeleteWallet = (id: string) => {
+    if (!confirm('¿Borrar billetera? Se mantendrán los gastos e ingresos previos pero pasarán al balance general.')) return;
+    startTransition(async () => {
+      const result = await deleteWallet(id);
+      if (result.success) { toast.success('Billetera borrada'); router.refresh(); }
       else { toast.error(result.error || 'Error'); }
     });
   };
@@ -244,6 +282,55 @@ export default function ConfigClient({ exchangeRates, categories, budgetConfigs,
               </button>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* Wallets */}
+      <section className="glass-card p-4 lg:p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-text-primary">💳 Billeteras y Bancos</h2>
+          <button onClick={() => setShowWalletForm(!showWalletForm)} className="text-sm text-accent hover:text-accent-hover">
+            {showWalletForm ? '✕ Cerrar' : '+ Nueva'}
+          </button>
+        </div>
+
+        {showWalletForm && (
+          <form onSubmit={handleCreateWallet} className="p-3 bg-bg-input rounded-xl space-y-3 animate-fade-in">
+            <div className="grid grid-cols-3 gap-3">
+              <select value={walletCurrency} onChange={(e) => setWalletCurrency(e.target.value)} className="input-field">
+                <option value="ARS">ARS</option>
+                <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+              </select>
+              <input type="text" value={walletName} onChange={(e) => setWalletName(e.target.value)} className="input-field col-span-2" placeholder="Ej: Mercado Pago" required />
+            </div>
+            <button type="submit" disabled={isPending} className="gradient-btn w-full py-2 text-sm disabled:opacity-50">
+              Crear Billetera
+            </button>
+          </form>
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {wallets.length === 0 ? (
+            <div className="col-span-full text-center text-sm text-text-muted p-4">
+              Aún no creaste ninguna billetera. Todo se agrupa en el "Balance General".
+            </div>
+          ) : (
+            wallets.map((w) => (
+              <div key={w.id} className="flex items-center justify-between p-3 bg-bg-input rounded-xl">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-text-primary">{w.name}</span>
+                  <span className="text-xs px-2 py-0.5 rounded-md bg-accent/20 text-accent">{w.currency}</span>
+                </div>
+                <button
+                  onClick={() => handleDeleteWallet(w.id)}
+                  className="text-text-muted hover:text-danger transition-colors text-xs"
+                >
+                  ✕
+                </button>
+              </div>
+            ))
+          )}
         </div>
       </section>
 

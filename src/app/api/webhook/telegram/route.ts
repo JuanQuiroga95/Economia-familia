@@ -60,6 +60,7 @@ interface ParsedAction {
   tipo_gasto?: 'propio' | 'compartido';
   persona?: string;
   pague_yo?: boolean;
+  billetera?: string;
 }
 
 const SYSTEM_PROMPT_BASE = (profileName: string, categories: string[], context: string) => `Sos el cerebro de un bot financiero para Telegram de EconoApp. Tu trabajo es interpretar la intención del usuario.
@@ -103,7 +104,8 @@ Devuelve ÚNICAMENTE un JSON válido (sin texto extra) con esta estructura:
       "categoria": "categoria",
       "tipo_gasto": "propio" | "compartido",
       "persona": "nombre",
-      "pague_yo": boolean
+      "pague_yo": boolean,
+      "billetera": "nombre_billetera" // Si menciona una (ej: MP, Galicia, Uala)
     }
   ]
 }`;
@@ -112,12 +114,14 @@ async function parseTransactionWithAI(
   text: string,
   profileName: string,
   categories: string[],
+  wallets: { id: string; name: string }[],
   context: string
 ): Promise<{ acciones: ParsedAction[] }> {
+  const walletsStr = wallets.length > 0 ? wallets.map(w => w.name).join(', ') : 'Ninguna';
   const groq = new Groq({ apiKey: GROQ_API_KEY });
   const completion = await groq.chat.completions.create({
     messages: [
-      { role: 'system', content: SYSTEM_PROMPT_BASE(profileName, categories, context) },
+      { role: 'system', content: SYSTEM_PROMPT_BASE(profileName, categories, context) + `\n\nBilleteras disponibles: ${walletsStr}` },
       { role: 'user', content: text },
     ],
     model: 'llama-3.3-70b-versatile',
@@ -134,13 +138,14 @@ async function parseImagesWithAI(
   fileIds: string[],
   profileName: string,
   categories: string[],
+  wallets: { id: string; name: string }[],
   context: string,
-  userInstruction: string = ''
+  customInstruction: string = ''
 ): Promise<{ acciones: ParsedAction[] }> {
   const groq = new Groq({ apiKey: GROQ_API_KEY });
   
   const contentArray: any[] = [
-    { type: 'text', text: `Eres un asistente experto en finanzas. Analiza cuidadosamente estas imágenes y extrae una LISTA DETALLADA Y EXHAUSTIVA de TODOS los movimientos financieros que aparezcan.\n\nPara CADA movimiento, indica claramente:\n1. Descripción exacta.\n2. Monto.\n3. Si es Ingreso o Gasto (por ejemplo, pagos o montos con signo '-' son Gastos; rendimientos, depósitos o montos con signo '+' son Ingresos).\n\nNO OMITAS NINGÚN MOVIMIENTO. Debes enumerar cada uno por separado.${userInstruction ? `\n\nInstrucción especial del usuario: "${userInstruction}"` : ''}` }
+    { type: 'text', text: `Eres un asistente experto en finanzas. Analiza cuidadosamente estas imágenes y extrae una LISTA DETALLADA Y EXHAUSTIVA de TODOS los movimientos financieros que aparezcan.\n\nPara CADA movimiento, indica claramente:\n1. Descripción exacta.\n2. Monto.\n3. Si es Ingreso o Gasto (por ejemplo, pagos o montos con signo '-' son Gastos; rendimientos, depósitos o montos con signo '+' son Ingresos).\n\nNO OMITAS NINGÚN MOVIMIENTO. Debes enumerar cada uno por separado.${customInstruction ? `\n\nInstrucción especial del usuario: "${customInstruction}"` : ''}` }
   ];
   
   for (const id of fileIds) {
@@ -164,9 +169,10 @@ async function parseImagesWithAI(
   const rawVisionText = completion.choices[0]?.message?.content || '';
 
   // Paso 2: Forzar JSON con el modelo de texto
+  const walletsStr = wallets.length > 0 ? wallets.map(w => w.name).join(', ') : 'Ninguna';
   const jsonCompletion = await groq.chat.completions.create({
     messages: [
-      { role: 'system', content: SYSTEM_PROMPT_BASE(profileName, categories, context) },
+      { role: 'system', content: SYSTEM_PROMPT_BASE(profileName, categories, context) + `\n\nBilleteras disponibles: ${walletsStr}` },
       { role: 'user', content: `Basado en esta extracción de imagen, armá el JSON final:\n\n${rawVisionText}` },
     ],
     model: 'llama-3.3-70b-versatile',
@@ -397,8 +403,10 @@ export async function POST(request: NextRequest) {
        return NextResponse.json({ ok: true });
     }
 
-    // ─── Get categories and recent context ───
-    const categories = await prisma.category.findMany({ where: { accountId: profile.accountId } });
+    const [categories, wallets] = await Promise.all([
+      prisma.category.findMany({ where: { accountId: profile.accountId } }),
+      prisma.wallet.findMany({ where: { accountId: profile.accountId } })
+    ]);
     const categoryNames = categories.map((c) => c.name);
 
     const recentExpenses = await prisma.expense.findMany({ where: { profile: { accountId: profile.accountId } }, orderBy: { createdAt: 'desc' }, take: 10 });
@@ -413,9 +421,9 @@ export async function POST(request: NextRequest) {
     let parsed: { acciones: ParsedAction[] };
     try {
       if (fileIdsToProcess.length > 0) {
-        parsed = await parseImagesWithAI(fileIdsToProcess, profile.name, categoryNames, contextStr, customInstruction);
+        parsed = await parseImagesWithAI(fileIdsToProcess, profile.name, categoryNames, wallets, contextStr, customInstruction);
       } else {
-        parsed = await parseTransactionWithAI(messageText, profile.name, categoryNames, contextStr);
+        parsed = await parseTransactionWithAI(messageText, profile.name, categoryNames, wallets, contextStr);
       }
     } catch (error: any) {
       console.error('Parse Error:', error);

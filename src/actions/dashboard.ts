@@ -56,6 +56,40 @@ export async function getDashboardStats(month: number, year: number, profileId?:
   }
 }
 
+export async function getWalletBalances() {
+  try {
+    const accountId = await getAccountId();
+    if (!accountId) throw new Error('No account id');
+
+    const wallets = await prisma.wallet.findMany({
+      where: { accountId },
+    });
+
+    const balances = await Promise.all(
+      wallets.map(async (wallet) => {
+        const incomes = await prisma.income.aggregate({
+          where: { walletId: wallet.id },
+          _sum: { amount: true },
+        });
+        const expenses = await prisma.expense.aggregate({
+          where: { walletId: wallet.id },
+          _sum: { amount: true },
+        });
+        
+        return {
+          ...wallet,
+          balance: (incomes._sum.amount || 0) - (expenses._sum.amount || 0),
+        };
+      })
+    );
+
+    return balances;
+  } catch (error) {
+    console.error('Error fetching wallet balances:', error);
+    return [];
+  }
+}
+
 export async function getCategoryBreakdown(
   month: number,
   year: number,

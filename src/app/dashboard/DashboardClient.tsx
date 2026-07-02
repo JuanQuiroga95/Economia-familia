@@ -20,6 +20,7 @@ interface DashboardClientProps {
   currentYear: number;
   userExpenseBreakdown: UserExpenseBreakdown[];
   categoryBudgets: CategoryBudgetStatus[];
+  walletBalances?: { id: string; name: string; currency: string; balance: number }[];
 }
 
 const monthNames = [
@@ -37,6 +38,7 @@ export default function DashboardClient({
   currentYear,
   userExpenseBreakdown,
   categoryBudgets,
+  walletBalances = [],
 }: DashboardClientProps) {
 
   return (
@@ -102,6 +104,23 @@ export default function DashboardClient({
           </div>
         </div>
       </div>
+
+      {/* Saldos por Billetera */}
+      {walletBalances && walletBalances.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+          {walletBalances.map((w) => (
+            <div key={w.id} className="glass-card p-4 flex flex-col justify-between hover:scale-105 transition-transform duration-200">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-sm font-medium text-text-primary truncate">{w.name}</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent/20 text-accent">{w.currency}</span>
+              </div>
+              <p className={`text-lg font-bold ${w.balance >= 0 ? 'text-text-primary' : 'text-danger'}`}>
+                ${formatCurrency(w.balance)}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Category Budgets */}
       {categoryBudgets && categoryBudgets.length > 0 && (

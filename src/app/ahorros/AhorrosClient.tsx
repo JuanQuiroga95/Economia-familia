@@ -722,10 +722,8 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
                   required
                 >
                   <option value="" disabled>Seleccioná un destino...</option>
-                  {initialGoals
-                    .filter((g) => g.currency === distributeModal.currency)
-                    .map((g) => (
-                      <option key={g.id} value={g.id}>{g.name} (Saldo: ${g.currentAmount})</option>
+                  {initialGoals.map((g) => (
+                    <option key={g.id} value={g.id}>{g.name} ({g.currency}) - Saldo: ${formatCurrency(g.currentAmount)}</option>
                   ))}
                 </select>
                 <div className="mt-2 text-right">

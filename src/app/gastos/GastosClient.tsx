@@ -34,10 +34,11 @@ interface GastosClientProps {
   categories: Category[];
   savings?: { id: string; name: string; currency: string; currentAmount: number }[];
   investments?: { id: string; name: string; currency: string; amount: number }[];
+  wallets?: { id: string; name: string; currency: string }[];
   accountInfo?: any;
 }
 
-export default function GastosClient({ initialExpenses, categories, savings = [], investments = [], accountInfo }: GastosClientProps) {
+export default function GastosClient({ initialExpenses, categories, savings = [], investments = [], wallets = [], accountInfo }: GastosClientProps) {
   const { activeProfile } = useProfile();
   const [showForm, setShowForm] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -66,6 +67,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
   const [uploading, setUploading] = useState(false);
   const [fundingSource, setFundingSource] = useState('balance');
   const [splitPercentage, setSplitPercentage] = useState<string>('');
+  const [walletId, setWalletId] = useState('');
 
   const handleCreateCategory = () => {
     const name = window.prompt('Nombre de la nueva categoría (ej: Alimento perro):');
@@ -158,6 +160,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
         splitPercentage: type === 'COMPARTIDO' && accountInfo?.splitMode === 'PORCENTAJE' ? parseFloat(splitPercentage) : undefined,
         receiptUrl: receiptUrl || undefined,
         fundingSource,
+        walletId: walletId || undefined,
       };
 
       const result = editingExpenseId 
@@ -179,6 +182,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
         setReceiptUrl('');
         setPaidFromPersonal(false);
         setFundingSource('balance');
+        setWalletId('');
         setSplitPercentage('');
         setEditingExpenseId(null);
         setShowForm(false);
@@ -201,6 +205,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
     setSplitPercentage(expense.splitPercentage?.toString() || '');
     setReceiptUrl(expense.receiptUrl || '');
     setFundingSource('balance');
+    setWalletId((expense as any).walletId || '');
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -214,6 +219,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
     setReceiptUrl('');
     setPaidFromPersonal(false);
     setFundingSource('balance');
+    setWalletId('');
     setSplitPercentage('');
   };
 
@@ -366,6 +372,21 @@ export default function GastosClient({ initialExpenses, categories, savings = []
                 <span className="truncate">Nueva</span>
               </button>
             </div>
+          </div>
+
+          {/* Wallet / Billetera */}
+          <div>
+            <label className="block text-sm text-text-secondary mb-1">Billetera / Banco (Opcional)</label>
+            <select
+              value={walletId}
+              onChange={(e) => setWalletId(e.target.value)}
+              className="input-field"
+            >
+              <option value="">Saldo General (Efectivo)</option>
+              {wallets.map((w) => (
+                <option key={w.id} value={w.id}>{w.name} ({w.currency})</option>
+              ))}
+            </select>
           </div>
 
           {/* Tipo de gasto */}

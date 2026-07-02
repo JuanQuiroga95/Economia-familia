@@ -25,6 +25,7 @@ model Account {
 
   categoryBudgets CategoryBudget[]
   savingsGoals    SavingsGoal[]
+  wallets         Wallet[]
 }
 
 enum SplitMode {
@@ -62,6 +63,18 @@ model Category {
   categoryBudgets CategoryBudget[]
 }
 
+model Wallet {
+  id        String    @id @default(cuid())
+  name      String
+  currency  String    @default("ARS")
+  accountId String
+  account   Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  incomes   Income[]
+  expenses  Expense[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
 model Income {
   id          String   @id @default(cuid())
   amount      Float
@@ -70,6 +83,10 @@ model Income {
   description String
   profileId   String
   profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  
+  walletId    String?
+  wallet      Wallet?  @relation(fields: [walletId], references: [id])
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -84,6 +101,9 @@ model Expense {
   category    Category @relation(fields: [categoryId], references: [id])
   profileId   String
   profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  walletId    String?
+  wallet      Wallet?  @relation(fields: [walletId], references: [id])
 
   // Tipo de gasto
   type        ExpenseType @default(PROPIO)

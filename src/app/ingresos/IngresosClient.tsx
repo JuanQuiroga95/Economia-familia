@@ -22,9 +22,10 @@ interface IngresosClientProps {
   initialIncomes: Income[];
   currentMonth: number;
   currentYear: number;
+  wallets?: { id: string; name: string; currency: string }[];
 }
 
-export default function IngresosClient({ initialIncomes }: IngresosClientProps) {
+export default function IngresosClient({ initialIncomes, wallets = [] }: IngresosClientProps) {
   const { activeProfile } = useProfile();
   const [showForm, setShowForm] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -42,6 +43,7 @@ export default function IngresosClient({ initialIncomes }: IngresosClientProps) 
 
   const [date, setDate] = useState(getLocalDateString());
   const [description, setDescription] = useState('');
+  const [walletId, setWalletId] = useState('');
 
   const triggerConfetti = () => {
     const duration = 3000;
@@ -88,6 +90,7 @@ export default function IngresosClient({ initialIncomes }: IngresosClientProps) 
         date,
         description,
         profileId: activeProfile.id,
+        walletId: walletId || undefined,
       };
 
       const result = editingIncomeId
@@ -99,6 +102,7 @@ export default function IngresosClient({ initialIncomes }: IngresosClientProps) 
         if (!editingIncomeId) triggerConfetti();
         setAmount('');
         setDescription('');
+        setWalletId('');
         setEditingIncomeId(null);
         setShowForm(false);
         router.refresh();
@@ -114,6 +118,7 @@ export default function IngresosClient({ initialIncomes }: IngresosClientProps) 
     setCurrency(income.currency);
     setDate(income.date.split('T')[0]);
     setDescription(income.description);
+    setWalletId((income as any).walletId || '');
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -123,6 +128,7 @@ export default function IngresosClient({ initialIncomes }: IngresosClientProps) 
     setEditingIncomeId(null);
     setAmount('');
     setDescription('');
+    setWalletId('');
   };
 
   const handleDelete = (id: string) => {
@@ -220,6 +226,20 @@ export default function IngresosClient({ initialIncomes }: IngresosClientProps) 
               placeholder="Ej: Sueldo junio"
               required
             />
+          </div>
+
+          <div>
+            <label className="block text-sm text-text-secondary mb-1">Billetera / Banco (Opcional)</label>
+            <select
+              value={walletId}
+              onChange={(e) => setWalletId(e.target.value)}
+              className="input-field"
+            >
+              <option value="">Saldo General (Efectivo)</option>
+              {wallets.map((w) => (
+                <option key={w.id} value={w.id}>{w.name} ({w.currency})</option>
+              ))}
+            </select>
           </div>
 
           <button
