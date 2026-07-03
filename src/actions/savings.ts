@@ -100,6 +100,46 @@ export async function addSavingsTransaction(data: {
         where: { id: data.savingsGoalId },
         data: { currentAmount: Math.max(0, newAmount) },
       });
+
+      const { getArgDate } = await import('@/lib/dateUtils');
+      const accountId = await getAccountId();
+
+      if (data.type === 'RETIRO') {
+        // Ingreso al balance mensual
+        await prisma.income.create({
+          data: {
+            amount: data.amount,
+            currency: goal.currency as any,
+            date: getArgDate(),
+            description: `Retiro de meta: ${goal.name}`,
+            profileId: data.profileId,
+          },
+        });
+      } else if (data.type === 'DEPOSITO') {
+        // Gasto para descontarlo del balance
+        let category = await prisma.category.findFirst({
+          where: { name: 'Ahorro / Inversión', accountId: accountId! },
+        });
+        if (!category && accountId) {
+          category = await prisma.category.create({
+            data: { name: 'Ahorro / Inversión', icon: '🏦', color: '#10b981', accountId },
+          });
+        }
+        if (category) {
+          await prisma.expense.create({
+            data: {
+              amount: data.amount,
+              currency: goal.currency as any,
+              date: getArgDate(),
+              description: `Depósito en meta: ${goal.name}`,
+              categoryId: category.id,
+              profileId: data.profileId,
+              type: 'PROPIO',
+              paidFromPersonalBudget: false,
+            },
+          });
+        }
+      }
     }
 
     revalidatePath('/ahorros');
@@ -120,11 +160,11 @@ export async function deleteSavingsGoal(id: string) {
     if (goal) {
       // Find and delete associated expenses for distributed surplus
       for (const tx of goal.transactions) {
-        if (tx.description === 'Distribución de sobrante del mes') {
+        if (tx.description === 'Distribución de sobrante del mes' || tx.description === `Depósito en meta: ${goal.name}`) {
           const expenses = await prisma.expense.findMany({
             where: {
               amount: tx.amount,
-              description: { startsWith: 'Distribución de sobrante' },
+              description: { startsWith: tx.description === 'Distribución de sobrante del mes' ? 'Distribución de sobrante' : 'Depósito en meta:' },
               profileId: tx.profileId,
             },
           });
@@ -133,6 +173,24 @@ export async function deleteSavingsGoal(id: string) {
             const diff = Math.abs(exp.createdAt.getTime() - tx.createdAt.getTime());
             if (diff < 10000) {
               await prisma.expense.delete({ where: { id: exp.id } });
+              break;
+            }
+          }
+        }
+
+        if (tx.description === `Retiro de meta: ${goal.name}`) {
+          const incomes = await prisma.income.findMany({
+            where: {
+              amount: tx.amount,
+              description: { startsWith: 'Retiro de meta:' },
+              profileId: tx.profileId,
+            },
+          });
+          
+          for (const inc of incomes) {
+            const diff = Math.abs(inc.createdAt.getTime() - tx.createdAt.getTime());
+            if (diff < 10000) {
+              await prisma.income.delete({ where: { id: inc.id } });
               break;
             }
           }
@@ -174,11 +232,11 @@ export async function deleteSavingsTransaction(id: string) {
         });
       }
 
-      if (tx.description === 'Distribución de sobrante del mes') {
+      if (tx.description === 'Distribución de sobrante del mes' || tx.description === `Depósito en meta: ${goal?.name}`) {
         const expenses = await prisma.expense.findMany({
           where: {
             amount: tx.amount,
-            description: { startsWith: 'Distribución de sobrante' },
+            description: { startsWith: tx.description === 'Distribución de sobrante del mes' ? 'Distribución de sobrante' : 'Depósito en meta:' },
             profileId: tx.profileId,
           },
         });
@@ -187,6 +245,24 @@ export async function deleteSavingsTransaction(id: string) {
           const diff = Math.abs(exp.createdAt.getTime() - tx.createdAt.getTime());
           if (diff < 10000) {
             await prisma.expense.delete({ where: { id: exp.id } });
+            break;
+          }
+        }
+      }
+
+      if (tx.description === `Retiro de meta: ${goal?.name}`) {
+        const incomes = await prisma.income.findMany({
+          where: {
+            amount: tx.amount,
+            description: { startsWith: 'Retiro de meta:' },
+            profileId: tx.profileId,
+          },
+        });
+        
+        for (const inc of incomes) {
+          const diff = Math.abs(inc.createdAt.getTime() - tx.createdAt.getTime());
+          if (diff < 10000) {
+            await prisma.income.delete({ where: { id: inc.id } });
             break;
           }
         }
