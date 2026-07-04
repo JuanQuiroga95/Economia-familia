@@ -20,7 +20,7 @@ export async function getDashboardStats(month: number, year: number, profileId?:
 
     // Total ingresos
     const incomes = await prisma.income.aggregate({
-      where: whereBase,
+      where: { ...whereBase, currency: 'ARS' },
       _sum: { amount: true },
     });
 
@@ -28,6 +28,7 @@ export async function getDashboardStats(month: number, year: number, profileId?:
 
     const expenseWhereBase = {
       ...whereBase,
+      currency: 'ARS',
       category: { name: { notIn: ['Ahorro / Inversión', 'Ahorros'] } },
     };
 
@@ -58,10 +59,10 @@ export async function getDashboardStats(month: number, year: number, profileId?:
     let savingsDeposits = 0;
     let savingsWithdrawals = 0;
     savingsTxs.forEach(tx => {
-      // Assuming Dashboard is mostly for the main currency (ARS) or aggregate. Wait, balance in dashboard is just sum of amounts.
-      // But we should probably filter or just sum them all. Since dashboard doesn't separate by currency yet, we sum all.
-      if (tx.type === 'DEPOSITO') savingsDeposits += tx.amount;
-      if (tx.type === 'RETIRO') savingsWithdrawals += tx.amount;
+      if (tx.savingsGoal.currency === 'ARS') {
+        if (tx.type === 'DEPOSITO') savingsDeposits += tx.amount;
+        if (tx.type === 'RETIRO') savingsWithdrawals += tx.amount;
+      }
     });
 
     // Investments created this month
@@ -69,6 +70,7 @@ export async function getDashboardStats(month: number, year: number, profileId?:
       where: {
         startDate: { gte: startDate, lte: endDate },
         profile: { accountId },
+        currency: 'ARS',
         ...(profileId ? { profileId } : {}),
       },
     });

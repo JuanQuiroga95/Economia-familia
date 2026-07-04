@@ -1,35 +1,31 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { Client } = require('pg');
 
-async function checkEuros() {
-  const account = await prisma.account.findFirst();
-  if (!account) return console.log('No account');
-
-  const savings = await prisma.savingsGoal.findMany({
-    where: { accountId: account.id }
+async function check() {
+  const client = new Client({
+    connectionString: "postgresql://neondb_owner:npg_cZ8Gea3MAdHB@ep-fragrant-lab-atvzu8vw-pooler.c-9.us-east-1.aws.neon.tech/neondb?sslmode=require"
   });
-  console.log('Savings Goals:');
-  console.log(savings);
+  
+  await client.connect();
 
-  const investments = await prisma.investment.findMany({
-    where: { profile: { accountId: account.id } }
-  });
-  console.log('Investments:');
-  console.log(investments);
+  const euIn = await client.query(`SELECT * FROM "Income" WHERE currency = 'EUR'`);
+  console.log('Euro Incomes:', euIn.rows);
 
-  const incomes = await prisma.income.findMany({
-    where: { currency: 'EUR' }
-  });
-  console.log('Incomes in EUR:');
-  console.log(incomes);
+  const euEx = await client.query(`SELECT * FROM "Expense" WHERE currency = 'EUR'`);
+  console.log('Euro Expenses:', euEx.rows);
 
-  const expenses = await prisma.expense.findMany({
-    where: { currency: 'EUR' }
-  });
-  console.log('Expenses in EUR:');
-  console.log(expenses);
+  const euSav = await client.query(`
+    SELECT t.*, g.name, g.currency FROM "SavingsTransaction" t
+    JOIN "SavingsGoal" g ON t."savingsGoalId" = g.id
+    WHERE g.currency = 'EUR'
+  `);
+  console.log('Euro Savings Tx:', euSav.rows);
+  
+  const euSavGoals = await client.query(`
+    SELECT * FROM "SavingsGoal" WHERE currency = 'EUR'
+  `);
+  console.log('Euro Savings Goals:', euSavGoals.rows);
+
+  await client.end();
 }
 
-checkEuros()
-  .catch(e => console.error(e))
-  .finally(() => prisma.$disconnect());
+check().catch(console.error);
