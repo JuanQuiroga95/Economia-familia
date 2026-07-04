@@ -100,46 +100,6 @@ export async function addSavingsTransaction(data: {
         where: { id: data.savingsGoalId },
         data: { currentAmount: Math.max(0, newAmount) },
       });
-
-      const { getArgDate } = await import('@/lib/dateUtils');
-      const accountId = await getAccountId();
-
-      if (data.type === 'RETIRO') {
-        // Ingreso al balance mensual
-        await prisma.income.create({
-          data: {
-            amount: data.amount,
-            currency: goal.currency as any,
-            date: getArgDate(),
-            description: `Retiro de meta: ${goal.name}`,
-            profileId: data.profileId,
-          },
-        });
-      } else if (data.type === 'DEPOSITO') {
-        // Gasto para descontarlo del balance
-        let category = await prisma.category.findFirst({
-          where: { name: 'Ahorro / Inversión', accountId: accountId! },
-        });
-        if (!category && accountId) {
-          category = await prisma.category.create({
-            data: { name: 'Ahorro / Inversión', icon: '🏦', color: '#10b981', accountId },
-          });
-        }
-        if (category) {
-          await prisma.expense.create({
-            data: {
-              amount: data.amount,
-              currency: goal.currency as any,
-              date: getArgDate(),
-              description: `Depósito en meta: ${goal.name}`,
-              categoryId: category.id,
-              profileId: data.profileId,
-              type: 'PROPIO',
-              paidFromPersonalBudget: false,
-            },
-          });
-        }
-      }
     }
 
     revalidatePath('/ahorros');
@@ -158,44 +118,7 @@ export async function deleteSavingsGoal(id: string) {
     });
 
     if (goal) {
-      // Find and delete associated expenses for distributed surplus
-      for (const tx of goal.transactions) {
-        if (tx.description === 'Distribución de sobrante del mes' || tx.description === `Depósito en meta: ${goal.name}`) {
-          const expenses = await prisma.expense.findMany({
-            where: {
-              amount: tx.amount,
-              description: { startsWith: tx.description === 'Distribución de sobrante del mes' ? 'Distribución de sobrante' : 'Depósito en meta:' },
-              profileId: tx.profileId,
-            },
-          });
-          
-          for (const exp of expenses) {
-            const diff = Math.abs(exp.createdAt.getTime() - tx.createdAt.getTime());
-            if (diff < 10000) {
-              await prisma.expense.delete({ where: { id: exp.id } });
-              break;
-            }
-          }
-        }
-
-        if (tx.description === `Retiro de meta: ${goal.name}`) {
-          const incomes = await prisma.income.findMany({
-            where: {
-              amount: tx.amount,
-              description: { startsWith: 'Retiro de meta:' },
-              profileId: tx.profileId,
-            },
-          });
-          
-          for (const inc of incomes) {
-            const diff = Math.abs(inc.createdAt.getTime() - tx.createdAt.getTime());
-            if (diff < 10000) {
-              await prisma.income.delete({ where: { id: inc.id } });
-              break;
-            }
-          }
-        }
-      }
+      // (No expenses/incomes to delete anymore since we use dynamic calculating)
     }
 
     await prisma.savingsGoal.delete({
@@ -232,42 +155,7 @@ export async function deleteSavingsTransaction(id: string) {
         });
       }
 
-      if (tx.description === 'Distribución de sobrante del mes' || tx.description === `Depósito en meta: ${goal?.name}`) {
-        const expenses = await prisma.expense.findMany({
-          where: {
-            amount: tx.amount,
-            description: { startsWith: tx.description === 'Distribución de sobrante del mes' ? 'Distribución de sobrante' : 'Depósito en meta:' },
-            profileId: tx.profileId,
-          },
-        });
-        
-        for (const exp of expenses) {
-          const diff = Math.abs(exp.createdAt.getTime() - tx.createdAt.getTime());
-          if (diff < 10000) {
-            await prisma.expense.delete({ where: { id: exp.id } });
-            break;
-          }
-        }
-      }
-
-      if (tx.description === `Retiro de meta: ${goal?.name}`) {
-        const incomes = await prisma.income.findMany({
-          where: {
-            amount: tx.amount,
-            description: { startsWith: 'Retiro de meta:' },
-            profileId: tx.profileId,
-          },
-        });
-        
-        for (const inc of incomes) {
-          const diff = Math.abs(inc.createdAt.getTime() - tx.createdAt.getTime());
-          if (diff < 10000) {
-            await prisma.income.delete({ where: { id: inc.id } });
-            break;
-          }
-        }
-      }
-
+      // (No expenses/incomes to delete anymore since we use dynamic calculating)
       await prisma.savingsTransaction.delete({ where: { id } });
     }
 
@@ -324,17 +212,7 @@ export async function withdrawToBalanceFromSavings(savingsGoalId: string, amount
       data: { currentAmount: goal.currentAmount - amount },
     });
 
-    // 2. Ingreso al balance mensual (asume que la fecha es el mes actual para impactar el Dashboard)
-    const { getArgDate } = await import('@/lib/dateUtils');
-    await prisma.income.create({
-      data: {
-        amount,
-        currency: goal.currency as "ARS" | "USD" | "EUR",
-        date: getArgDate(),
-        description: `Rescate desde ahorros: ${goal.name}`,
-        profileId,
-      },
-    });
+    // (No income creation needed anymore)
 
     revalidatePath('/ahorros');
     revalidatePath('/dashboard');
@@ -362,29 +240,7 @@ export async function distributeSurplus(data: {
       return { success: false, error: `La moneda de la meta (${goal.currency}) no coincide con el sobrante (${data.currency})` };
     }
 
-    let category = await prisma.category.findFirst({
-      where: { name: 'Ahorro / Inversión', accountId },
-    });
-    if (!category) {
-      category = await prisma.category.create({
-        data: { name: 'Ahorro / Inversión', icon: '🏦', color: '#10b981', accountId },
-      });
-    }
-
-    // 2. Crear el "gasto" para descontarlo del sobrante del mes
-    const { getArgDate } = await import('@/lib/dateUtils');
-    await prisma.expense.create({
-      data: {
-        amount: data.amount,
-        currency: data.currency as "ARS" | "USD" | "EUR",
-        date: getArgDate(),
-        description: 'Distribución de sobrante',
-        categoryId: category.id,
-        profileId: data.profileId,
-        type: 'PROPIO',
-        paidFromPersonalBudget: false,
-      },
-    });
+    // (No category or expense creation needed anymore)
 
     // 3. Crear el depósito en la meta de ahorro seleccionada
     await prisma.savingsTransaction.create({
@@ -461,13 +317,38 @@ export async function getPatrimonioStats() {
       expenseByCurrency[exp.currency] = (expenseByCurrency[exp.currency] || 0) + exp.amount;
     });
 
-    // Calcular sobrante por moneda
-    const surplusByCurrency: Record<string, number> = {};
     const allCurrencies = new Set([...Object.keys(incomeByCurrency), ...Object.keys(expenseByCurrency)]);
+    
+    // Fetch savings transactions of this month
+    const savingsTxs = await prisma.savingsTransaction.findMany({
+      where: { date: { gte: startDate, lte: endDate }, profile: { accountId } },
+      include: { savingsGoal: true },
+    });
+
+    // Investments created this month
+    const newInvestments = await prisma.investment.findMany({
+      where: { startDate: { gte: startDate, lte: endDate }, profile: { accountId } },
+    });
+
+    const surplusByCurrency: Record<string, number> = {};
+    
     allCurrencies.forEach((cur) => {
-      const income = incomeByCurrency[cur] || 0;
-      const expense = expenseByCurrency[cur] || 0;
-      surplusByCurrency[cur] = income - expense;
+      let income = incomeByCurrency[cur] || 0;
+      let expense = expenseByCurrency[cur] || 0;
+      
+      let savingsDeposits = 0;
+      let savingsWithdrawals = 0;
+      savingsTxs.filter(tx => tx.savingsGoal.currency === cur).forEach(tx => {
+        if (tx.type === 'DEPOSITO') savingsDeposits += tx.amount;
+        if (tx.type === 'RETIRO') savingsWithdrawals += tx.amount;
+      });
+
+      let investmentDeposits = 0;
+      newInvestments.filter(inv => inv.currency === cur).forEach(inv => {
+        investmentDeposits += inv.amount;
+      });
+
+      surplusByCurrency[cur] = income - expense - savingsDeposits + savingsWithdrawals - investmentDeposits;
     });
 
     // 4. Totales generales por moneda

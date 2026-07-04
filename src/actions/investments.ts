@@ -104,16 +104,7 @@ export async function withdrawToBalanceFromInvestment(investmentId: string, amou
       data: { amount: inv.amount - amount },
     });
 
-    // 2. Crear ingreso en balance
-    await prisma.income.create({
-      data: {
-        amount,
-        currency: inv.currency,
-        date: getArgDate(),
-        description: `Rescate desde inversión: ${inv.name}`,
-        profileId,
-      },
-    });
+    // (No income creation needed anymore since we calculate dynamic surplus)
 
     revalidatePath('/inversiones');
     revalidatePath('/dashboard');

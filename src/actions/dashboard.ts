@@ -50,10 +50,37 @@ export async function getDashboardStats(month: number, year: number, profileId?:
 
     const totalIncome = incomes._sum.amount || 0;
 
+    // Fetch savings transactions of this month
+    const savingsTxs = await prisma.savingsTransaction.findMany({
+      where: whereBase,
+      include: { savingsGoal: true },
+    });
+    let savingsDeposits = 0;
+    let savingsWithdrawals = 0;
+    savingsTxs.forEach(tx => {
+      // Assuming Dashboard is mostly for the main currency (ARS) or aggregate. Wait, balance in dashboard is just sum of amounts.
+      // But we should probably filter or just sum them all. Since dashboard doesn't separate by currency yet, we sum all.
+      if (tx.type === 'DEPOSITO') savingsDeposits += tx.amount;
+      if (tx.type === 'RETIRO') savingsWithdrawals += tx.amount;
+    });
+
+    // Investments created this month
+    const newInvestments = await prisma.investment.findMany({
+      where: {
+        startDate: { gte: startDate, lte: endDate },
+        profile: { accountId },
+        ...(profileId ? { profileId } : {}),
+      },
+    });
+    let investmentDeposits = 0;
+    newInvestments.forEach(inv => {
+      investmentDeposits += inv.amount;
+    });
+
     return {
       totalIncome,
       totalExpenses,
-      balance: totalIncome - totalExpenses,
+      balance: totalIncome - totalExpenses - savingsDeposits + savingsWithdrawals - investmentDeposits,
     };
   } catch (error) {
     console.error('Error fetching dashboard stats:', error);
@@ -263,8 +290,17 @@ export async function getBudgetStatus(profileId: string): Promise<BudgetStatus |
       },
     });
 
+    const fundPaymentsReceived = await prisma.sharedFundPayment.findMany({
+      where: {
+        profileId,
+        date: { gte: startDate, lte: endDate },
+      },
+    });
+    
+    const totalReimbursed = fundPaymentsReceived.reduce((sum, p) => sum + p.amount, 0);
+
     const spentSharedPersonal = sharedPaidPersonal.reduce((sum, exp) => sum + exp.amount, 0);
-    const spent = spentOwn + spentSharedPersonal;
+    const spent = Math.max(0, spentOwn + spentSharedPersonal - totalReimbursed);
 
     return {
       profileId,
