@@ -12,6 +12,16 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: 'EconoApp - Gestión Financiera',
   description: 'Aplicación de gestión financiera personal y de pareja. Controla tus ingresos, gastos, ahorros e inversiones.',
+  manifest: '/manifest.json',
+  icons: {
+    icon: '/icon-192.png',
+    apple: '/icon-192.png',
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'EconoApp',
+  },
 };
 
 export const viewport = {
