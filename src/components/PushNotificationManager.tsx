@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
+import { useProfile } from '@/hooks/useProfile';
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -16,6 +17,7 @@ function urlBase64ToUint8Array(base64String: string) {
 
 export default function PushNotificationManager() {
   const { status } = useSession();
+  const { activeProfile } = useProfile();
   const [isSupported, setIsSupported] = useState(false);
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -82,12 +84,16 @@ export default function PushNotificationManager() {
 
   async function sendSubscriptionToBackEnd(subscription: PushSubscription) {
     try {
+      const bodyPayload = {
+        ...subscription.toJSON(),
+        profileId: activeProfile?.id
+      };
       await fetch('/api/push/subscribe', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(subscription),
+        body: JSON.stringify(bodyPayload),
       });
     } catch (error) {
       console.error('Failed to send subscription to backend', error);
@@ -95,10 +101,10 @@ export default function PushNotificationManager() {
   }
 
   useEffect(() => {
-     if (status === 'authenticated' && subscription) {
+     if (status === 'authenticated' && subscription && activeProfile) {
        sendSubscriptionToBackEnd(subscription);
      }
-  }, [status, subscription]);
+  }, [status, subscription, activeProfile]);
   
   if (!isSupported || subscription || isHidden) {
     return null;
