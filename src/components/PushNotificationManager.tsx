@@ -18,6 +18,8 @@ export default function PushNotificationManager() {
   const { status } = useSession();
   const [isSupported, setIsSupported] = useState(false);
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isHidden, setIsHidden] = useState(false);
 
   useEffect(() => {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
@@ -45,7 +47,19 @@ export default function PushNotificationManager() {
   }
 
   async function subscribeToPush() {
+    setIsLoading(true);
     try {
+      // Request permission
+      let permission = Notification.permission;
+      if (permission !== 'granted') {
+         permission = await Notification.requestPermission();
+      }
+      
+      if (permission !== 'granted') {
+        setIsHidden(true);
+        return;
+      }
+
       const registration = await navigator.serviceWorker.ready;
       const response = await fetch('/api/push/vapidPublicKey');
       const vapidPublicKey = await response.text();
@@ -58,19 +72,16 @@ export default function PushNotificationManager() {
       setSubscription(sub);
       await sendSubscriptionToBackEnd(sub);
       
-      // Request permission
-      if (Notification.permission !== 'granted') {
-         await Notification.requestPermission();
-      }
     } catch (error) {
       console.error('Failed to subscribe to push notifications', error);
+      alert('Error al activar notificaciones. Puede que el navegador no lo soporte o esté bloqueado.');
+    } finally {
+      setIsLoading(false);
     }
   }
 
   async function sendSubscriptionToBackEnd(subscription: PushSubscription) {
     try {
-      // In a real app we might want to get the specific profileId the user is logged into.
-      // For now we'll send it and the backend will attach to the first profile.
       await fetch('/api/push/subscribe', {
         method: 'POST',
         headers: {
@@ -83,32 +94,34 @@ export default function PushNotificationManager() {
     }
   }
 
-  // Effect to handle late login (they were unauthenticated when component mounted, now authenticated)
   useEffect(() => {
      if (status === 'authenticated' && subscription) {
        sendSubscriptionToBackEnd(subscription);
      }
   }, [status, subscription]);
   
-  // We can render a button to prompt the user if they are not subscribed
-  // For a seamless experience, we might prompt them subtly.
-  // In this case, we will just render a small invisible component, or a button if needed.
-  if (!isSupported || subscription) {
+  if (!isSupported || subscription || isHidden) {
     return null;
   }
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 p-4 bg-bg-secondary rounded-lg border border-border-primary shadow-lg flex items-center justify-between gap-4 max-w-sm">
+    <div className="fixed bottom-4 right-4 z-[9999] p-4 bg-bg-secondary rounded-lg border border-border-primary shadow-lg flex items-center justify-between gap-4 max-w-sm">
       <div className="text-sm">
         <p className="font-semibold text-text-primary mb-1">Activar notificaciones</p>
         <p className="text-text-secondary text-xs">Recibí alertas cuando se registren nuevos gastos o ingresos.</p>
       </div>
-      <button 
-        onClick={subscribeToPush}
-        className="px-3 py-1.5 bg-primary text-white rounded-md text-sm font-medium hover:bg-opacity-90 transition"
-      >
-        Activar
-      </button>
+      <div className="flex items-center gap-2">
+        <button 
+          onClick={subscribeToPush}
+          disabled={isLoading}
+          className="px-3 py-1.5 bg-primary text-white rounded-md text-sm font-medium hover:bg-opacity-90 transition disabled:opacity-50"
+        >
+          {isLoading ? 'Activando...' : 'Activar'}
+        </button>
+        <button onClick={() => setIsHidden(true)} className="p-1 text-text-secondary hover:text-text-primary transition rounded-full hover:bg-bg-tertiary">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
     </div>
   );
 }
