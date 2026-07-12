@@ -1,17 +1,15 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getAccountId } from '@/lib/session';
 import { prisma } from '@/lib/prisma';
 
 export async function POST(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
+    const accountId = await getAccountId();
     
-    if (!session || !session.user || !session.user.id) {
+    if (!accountId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    
-    const accountId = session.user.id;
+
     // Get profiles for this account
     const profiles = await prisma.profile.findMany({
       where: { accountId }
