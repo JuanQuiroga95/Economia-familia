@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
 import Providers from '@/components/Providers';
+import PushNotificationManager from '@/components/PushNotificationManager';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -31,6 +32,7 @@ export default function RootLayout({
         <div className="bg-glow" />
         <Providers>
           {children}
+          <PushNotificationManager />
         </Providers>
       </body>
     </html>

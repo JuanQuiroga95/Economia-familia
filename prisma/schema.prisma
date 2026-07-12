@@ -52,6 +52,7 @@ model Profile {
   investments         Investment[]
   budgetConfigs       BudgetConfig[]
   sharedFundPayments  SharedFundPayment[]
+  pushSubscriptions   PushSubscription[]
 }
 
 model Category {
@@ -255,4 +256,14 @@ model TelegramDraft {
   fileIds      String[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  profileId String
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
 }

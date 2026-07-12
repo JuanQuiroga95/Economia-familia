@@ -3,6 +3,7 @@
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import type { IncomeFormData } from '@/types';
+import { sendPushNotification } from '@/lib/push';
 import { parseArgDate, getFinancialMonthRange } from '@/lib/dateUtils';
 import { getAccountId } from '@/lib/session';
 
@@ -17,6 +18,27 @@ export async function createIncome(data: IncomeFormData) {
         profileId: data.profileId,
       },
     });
+
+    try {
+      // Notificaciones Push
+      const currentProfile = await prisma.profile.findUnique({ 
+        where: { id: data.profileId }, 
+        include: { account: { include: { profiles: true } } } 
+      });
+      if (currentProfile && currentProfile.account) {
+        const otherProfiles = currentProfile.account.profiles.filter(p => p.id !== data.profileId);
+        
+        let pushTitle = 'Nuevo ingreso registrado';
+        let pushBody = `${currentProfile.name} registró un ingreso de $${data.amount} en concepto de ${data.description}.`;
+        
+        for (const op of otherProfiles) {
+          await sendPushNotification(op.id, pushTitle, pushBody, '/ingresos');
+        }
+      }
+    } catch(pushErr) {
+      console.error('Error enviando push:', pushErr);
+    }
+
     revalidatePath('/ingresos');
     revalidatePath('/dashboard');
     return { success: true, data: income };

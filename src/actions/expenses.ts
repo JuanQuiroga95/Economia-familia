@@ -3,6 +3,7 @@
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import type { ExpenseFormData, TransactionFilters } from '@/types';
+import { sendPushNotification } from '@/lib/push';
 
 import { parseArgDate } from '@/lib/dateUtils';
 
@@ -73,6 +74,31 @@ export async function createExpense(data: ExpenseFormData) {
         receiptUrl: data.receiptUrl || null,
       },
     });
+
+    try {
+      // Notificaciones Push
+      const currentProfile = await prisma.profile.findUnique({ 
+        where: { id: data.profileId }, 
+        include: { account: { include: { profiles: true } } } 
+      });
+      if (currentProfile && currentProfile.account) {
+        const otherProfiles = currentProfile.account.profiles.filter(p => p.id !== data.profileId);
+        
+        let pushTitle = 'Nuevo gasto';
+        let pushBody = `${currentProfile.name} registró un gasto de $${data.amount} en ${data.description}.`;
+        
+        if (data.type === 'COMPARTIDO' && data.paidFromPersonalBudget) {
+          pushTitle = 'Deuda generada al fondo';
+          pushBody = `${currentProfile.name} pagó $${data.amount} (${data.description}) con su dinero personal.`;
+        }
+
+        for (const op of otherProfiles) {
+          await sendPushNotification(op.id, pushTitle, pushBody, '/gastos');
+        }
+      }
+    } catch(pushErr) {
+      console.error('Error enviando push:', pushErr);
+    }
 
     revalidatePath('/gastos');
     revalidatePath('/dashboard');

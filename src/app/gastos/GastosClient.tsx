@@ -157,7 +157,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
         profileId: activeProfile.id,
         type,
         paidFromPersonalBudget: type === 'COMPARTIDO' ? paidFromPersonal : false,
-        splitPercentage: type === 'COMPARTIDO' && accountInfo?.splitMode === 'PORCENTAJE' ? parseFloat(splitPercentage) : undefined,
+        splitPercentage: type === 'COMPARTIDO' && accountInfo?.splitMode === 'PORCENTAJE' ? (isNaN(parseFloat(splitPercentage)) ? undefined : parseFloat(splitPercentage)) : undefined,
         receiptUrl: receiptUrl || undefined,
         fundingSource,
         walletId: walletId || undefined,
