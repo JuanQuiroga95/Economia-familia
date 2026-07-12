@@ -1,57 +1,82 @@
-import webpush from 'web-push';
+'use server';
+
 import { prisma } from './prisma';
 
-const publicVapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-const privateVapidKey = process.env.VAPID_PRIVATE_KEY;
+let webpushModule: typeof import('web-push') | null = null;
+let vapidConfigured = false;
 
-if (publicVapidKey && privateVapidKey) {
-  webpush.setVapidDetails(
-    'mailto:test@example.com',
-    publicVapidKey,
-    privateVapidKey
-  );
+async function getWebPush() {
+  if (!webpushModule) {
+    webpushModule = await import('web-push');
+  }
+  if (!vapidConfigured) {
+    const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    const privateKey = process.env.VAPID_PRIVATE_KEY;
+    if (publicKey && privateKey) {
+      webpushModule.setVapidDetails(
+        'mailto:econoapp@example.com',
+        publicKey,
+        privateKey
+      );
+      vapidConfigured = true;
+    }
+  }
+  return webpushModule;
 }
 
-export async function sendPushNotification(profileId: string, title: string, body: string, url?: string) {
-  if (!publicVapidKey || !privateVapidKey) {
-    console.log('VAPID keys not set, skipping push notification');
-    return;
-  }
+export async function sendPushNotification(
+  profileId: string,
+  title: string,
+  body: string,
+  url?: string
+) {
+  try {
+    const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    const privateKey = process.env.VAPID_PRIVATE_KEY;
 
-  const subscriptions = await prisma.pushSubscription.findMany({
-    where: { profileId }
-  });
+    if (!publicKey || !privateKey) {
+      console.log('[PUSH] VAPID keys not configured, skipping');
+      return;
+    }
 
-  const payload = JSON.stringify({
-    title,
-    body,
-    url: url || '/'
-  });
+    const webpush = await getWebPush();
 
-  const sendPromises = subscriptions.map(async (sub) => {
-    try {
-      await webpush.sendNotification(
-        {
-          endpoint: sub.endpoint,
-          keys: {
-            p256dh: sub.p256dh,
-            auth: sub.auth,
+    const subscriptions = await prisma.pushSubscription.findMany({
+      where: { profileId },
+    });
+
+    console.log(`[PUSH] Found ${subscriptions.length} subscription(s) for profile ${profileId}`);
+
+    if (subscriptions.length === 0) {
+      console.log('[PUSH] No subscriptions found, nothing to send');
+      return;
+    }
+
+    const payload = JSON.stringify({ title, body, url: url || '/' });
+
+    for (const sub of subscriptions) {
+      try {
+        console.log(`[PUSH] Sending to endpoint: ${sub.endpoint.substring(0, 60)}...`);
+        await webpush.sendNotification(
+          {
+            endpoint: sub.endpoint,
+            keys: {
+              p256dh: sub.p256dh,
+              auth: sub.auth,
+            },
           },
-        },
-        payload
-      );
-    } catch (error: any) {
-      if (error.statusCode === 404 || error.statusCode === 410) {
-        // Subscription has expired or is no longer valid
-        console.log('Subscription expired, removing from DB');
-        await prisma.pushSubscription.delete({
-          where: { id: sub.id }
-        });
-      } else {
-        console.error('Error sending push notification:', error);
+          payload
+        );
+        console.log('[PUSH] Sent successfully!');
+      } catch (error: any) {
+        console.error(`[PUSH] Error sending:`, error?.statusCode, error?.body || error?.message);
+        if (error?.statusCode === 404 || error?.statusCode === 410) {
+          console.log('[PUSH] Subscription expired, removing...');
+          await prisma.pushSubscription.delete({ where: { id: sub.id } }).catch(() => {});
+        }
       }
     }
-  });
-
-  await Promise.all(sendPromises);
+  } catch (error) {
+    console.error('[PUSH] Fatal error in sendPushNotification:', error);
+  }
 }

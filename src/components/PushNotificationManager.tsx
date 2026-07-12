@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useProfile } from '@/hooks/useProfile';
 
@@ -22,110 +22,153 @@ export default function PushNotificationManager() {
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isHidden, setIsHidden] = useState(false);
+  const [registered, setRegistered] = useState(false);
 
+  // Check support
   useEffect(() => {
-    if ('serviceWorker' in navigator && 'PushManager' in window) {
+    if ('serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window) {
       setIsSupported(true);
-      registerServiceWorker();
     }
   }, []);
 
-  async function registerServiceWorker() {
+  // Register SW and check existing subscription
+  useEffect(() => {
+    if (!isSupported) return;
+    
+    navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' })
+      .then(async (registration) => {
+        const existingSub = await registration.pushManager.getSubscription();
+        if (existingSub) {
+          setSubscription(existingSub);
+        }
+      })
+      .catch((err) => console.error('[PushManager] SW registration failed:', err));
+  }, [isSupported]);
+
+  // Whenever we have a subscription + activeProfile + authenticated, sync with backend
+  const syncSubscription = useCallback(async (sub: PushSubscription) => {
+    if (!activeProfile?.id || registered) return;
+    
     try {
-      const registration = await navigator.serviceWorker.register('/sw.js', {
-        scope: '/',
-        updateViaCache: 'none',
+      const subJson = sub.toJSON();
+      const res = await fetch('/api/push/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          endpoint: subJson.endpoint,
+          expirationTime: subJson.expirationTime,
+          keys: subJson.keys,
+          profileId: activeProfile.id,
+        }),
       });
-      const sub = await registration.pushManager.getSubscription();
-      setSubscription(sub);
-      
-      // If we are already logged in and have a subscription, maybe refresh it on backend
-      if (sub && status === 'authenticated') {
-         sendSubscriptionToBackEnd(sub);
+      const data = await res.json();
+      console.log('[PushManager] Subscription synced:', data);
+      if (data.success) {
+        setRegistered(true);
       }
-    } catch (error) {
-      console.error('Service Worker registration failed:', error);
+    } catch (err) {
+      console.error('[PushManager] Failed to sync subscription:', err);
     }
-  }
+  }, [activeProfile?.id, registered]);
+
+  useEffect(() => {
+    if (status === 'authenticated' && subscription && activeProfile?.id) {
+      syncSubscription(subscription);
+    }
+  }, [status, subscription, activeProfile?.id, syncSubscription]);
+
+  // Re-sync when active profile changes
+  useEffect(() => {
+    setRegistered(false);
+  }, [activeProfile?.id]);
 
   async function subscribeToPush() {
     setIsLoading(true);
     try {
-      // Request permission
+      // Step 1: Request notification permission
       let permission = Notification.permission;
-      if (permission !== 'granted') {
-         permission = await Notification.requestPermission();
+      if (permission === 'default') {
+        permission = await Notification.requestPermission();
       }
-      
+
       if (permission !== 'granted') {
+        alert('Permisos de notificación denegados. Revisá la configuración de tu navegador.');
         setIsHidden(true);
         return;
       }
 
+      // Step 2: Get VAPID public key from server
+      const keyRes = await fetch('/api/push/vapidPublicKey');
+      if (!keyRes.ok) {
+        throw new Error(`Failed to get VAPID key: ${keyRes.status}`);
+      }
+      const vapidPublicKey = await keyRes.text();
+
+      // Step 3: Subscribe via PushManager
       const registration = await navigator.serviceWorker.ready;
-      const response = await fetch('/api/push/vapidPublicKey');
-      const vapidPublicKey = await response.text();
-      
       const sub = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
       });
-      
+
       setSubscription(sub);
-      await sendSubscriptionToBackEnd(sub);
-      
-    } catch (error) {
-      console.error('Failed to subscribe to push notifications', error);
-      alert('Error al activar notificaciones. Puede que el navegador no lo soporte o esté bloqueado.');
+
+      // Step 4: Send to backend
+      const subJson = sub.toJSON();
+      const res = await fetch('/api/push/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          endpoint: subJson.endpoint,
+          expirationTime: subJson.expirationTime,
+          keys: subJson.keys,
+          profileId: activeProfile?.id,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        setRegistered(true);
+        alert(`✅ Notificaciones activadas para ${data.profileName || activeProfile?.name || 'tu perfil'}`);
+      } else {
+        throw new Error(data.error || 'Error desconocido');
+      }
+    } catch (error: any) {
+      console.error('[PushManager] Subscribe error:', error);
+      alert(`Error al activar notificaciones: ${error.message}`);
     } finally {
       setIsLoading(false);
     }
   }
 
-  async function sendSubscriptionToBackEnd(subscription: PushSubscription) {
-    try {
-      const bodyPayload = {
-        ...subscription.toJSON(),
-        profileId: activeProfile?.id
-      };
-      await fetch('/api/push/subscribe', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(bodyPayload),
-      });
-    } catch (error) {
-      console.error('Failed to send subscription to backend', error);
-    }
-  }
-
-  useEffect(() => {
-     if (status === 'authenticated' && subscription && activeProfile) {
-       sendSubscriptionToBackEnd(subscription);
-     }
-  }, [status, subscription, activeProfile]);
-  
-  if (!isSupported || subscription || isHidden) {
+  // Don't render if not supported, already subscribed, or user closed it
+  if (!isSupported || subscription || isHidden || status !== 'authenticated') {
     return null;
   }
 
   return (
-    <div className="fixed bottom-4 right-4 z-[9999] p-4 bg-bg-secondary rounded-lg border border-border-primary shadow-lg flex items-center justify-between gap-4 max-w-sm">
+    <div className="fixed bottom-4 right-4 z-[9999] p-4 bg-bg-secondary rounded-lg border border-border-primary shadow-lg flex items-center justify-between gap-4 max-w-sm animate-slide-up">
       <div className="text-sm">
-        <p className="font-semibold text-text-primary mb-1">Activar notificaciones</p>
+        <p className="font-semibold text-text-primary mb-1">🔔 Activar notificaciones</p>
         <p className="text-text-secondary text-xs">Recibí alertas cuando se registren nuevos gastos o ingresos.</p>
       </div>
       <div className="flex items-center gap-2">
-        <button 
+        <button
           onClick={subscribeToPush}
           disabled={isLoading}
           className="px-3 py-1.5 bg-primary text-white rounded-md text-sm font-medium hover:bg-opacity-90 transition disabled:opacity-50"
         >
           {isLoading ? 'Activando...' : 'Activar'}
         </button>
-        <button onClick={() => setIsHidden(true)} className="p-1 text-text-secondary hover:text-text-primary transition rounded-full hover:bg-bg-tertiary">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        <button
+          onClick={() => setIsHidden(true)}
+          className="p-1 text-text-secondary hover:text-text-primary transition rounded-full hover:bg-bg-tertiary"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
         </button>
       </div>
     </div>
