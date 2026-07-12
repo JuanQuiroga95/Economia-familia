@@ -42,7 +42,11 @@ export async function POST(request: Request) {
             endpoint: sub.endpoint,
             keys: { p256dh: sub.p256dh, auth: sub.auth },
           },
-          payload
+          payload,
+          {
+            TTL: 86400,
+            urgency: 'high',
+          }
         );
         sent++;
         console.log(`[PUSH-SEND] Sent OK to ${sub.endpoint.substring(0, 50)}...`);
