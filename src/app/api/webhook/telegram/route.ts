@@ -61,11 +61,18 @@ interface ParsedAction {
   persona?: string;
   pague_yo?: boolean;
   billetera?: string;
+  fecha?: string;
 }
 
-const SYSTEM_PROMPT_BASE = (profileName: string, categories: string[], context: string) => `Sos el cerebro de un bot financiero para Telegram de EconoApp. Tu trabajo es interpretar la intención del usuario.
+const SYSTEM_PROMPT_BASE = (profileName: string, categories: string[], context: string) => {
+  const { getArgDate } = require('@/lib/dateUtils');
+  const today = getArgDate();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+  return `Sos el cerebro de un bot financiero para Telegram de EconoApp. Tu trabajo es interpretar la intención del usuario.
 
 El usuario actual se llama "${profileName}".
+FECHA DE HOY: ${todayStr} (Usa esta fecha como referencia para calcular "ayer", "hoy", fechas relativas, etc.)
 Categorías disponibles: ${categories.join(', ')}.
 
 CONTEXTO DE ÚLTIMOS MOVIMIENTOS:
@@ -80,6 +87,7 @@ REGLAS DE CLASIFICACIÓN DE ACCIÓN:
 4. accion = "link": El usuario escribe palabras cortas como "app", "gasto", "ingreso", "menu", "modificar" solas, pidiendo acceder a la app.
 
 REGLAS DE EXTRACCIÓN (Aplica siempre que el dato exista o pueda inferirse, incluso para la acción "link"):
+- fecha: Si el usuario menciona cuándo ocurrió (ej: "ayer", "el 13 de julio", "hace 3 días"), calcúlalo en base a la FECHA DE HOY y devuélvelo en formato "YYYY-MM-DD". Si no menciona fecha explícita, omítelo o devuelve la de hoy.
 - tipo: "gasto" o "ingreso"
 - tipo_gasto: "compartido" o "propio" (por defecto "propio")
 - moneda: "ARS", "USD" o "EUR" (por defecto "ARS")
@@ -97,6 +105,7 @@ Devuelve ÚNICAMENTE un JSON válido (sin texto extra) con esta estructura:
     {
       "accion": "crear" | "modificar" | "eliminar" | "link",
       "entidad_id": "id_string",
+      "fecha": "YYYY-MM-DD",
       "tipo": "gasto" | "ingreso",
       "monto": numero,
       "moneda": "ARS",
@@ -109,6 +118,7 @@ Devuelve ÚNICAMENTE un JSON válido (sin texto extra) con esta estructura:
     }
   ]
 }`;
+};
 
 async function parseTransactionWithAI(
   text: string,
@@ -124,7 +134,7 @@ async function parseTransactionWithAI(
       { role: 'system', content: SYSTEM_PROMPT_BASE(profileName, categories, context) + `\n\nBilleteras disponibles: ${walletsStr}` },
       { role: 'user', content: text },
     ],
-    model: 'llama-3.3-70b-versatile',
+    model: 'llama-3.1-8b-instant',
     temperature: 0.1,
     max_tokens: 300,
     response_format: { type: 'json_object' },
@@ -175,7 +185,7 @@ async function parseImagesWithAI(
       { role: 'system', content: SYSTEM_PROMPT_BASE(profileName, categories, context) + `\n\nBilleteras disponibles: ${walletsStr}` },
       { role: 'user', content: `Basado en esta extracción de imagen, armá el JSON final:\n\n${rawVisionText}` },
     ],
-    model: 'llama-3.3-70b-versatile',
+    model: 'llama-3.1-8b-instant',
     temperature: 0.1,
     max_tokens: 300,
     response_format: { type: 'json_object' },
@@ -514,8 +524,9 @@ export async function POST(request: NextRequest) {
               data: {
                 amount: action.monto || exp.amount,
                 description: action.descripcion || exp.description,
-                categoryId: matchedCategory.id,
-                type: action.tipo_gasto === 'compartido' ? 'COMPARTIDO' : 'PROPIO'
+                categoryId: action.categoria ? matchedCategory.id : exp.categoryId,
+                type: action.tipo_gasto === 'compartido' ? 'COMPARTIDO' : 'PROPIO',
+                ...(action.fecha ? { date: parseArgDate(action.fecha) } : {})
               }
             });
             await sendTelegramMessage(chatId, `✏️ <b>Gasto modificado:</b>\nNuevo monto: $${formatCurrency(action.monto || exp.amount)}\nDesc: ${action.descripcion || exp.description}`);
@@ -532,6 +543,7 @@ export async function POST(request: NextRequest) {
                 data: {
                   amount: action.monto || inc.amount,
                   description: action.descripcion || inc.description,
+                  ...(action.fecha ? { date: parseArgDate(action.fecha) } : {})
                 }
               });
               await sendTelegramMessage(chatId, `✏️ <b>Ingreso modificado:</b>\nNuevo monto: $${formatCurrency(action.monto || inc.amount)}\nDesc: ${action.descripcion || inc.description}`);
@@ -561,7 +573,7 @@ export async function POST(request: NextRequest) {
       const { parseArgDate, getArgDate } = require('@/lib/dateUtils');
       const { revalidatePath } = require('next/cache');
       const today = getArgDate();
-      const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      const dateStr = action.fecha || `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
       if (action.tipo === 'ingreso') {
         const inc = await prisma.income.create({
