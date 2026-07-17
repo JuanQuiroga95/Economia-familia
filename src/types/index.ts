@@ -136,8 +136,17 @@ export interface SharedFundDebt {
   currency: string;
 }
 
+export interface SharedFundPaymentDetail {
+  id: string;
+  amount: number;
+  profileId: string;
+  profileName: string;
+  date: Date;
+}
+
 export interface SharedFundStats {
   totalSharedExpenses: number;
   debts: SharedFundDebt[];
+  payments: SharedFundPaymentDetail[];
   currency: string;
 }

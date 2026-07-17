@@ -4,7 +4,7 @@ import { formatCurrency } from '@/lib/formatUtils';
 import type { SharedFundStats } from '@/types';
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { createFundPayment } from '@/actions/sharedFund';
+import { createFundPayment, deleteFundPayment } from '@/actions/sharedFund';
 import { toast } from 'react-hot-toast';
 
 export default function SharedFundCard({ stats }: { stats: SharedFundStats }) {
@@ -32,6 +32,20 @@ export default function SharedFundCard({ stats }: { stats: SharedFundStats }) {
         router.refresh();
       } else {
         toast.error(result.error || 'Error al registrar devolución');
+      }
+    });
+  };
+
+  const handleDeleteReimbursement = (id: string) => {
+    if (!confirm('¿Estás seguro de que quieres revertir esta devolución?')) return;
+    
+    startTransition(async () => {
+      const result = await deleteFundPayment(id);
+      if (result.success) {
+        toast.success('Devolución revertida');
+        router.refresh();
+      } else {
+        toast.error(result.error || 'Error al revertir devolución');
       }
     });
   };
@@ -106,6 +120,45 @@ export default function SharedFundCard({ stats }: { stats: SharedFundStats }) {
           <p className="text-sm text-success">
             ✅ No hay deudas pendientes este mes
           </p>
+        </div>
+      )}
+
+      {/* Historial de Devoluciones */}
+      {stats.payments && stats.payments.length > 0 && (
+        <div className="mt-6 border-t border-border/50 pt-4">
+          <p className="text-sm font-medium text-text-secondary mb-3">
+            📜 Historial de Devoluciones del mes
+          </p>
+          <div className="space-y-2">
+            {stats.payments.map((payment) => (
+              <div
+                key={payment.id}
+                className="flex items-center justify-between p-3 rounded-xl bg-bg-input border border-border/50"
+              >
+                <div>
+                  <p className="text-sm font-medium text-text-primary">
+                    Devolución a {payment.profileName}
+                  </p>
+                  <p className="text-xs text-text-muted">
+                    {new Date(payment.date).toLocaleDateString('es-AR')}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-bold text-success">
+                    +${formatCurrency(payment.amount)}
+                  </span>
+                  <button
+                    onClick={() => handleDeleteReimbursement(payment.id)}
+                    disabled={isPending}
+                    className="p-1.5 text-error/70 hover:text-error hover:bg-error/10 rounded-lg transition-colors disabled:opacity-50"
+                    title="Revertir devolución"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

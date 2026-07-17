@@ -103,8 +103,14 @@ export async function getDashboardStats(month: number, year: number, profileId?:
       const assignedA = totalIncome * (account.splitPercentA / 100);
       const assignedB = totalIncome * (account.splitPercentB / 100);
 
-      const usedA = ownExpensesA + totalShared * (account.splitPercentA / 100);
-      const usedB = ownExpensesB + totalShared * (account.splitPercentB / 100);
+      const fundPayments = await prisma.sharedFundPayment.findMany({
+        where: { accountId, date: { gte: startDate, lte: endDate } },
+      });
+      const paymentsReceivedA = fundPayments.filter(p => p.profileId === profileA.id).reduce((sum, p) => sum + p.amount, 0);
+      const paymentsReceivedB = fundPayments.filter(p => p.profileId === profileB.id).reduce((sum, p) => sum + p.amount, 0);
+
+      const usedA = ownExpensesA + totalShared * (account.splitPercentA / 100) - paymentsReceivedA + paymentsReceivedB;
+      const usedB = ownExpensesB + totalShared * (account.splitPercentB / 100) - paymentsReceivedB + paymentsReceivedA;
 
       splitDetails = [
         {
@@ -382,7 +388,7 @@ export async function getSharedFundStats(month: number, year: number): Promise<S
     });
 
     if (!account || account.profiles.length < 2) {
-      return { totalSharedExpenses: 0, debts: [], currency: 'ARS' };
+      return { totalSharedExpenses: 0, debts: [], payments: [], currency: 'ARS' };
     }
 
     const [profileA, profileB] = account.profiles.sort((a, b) => a.name.localeCompare(b.name));
@@ -404,6 +410,14 @@ export async function getSharedFundStats(month: number, year: number): Promise<S
     });
 
     const totalSharedExpenses = sharedExpenses.reduce((sum, exp) => sum + exp.amount, 0);
+
+    const mappedPayments = fundPayments.map(p => ({
+      id: p.id,
+      amount: p.amount,
+      profileId: p.profileId,
+      profileName: account.profiles.find(x => x.id === p.profileId)?.name || '',
+      date: p.date
+    }));
 
     if (account.splitMode === 'FONDO_COMUN') {
       const debtMap = new Map<string, { profileName: string; profileAvatar: string | null; amount: number }>();
@@ -431,7 +445,7 @@ export async function getSharedFundStats(month: number, year: number): Promise<S
           currency: 'ARS',
         };
       }).filter(d => d.amount > 0);
-      return { totalSharedExpenses, debts, currency: 'ARS' };
+      return { totalSharedExpenses, debts, payments: mappedPayments, currency: 'ARS' };
     } else {
       // PORCENTAJE mode: person-to-person debt
       let balanceA = 0; // Positive means B owes A
@@ -478,11 +492,11 @@ export async function getSharedFundStats(month: number, year: number): Promise<S
           currency: 'ARS',
         });
       }
-      return { totalSharedExpenses, debts, currency: 'ARS' };
+      return { totalSharedExpenses, debts, payments: mappedPayments, currency: 'ARS' };
     }
   } catch (error) {
     console.error('Error fetching shared fund stats:', error);
-    return { totalSharedExpenses: 0, debts: [], currency: 'ARS' };
+    return { totalSharedExpenses: 0, debts: [], payments: [], currency: 'ARS' };
   }
 }
 
