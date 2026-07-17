@@ -16,7 +16,18 @@ export default function RegisterPage() {
   const [label, setLabel] = useState('');
   const [numPeople, setNumPeople] = useState(1);
   const [profileNames, setProfileNames] = useState<string[]>(['']);
-  const [budgets, setBudgets] = useState<{firstHalf: string; secondHalf: string}[]>([{firstHalf: '', secondHalf: ''}]);
+  
+  // Gastos Compartidos (solo si son 2 personas)
+  const [splitMode, setSplitMode] = useState<'FONDO_COMUN' | 'PORCENTAJE'>('FONDO_COMUN');
+  const [splitPercentA, setSplitPercentA] = useState('50');
+  const [splitPercentB, setSplitPercentB] = useState('50');
+
+  // Presupuestos
+  const [budgets, setBudgets] = useState<{budgetType: string; firstHalf: string; secondHalf: string; monthly: string}[]>([
+    {budgetType: 'QUINCENAL', firstHalf: '', secondHalf: '', monthly: ''}
+  ]);
+  
+  // Auth
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
@@ -33,10 +44,23 @@ export default function RegisterPage() {
         return;
       }
     }
+    
+    // Skip step 3 if not 2 people
+    if (step === 2 && numPeople !== 2) {
+      setStep(4);
+      return;
+    }
+
     setStep(s => s + 1);
   };
 
-  const prevStep = () => setStep(s => s - 1);
+  const prevStep = () => {
+    if (step === 4 && numPeople !== 2) {
+      setStep(2);
+      return;
+    }
+    setStep(s => s - 1);
+  };
 
   const handleNumPeopleChange = (num: number) => {
     setNumPeople(num);
@@ -45,7 +69,7 @@ export default function RegisterPage() {
     if (num > newNames.length) {
       for (let i = newNames.length; i < num; i++) {
         newNames.push('');
-        newBudgets.push({firstHalf: '', secondHalf: ''});
+        newBudgets.push({budgetType: 'QUINCENAL', firstHalf: '', secondHalf: '', monthly: ''});
       }
     } else {
       newNames.splice(num);
@@ -55,15 +79,9 @@ export default function RegisterPage() {
     setBudgets(newBudgets);
   };
 
-  const handleNameChange = (index: number, val: string) => {
-    const newNames = [...profileNames];
-    newNames[index] = val;
-    setProfileNames(newNames);
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (step !== 4) return;
+    if (step !== 5) return;
     
     setError('');
     if (!username.trim() || !password.trim()) {
@@ -74,8 +92,10 @@ export default function RegisterPage() {
     setLoading(true);
 
     const parsedBudgets = budgets.map(b => ({
+      budgetType: b.budgetType,
       firstHalf: parseFloat(b.firstHalf) || 0,
       secondHalf: parseFloat(b.secondHalf) || 0,
+      monthlyBudget: parseFloat(b.monthly) || 0,
     }));
 
     try {
@@ -85,6 +105,9 @@ export default function RegisterPage() {
         password,
         profileNames,
         budgets: parsedBudgets,
+        splitMode: numPeople === 2 ? splitMode : undefined,
+        splitPercentA: numPeople === 2 ? parseFloat(splitPercentA) || 50 : undefined,
+        splitPercentB: numPeople === 2 ? parseFloat(splitPercentB) || 50 : undefined,
       });
 
       if (!res.success) {
@@ -124,7 +147,7 @@ export default function RegisterPage() {
             <span className="text-4xl">🚀</span>
           </div>
           <h1 className="text-3xl font-bold gradient-text">Crear Cuenta</h1>
-          <p className="text-text-muted mt-2">Paso {step} de 4</p>
+          <p className="text-text-muted mt-2">Paso {step === 5 ? 4 : (step > 3 && numPeople !== 2 ? step - 1 : step)} de {numPeople === 2 ? 5 : 4}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="glass-card p-8 space-y-6 animate-slide-up" style={{ animationDelay: '0.1s' }}>
@@ -183,7 +206,11 @@ export default function RegisterPage() {
                     key={index}
                     type="text"
                     value={name}
-                    onChange={(e) => handleNameChange(index, e.target.value)}
+                    onChange={(e) => {
+                      const newNames = [...profileNames];
+                      newNames[index] = e.target.value;
+                      setProfileNames(newNames);
+                    }}
                     className="input-field"
                     placeholder={`Persona ${index + 1}`}
                   />
@@ -203,46 +230,72 @@ export default function RegisterPage() {
             </div>
           )}
 
-          {step === 3 && (
+          {step === 3 && numPeople === 2 && (
             <div className="space-y-4 animate-fade-in">
-              <h2 className="text-xl font-semibold text-text-primary">¿Presupuesto Quincenal?</h2>
-              <p className="text-sm text-text-muted">Si tienen un límite fijo para gastar, indicalo (opcional). Dejalo en 0 si prefieren no usar límites.</p>
-              
-              {profileNames.map((name, index) => (
-                <div key={index} className="p-3 bg-bg-input rounded-xl border border-border/50">
-                  <p className="text-sm font-medium text-text-primary mb-2">{name || `Persona ${index + 1}`}</p>
+              <h2 className="text-xl font-semibold text-text-primary">¿Cómo dividen los gastos?</h2>
+              <p className="text-sm text-text-muted">Elegí la manera en que comparten los gastos comunes.</p>
+
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <button
+                  type="button"
+                  onClick={() => setSplitMode('FONDO_COMUN')}
+                  className={`p-4 rounded-xl text-sm font-medium transition-all border ${
+                    splitMode === 'FONDO_COMUN'
+                      ? 'bg-accent/20 text-accent border-accent/30'
+                      : 'bg-bg-input text-text-secondary border-border hover:border-accent/20'
+                  }`}
+                >
+                  <span className="text-lg block mb-1">🏦</span>
+                  Fondo Común
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSplitMode('PORCENTAJE')}
+                  className={`p-4 rounded-xl text-sm font-medium transition-all border ${
+                    splitMode === 'PORCENTAJE'
+                      ? 'bg-accent/20 text-accent border-accent/30'
+                      : 'bg-bg-input text-text-secondary border-border hover:border-accent/20'
+                  }`}
+                >
+                  <span className="text-lg block mb-1">📊</span>
+                  Porcentaje
+                </button>
+              </div>
+
+              {splitMode === 'PORCENTAJE' && (
+                <div className="p-3 bg-bg-input rounded-xl space-y-3">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs text-text-secondary mb-1">1ra Quincena</label>
+                      <label className="block text-xs text-text-muted mb-1">{profileNames[0] || 'Persona 1'} (%)</label>
                       <input
                         type="number"
-                        value={budgets[index].firstHalf}
+                        min="0"
+                        max="100"
+                        value={splitPercentA}
                         onChange={(e) => {
-                          const newB = [...budgets];
-                          newB[index].firstHalf = e.target.value;
-                          setBudgets(newB);
+                          setSplitPercentA(e.target.value);
+                          setSplitPercentB((100 - parseFloat(e.target.value || '0')).toString());
                         }}
                         className="input-field"
-                        placeholder="0"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-text-secondary mb-1">2da Quincena</label>
+                      <label className="block text-xs text-text-muted mb-1">{profileNames[1] || 'Persona 2'} (%)</label>
                       <input
                         type="number"
-                        value={budgets[index].secondHalf}
+                        min="0"
+                        max="100"
+                        value={splitPercentB}
                         onChange={(e) => {
-                          const newB = [...budgets];
-                          newB[index].secondHalf = e.target.value;
-                          setBudgets(newB);
+                          setSplitPercentB(e.target.value);
+                          setSplitPercentA((100 - parseFloat(e.target.value || '0')).toString());
                         }}
                         className="input-field"
-                        placeholder="0"
                       />
                     </div>
                   </div>
                 </div>
-              ))}
+              )}
 
               <div className="flex gap-3 mt-4">
                 <button type="button" onClick={prevStep} className="flex-1 py-3 bg-bg-input rounded-xl text-text-secondary hover:text-text-primary transition-colors">
@@ -256,6 +309,103 @@ export default function RegisterPage() {
           )}
 
           {step === 4 && (
+            <div className="space-y-4 animate-fade-in">
+              <h2 className="text-xl font-semibold text-text-primary">¿Presupuesto?</h2>
+              <p className="text-sm text-text-muted">Si tienen un límite fijo para gastar, indicalo (opcional). Podés elegir Quincenal o Mensual.</p>
+              
+              <div className="space-y-4 max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar">
+                {profileNames.map((name, index) => (
+                  <div key={index} className="p-4 bg-bg-input rounded-xl border border-border/50">
+                    <p className="text-sm font-medium text-text-primary mb-3">{name || `Persona ${index + 1}`}</p>
+                    
+                    <div className="flex bg-bg-secondary p-1 rounded-lg mb-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newB = [...budgets];
+                          newB[index].budgetType = 'QUINCENAL';
+                          setBudgets(newB);
+                        }}
+                        className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${budgets[index].budgetType === 'QUINCENAL' ? 'bg-bg-input text-accent shadow-sm' : 'text-text-muted'}`}
+                      >
+                        Quincenal
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newB = [...budgets];
+                          newB[index].budgetType = 'MENSUAL';
+                          setBudgets(newB);
+                        }}
+                        className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${budgets[index].budgetType === 'MENSUAL' ? 'bg-bg-input text-accent shadow-sm' : 'text-text-muted'}`}
+                      >
+                        Mensual
+                      </button>
+                    </div>
+
+                    {budgets[index].budgetType === 'QUINCENAL' ? (
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs text-text-secondary mb-1">1ra Quincena</label>
+                          <input
+                            type="number"
+                            value={budgets[index].firstHalf}
+                            onChange={(e) => {
+                              const newB = [...budgets];
+                              newB[index].firstHalf = e.target.value;
+                              setBudgets(newB);
+                            }}
+                            className="input-field"
+                            placeholder="0"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-text-secondary mb-1">2da Quincena</label>
+                          <input
+                            type="number"
+                            value={budgets[index].secondHalf}
+                            onChange={(e) => {
+                              const newB = [...budgets];
+                              newB[index].secondHalf = e.target.value;
+                              setBudgets(newB);
+                            }}
+                            className="input-field"
+                            placeholder="0"
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <label className="block text-xs text-text-secondary mb-1">Presupuesto Mensual</label>
+                        <input
+                          type="number"
+                          value={budgets[index].monthly}
+                          onChange={(e) => {
+                            const newB = [...budgets];
+                            newB[index].monthly = e.target.value;
+                            setBudgets(newB);
+                          }}
+                          className="input-field"
+                          placeholder="0"
+                        />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex gap-3 mt-4">
+                <button type="button" onClick={prevStep} className="flex-1 py-3 bg-bg-input rounded-xl text-text-secondary hover:text-text-primary transition-colors">
+                  Atrás
+                </button>
+                <button type="button" onClick={nextStep} className="flex-1 gradient-btn py-3">
+                  Siguiente
+                </button>
+              </div>
+            </div>
+          )}
+
+          {step === 5 && (
             <div className="space-y-4 animate-fade-in">
               <h2 className="text-xl font-semibold text-text-primary">Datos de acceso</h2>
               <p className="text-sm text-text-muted">Creá un usuario y contraseña. Todos los integrantes usarán estos mismos datos para ingresar.</p>

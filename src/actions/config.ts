@@ -137,6 +137,8 @@ export async function deleteCategory(id: string) {
 // Budget Config
 export async function updateBudgetConfig(data: {
   profileId: string;
+  budgetType?: string;
+  monthlyBudget?: number;
   firstHalfBudget: number;
   secondHalfBudget: number;
   extraBudget?: number;
@@ -146,6 +148,8 @@ export async function updateBudgetConfig(data: {
     const config = await prisma.budgetConfig.upsert({
       where: { profileId: data.profileId },
       update: {
+        ...(data.budgetType !== undefined && { budgetType: data.budgetType }),
+        ...(data.monthlyBudget !== undefined && { monthlyBudget: data.monthlyBudget }),
         firstHalfBudget: data.firstHalfBudget,
         secondHalfBudget: data.secondHalfBudget,
         ...(data.extraBudget !== undefined && { extraBudget: data.extraBudget }),
@@ -153,6 +157,8 @@ export async function updateBudgetConfig(data: {
       },
       create: {
         profileId: data.profileId,
+        budgetType: data.budgetType ?? 'QUINCENAL',
+        monthlyBudget: data.monthlyBudget ?? 0,
         firstHalfBudget: data.firstHalfBudget,
         secondHalfBudget: data.secondHalfBudget,
         extraBudget: data.extraBudget ?? 0,

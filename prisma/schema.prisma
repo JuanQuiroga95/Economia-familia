@@ -214,6 +214,8 @@ model BudgetConfig {
   profile         Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
   firstHalfBudget Float   @default(50000) // Presupuesto primera quincena ARS
   secondHalfBudget Float  @default(50000) // Presupuesto segunda quincena ARS
+  budgetType      String  @default("QUINCENAL") // QUINCENAL o MENSUAL
+  monthlyBudget   Float   @default(100000) // Presupuesto mensual ARS
   extraBudget     Float   @default(0)     // Saldo del mes pasado o extra
   currency        String  @default("ARS")
   isActive        Boolean @default(true)

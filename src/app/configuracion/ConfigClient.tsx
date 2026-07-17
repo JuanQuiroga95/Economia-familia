@@ -151,10 +151,12 @@ export default function ConfigClient({ exchangeRates, categories, wallets, budge
     });
   };
 
-  const handleBudgetUpdate = (profileId: string, first: string, second: string, extra: string, isActive: boolean) => {
+  const handleBudgetUpdate = (profileId: string, budgetType: string, monthly: string, first: string, second: string, extra: string, isActive: boolean) => {
     startTransition(async () => {
       const result = await updateBudgetConfig({
         profileId,
+        budgetType,
+        monthlyBudget: parseFloat(monthly) || 0,
         firstHalfBudget: parseFloat(first) || 0,
         secondHalfBudget: parseFloat(second) || 0,
         extraBudget: parseFloat(extra) || 0,
@@ -318,7 +320,7 @@ export default function ConfigClient({ exchangeRates, categories, wallets, budge
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {wallets.length === 0 ? (
             <div className="col-span-full text-center text-sm text-text-muted p-4">
-              Aún no creaste ninguna billetera. Todo se agrupa en el "Balance General".
+              Aún no creaste ninguna billetera. Todo se agrupa en el &quot;Balance General&quot;.
             </div>
           ) : (
             wallets.map((w) => (
@@ -420,7 +422,7 @@ export default function ConfigClient({ exchangeRates, categories, wallets, budge
 
       {/* Budget Config - for all profiles */}
       <section className="glass-card p-4 lg:p-6 space-y-4">
-        <h2 className="text-lg font-semibold text-text-primary">💳 Presupuesto Quincenal</h2>
+        <h2 className="text-lg font-semibold text-text-primary">💳 Presupuestos</h2>
         <p className="text-xs text-text-muted">Configurá el límite de gasto para cada integrante. Si no querés límite, dejalo desactivado.</p>
         {profiles.map((profile) => {
           const config = budgetConfigs.find((c) => c.profileId === profile.id);
@@ -540,9 +542,11 @@ function BudgetConfigForm({
 }: {
   profile: ProfileData;
   config: BudgetConfig | null;
-  onSave: (profileId: string, first: string, second: string, extra: string, isActive: boolean) => void;
+  onSave: (profileId: string, budgetType: string, monthly: string, first: string, second: string, extra: string, isActive: boolean) => void;
   isPending: boolean;
 }) {
+  const [budgetType, setBudgetType] = useState(config?.budgetType || 'QUINCENAL');
+  const [monthly, setMonthly] = useState(config?.monthlyBudget?.toString() || '');
   const [first, setFirst] = useState(config?.firstHalfBudget.toString() || '');
   const [second, setSecond] = useState(config?.secondHalfBudget.toString() || '');
   const [extra, setExtra] = useState(config?.extraBudget?.toString() || '');
@@ -564,29 +568,55 @@ function BudgetConfigForm({
       </div>
       {isActive && (
         <>
+          <div className="flex bg-bg-secondary p-1 rounded-lg mb-3">
+            <button
+              type="button"
+              onClick={() => setBudgetType('QUINCENAL')}
+              className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${budgetType === 'QUINCENAL' ? 'bg-bg-input text-accent shadow-sm' : 'text-text-muted'}`}
+            >
+              Quincenal
+            </button>
+            <button
+              type="button"
+              onClick={() => setBudgetType('MENSUAL')}
+              className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${budgetType === 'MENSUAL' ? 'bg-bg-input text-accent shadow-sm' : 'text-text-muted'}`}
+            >
+              Mensual
+            </button>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-text-muted mb-1">1ra Quincena (ARS)</label>
-              <CurrencyInput value={first} onChange={(e) => setFirst(e.target.value)} className="input-field" placeholder="50000" />
-            </div>
-            <div>
-              <label className="block text-xs text-text-muted mb-1">2da Quincena (ARS)</label>
-              <CurrencyInput value={second} onChange={(e) => setSecond(e.target.value)} className="input-field" placeholder="50000" />
-            </div>
+            {budgetType === 'QUINCENAL' ? (
+              <>
+                <div>
+                  <label className="block text-xs text-text-muted mb-1">1ra Quincena (ARS)</label>
+                  <CurrencyInput value={first} onChange={(e) => setFirst(e.target.value)} className="input-field" placeholder="50000" />
+                </div>
+                <div>
+                  <label className="block text-xs text-text-muted mb-1">2da Quincena (ARS)</label>
+                  <CurrencyInput value={second} onChange={(e) => setSecond(e.target.value)} className="input-field" placeholder="50000" />
+                </div>
+              </>
+            ) : (
+              <div className="col-span-2">
+                <label className="block text-xs text-text-muted mb-1">Presupuesto Mensual (ARS)</label>
+                <CurrencyInput value={monthly} onChange={(e) => setMonthly(e.target.value)} className="input-field" placeholder="100000" />
+              </div>
+            )}
             <div className="col-span-2">
               <label className="block text-xs text-text-muted mb-1">Saldo Mes Anterior o Extra (ARS)</label>
               <CurrencyInput value={extra} onChange={(e) => setExtra(e.target.value)} className="input-field" placeholder="0" />
             </div>
           </div>
+          <button
+            onClick={() => onSave(profile.id, budgetType, monthly, first, second, extra, isActive)}
+            disabled={isPending}
+            className="w-full mt-3 py-2 bg-accent/10 text-accent hover:bg-accent/20 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+          >
+            Guardar {profile.name}
+          </button>
         </>
       )}
-      <button
-        onClick={() => onSave(profile.id, first, second, extra, isActive)}
-        disabled={isPending}
-        className="gradient-btn px-4 py-2 text-sm disabled:opacity-50"
-      >
-        Guardar
-      </button>
     </div>
   );
 }

@@ -8,12 +8,15 @@ export interface RegisterData {
   username: string;
   password: string;
   profileNames: string[];
-  budgets?: { firstHalf: number; secondHalf: number }[];
+  budgets?: { budgetType: string; firstHalf: number; secondHalf: number; monthlyBudget: number }[];
+  splitMode?: 'FONDO_COMUN' | 'PORCENTAJE';
+  splitPercentA?: number;
+  splitPercentB?: number;
 }
 
 export async function registerAccount(data: RegisterData) {
   try {
-    const { label, username, password, profileNames, budgets } = data;
+    const { label, username, password, profileNames, budgets, splitMode, splitPercentA, splitPercentB } = data;
 
     if (!label || !username || !password || !profileNames || profileNames.length === 0) {
       return { success: false, error: 'Todos los campos son obligatorios' };
@@ -36,7 +39,9 @@ export async function registerAccount(data: RegisterData) {
           username,
           password: hashedPassword,
           label,
-          splitMode: profileNames.length > 1 ? 'FONDO_COMUN' : 'PORCENTAJE',
+          splitMode: profileNames.length === 2 && splitMode ? splitMode : (profileNames.length > 1 ? 'FONDO_COMUN' : 'PORCENTAJE'),
+          splitPercentA: splitPercentA ?? 50,
+          splitPercentB: splitPercentB ?? 50,
         },
       });
 
@@ -66,15 +71,17 @@ export async function registerAccount(data: RegisterData) {
           },
         });
 
-        const budget = budgets?.[i] || { firstHalf: 0, secondHalf: 0 };
+        const budget = budgets?.[i] || { budgetType: 'QUINCENAL', firstHalf: 0, secondHalf: 0, monthlyBudget: 0 };
 
         await tx.budgetConfig.create({
           data: {
             profileId: profile.id,
+            budgetType: budget.budgetType,
             firstHalfBudget: budget.firstHalf,
             secondHalfBudget: budget.secondHalf,
+            monthlyBudget: budget.monthlyBudget,
             extraBudget: 0,
-            isActive: budget.firstHalf > 0 || budget.secondHalf > 0,
+            isActive: budget.budgetType === 'MENSUAL' ? budget.monthlyBudget > 0 : (budget.firstHalf > 0 || budget.secondHalf > 0),
           },
         });
       }

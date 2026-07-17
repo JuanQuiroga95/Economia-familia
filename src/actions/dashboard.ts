@@ -298,7 +298,7 @@ export async function getBudgetStatus(profileId: string): Promise<BudgetStatus |
 
     if (!config || !config.isActive) return null;
 
-    const now = require('@/lib/dateUtils').getArgDate();
+    const now = getArgDate();
     const day = now.getDate();
     const year = now.getFullYear();
     const month = now.getMonth();
@@ -306,24 +306,36 @@ export async function getBudgetStatus(profileId: string): Promise<BudgetStatus |
     const lastDayOfMonth = new Date(year, month + 1, 0).getDate();
     const isFirstHalf = day >= lastDayOfMonth || day <= 15;
     const currentHalf: 1 | 2 = isFirstHalf ? 1 : 2;
-    const baseBudget = currentHalf === 1 ? config.firstHalfBudget : config.secondHalfBudget;
+    
+    const budgetType = config.budgetType || 'QUINCENAL';
+    const monthlyBudget = config.monthlyBudget || 0;
+
+    const baseBudget = budgetType === 'MENSUAL' 
+      ? monthlyBudget 
+      : (currentHalf === 1 ? config.firstHalfBudget : config.secondHalfBudget);
+      
     const budget = baseBudget + (config.extraBudget || 0);
 
     let startDate: Date;
     let endDate: Date;
 
-    if (isFirstHalf) {
-      if (day >= lastDayOfMonth) {
-        startDate = new Date(year, month, lastDayOfMonth);
-        endDate = new Date(year, month + 1, 15, 23, 59, 59);
-      } else {
-        const prevMonthLastDay = new Date(year, month, 0).getDate();
-        startDate = new Date(year, month - 1, prevMonthLastDay);
-        endDate = new Date(year, month, 15, 23, 59, 59);
-      }
+    if (budgetType === 'MENSUAL') {
+      startDate = new Date(year, month, 1);
+      endDate = new Date(year, month, lastDayOfMonth, 23, 59, 59);
     } else {
-      startDate = new Date(year, month, 16);
-      endDate = new Date(year, month, lastDayOfMonth - 1, 23, 59, 59);
+      if (isFirstHalf) {
+        if (day >= lastDayOfMonth) {
+          startDate = new Date(year, month, lastDayOfMonth);
+          endDate = new Date(year, month + 1, 15, 23, 59, 59);
+        } else {
+          const prevMonthLastDay = new Date(year, month, 0).getDate();
+          startDate = new Date(year, month - 1, prevMonthLastDay);
+          endDate = new Date(year, month, 15, 23, 59, 59);
+        }
+      } else {
+        startDate = new Date(year, month, 16);
+        endDate = new Date(year, month, lastDayOfMonth - 1, 23, 59, 59);
+      }
     }
 
     const ownExpenses = await prisma.expense.findMany({
