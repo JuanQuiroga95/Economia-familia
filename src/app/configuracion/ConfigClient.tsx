@@ -55,13 +55,14 @@ interface ConfigClientProps {
   splitMode: string;
   splitPercentA: number;
   splitPercentB: number;
+  showSplitBalance: boolean;
 }
 
 const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
 import { createWallet, deleteWallet } from '@/actions/wallets';
 
-export default function ConfigClient({ exchangeRates, categories, wallets, budgetConfigs, profiles, splitMode: initialSplitMode, splitPercentA: initialPercentA, splitPercentB: initialPercentB }: ConfigClientProps) {
+export default function ConfigClient({ exchangeRates, categories, wallets, budgetConfigs, profiles, splitMode: initialSplitMode, splitPercentA: initialPercentA, splitPercentB: initialPercentB, showSplitBalance: initialShowSplitBalance }: ConfigClientProps) {
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
   const now = new Date();
@@ -88,6 +89,7 @@ export default function ConfigClient({ exchangeRates, categories, wallets, budge
   const [splitMode, setSplitMode] = useState(initialSplitMode);
   const [percentA, setPercentA] = useState(initialPercentA.toString());
   const [percentB, setPercentB] = useState(initialPercentB.toString());
+  const [showSplitBalance, setShowSplitBalance] = useState(initialShowSplitBalance);
 
   const handleExchangeRate = (e: React.FormEvent) => {
     e.preventDefault();
@@ -167,6 +169,7 @@ export default function ConfigClient({ exchangeRates, categories, wallets, budge
         splitMode: splitMode as 'FONDO_COMUN' | 'PORCENTAJE',
         splitPercentA: parseFloat(percentA) || 50,
         splitPercentB: parseFloat(percentB) || 50,
+        showSplitBalance: showSplitBalance,
       });
       if (result.success) { toast.success('Modo de división actualizado'); router.refresh(); }
       else { toast.error(result.error || 'Error'); }
@@ -499,6 +502,21 @@ export default function ConfigClient({ exchangeRates, categories, wallets, budge
             </div>
           </div>
         )}
+
+        <div className="flex items-center justify-between p-4 bg-bg-input rounded-xl border border-border/50">
+          <div>
+            <p className="text-sm font-medium text-text-primary">Desglose de Balance en Dashboard</p>
+            <p className="text-xs text-text-muted mt-1">Permite clickear el Balance para ver cuánto ingreso le corresponde a cada uno según sus porcentajes, y cuánto gastaron.</p>
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer ml-4">
+            <div
+              className={`relative w-10 h-5 rounded-full transition-colors ${showSplitBalance ? 'bg-accent' : 'bg-border'}`}
+              onClick={() => setShowSplitBalance(!showSplitBalance)}
+            >
+              <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${showSplitBalance ? 'translate-x-5' : 'translate-x-0.5'}`} />
+            </div>
+          </label>
+        </div>
 
         <button
           onClick={handleSplitMode}

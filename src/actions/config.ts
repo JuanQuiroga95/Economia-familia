@@ -170,6 +170,7 @@ export async function updateSplitMode(data: {
   splitMode: 'FONDO_COMUN' | 'PORCENTAJE';
   splitPercentA: number;
   splitPercentB: number;
+  showSplitBalance: boolean;
 }) {
   try {
     const accountId = await getAccountId();
@@ -181,6 +182,7 @@ export async function updateSplitMode(data: {
         splitMode: data.splitMode,
         splitPercentA: data.splitPercentA,
         splitPercentB: data.splitPercentB,
+        showSplitBalance: data.showSplitBalance,
       },
     });
     revalidatePath('/configuracion');

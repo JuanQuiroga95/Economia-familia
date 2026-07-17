@@ -22,6 +22,7 @@ model Account {
   splitMode     SplitMode @default(FONDO_COMUN)
   splitPercentA Float     @default(50) // % del primer perfil (orden alfabético)
   splitPercentB Float     @default(50) // % del segundo perfil
+  showSplitBalance Boolean @default(false)
 
   categoryBudgets CategoryBudget[]
   savingsGoals    SavingsGoal[]

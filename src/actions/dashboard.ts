@@ -12,6 +12,12 @@ export async function getDashboardStats(month: number, year: number, profileId?:
     const accountId = await getAccountId();
     if (!accountId) throw new Error('No account id');
 
+    const account = await prisma.account.findUnique({
+      where: { id: accountId },
+      include: { profiles: { orderBy: { name: 'asc' } } }
+    });
+    if (!account) throw new Error('No account found');
+
     const whereBase = {
       date: { gte: startDate, lte: endDate },
       profile: { accountId },
@@ -79,14 +85,58 @@ export async function getDashboardStats(month: number, year: number, profileId?:
       investmentDeposits += inv.amount;
     });
 
+    let splitDetails = undefined;
+    if (!profileId && account.showSplitBalance && account.profiles.length >= 2) {
+      const profileA = account.profiles[0];
+      const profileB = account.profiles[1];
+
+      // Get all expenses to separate PROPIO from COMPARTIDO
+      const allMonthExpenses = await prisma.expense.findMany({
+        where: expenseWhereBase,
+      });
+
+      const totalShared = allMonthExpenses.filter(e => e.type === 'COMPARTIDO').reduce((sum, e) => sum + e.amount, 0);
+
+      const ownExpensesA = allMonthExpenses.filter(e => e.type === 'PROPIO' && e.profileId === profileA.id).reduce((sum, e) => sum + e.amount, 0);
+      const ownExpensesB = allMonthExpenses.filter(e => e.type === 'PROPIO' && e.profileId === profileB.id).reduce((sum, e) => sum + e.amount, 0);
+
+      const assignedA = totalIncome * (account.splitPercentA / 100);
+      const assignedB = totalIncome * (account.splitPercentB / 100);
+
+      const usedA = ownExpensesA + totalShared * (account.splitPercentA / 100);
+      const usedB = ownExpensesB + totalShared * (account.splitPercentB / 100);
+
+      splitDetails = [
+        {
+          profileId: profileA.id,
+          profileName: profileA.name,
+          assignedIncome: assignedA,
+          usedAmount: usedA,
+          availableAmount: assignedA - usedA,
+          percentage: account.splitPercentA,
+        },
+        {
+          profileId: profileB.id,
+          profileName: profileB.name,
+          assignedIncome: assignedB,
+          usedAmount: usedB,
+          availableAmount: assignedB - usedB,
+          percentage: account.splitPercentB,
+        }
+      ];
+    }
+
     return {
       totalIncome,
       totalExpenses,
       balance: totalIncome - totalExpenses - savingsDeposits + savingsWithdrawals - investmentDeposits,
+      currency: 'ARS',
+      splitBalanceEnabled: account.showSplitBalance,
+      splitDetails,
     };
   } catch (error) {
     console.error('Error fetching dashboard stats:', error);
-    return { totalIncome: 0, totalExpenses: 0, balance: 0 };
+    return { totalIncome: 0, totalExpenses: 0, balance: 0, currency: 'ARS', splitBalanceEnabled: false };
   }
 }
 

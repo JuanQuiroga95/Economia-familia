@@ -47,6 +47,7 @@ export default async function ConfiguracionPage() {
         splitMode={account?.splitMode || 'FONDO_COMUN'}
         splitPercentA={account?.splitPercentA || 50}
         splitPercentB={account?.splitPercentB || 50}
+        showSplitBalance={account?.showSplitBalance || false}
       />
     </AppLayout>
   );

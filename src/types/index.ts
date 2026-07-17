@@ -13,6 +13,17 @@ export interface MonthlyStats {
   totalExpenses: number;
   balance: number;
   currency: Currency;
+  splitBalanceEnabled?: boolean;
+  splitDetails?: SplitBalanceDetail[];
+}
+
+export interface SplitBalanceDetail {
+  profileId: string;
+  profileName: string;
+  assignedIncome: number;
+  usedAmount: number;
+  availableAmount: number;
+  percentage: number;
 }
 
 export interface CategoryBreakdown {
