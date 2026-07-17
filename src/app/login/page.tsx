@@ -109,9 +109,20 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className="text-center text-text-muted text-xs mt-6">
-          EconoApp • {new Date().getFullYear()}
-        </p>
+        <div className="mt-6 text-center space-y-4">
+          <p className="text-text-muted text-sm">
+            ¿No tenés una cuenta?{' '}
+            <button
+              onClick={() => router.push('/register')}
+              className="text-accent hover:text-accent-hover font-medium transition-colors"
+            >
+              Crear mi cuenta
+            </button>
+          </p>
+          <p className="text-text-muted text-xs">
+            EconoApp • {new Date().getFullYear()}
+          </p>
+        </div>
       </div>
     </div>
   );
