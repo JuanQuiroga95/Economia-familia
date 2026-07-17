@@ -34,6 +34,7 @@ interface BudgetConfig {
   profileId: string;
   firstHalfBudget: number;
   secondHalfBudget: number;
+  extraBudget: number;
   isActive: boolean;
   profile: { id: string; name: string };
 }
@@ -150,12 +151,13 @@ export default function ConfigClient({ exchangeRates, categories, wallets, budge
     });
   };
 
-  const handleBudgetUpdate = (profileId: string, first: string, second: string, isActive: boolean) => {
+  const handleBudgetUpdate = (profileId: string, first: string, second: string, extra: string, isActive: boolean) => {
     startTransition(async () => {
       const result = await updateBudgetConfig({
         profileId,
         firstHalfBudget: parseFloat(first) || 0,
         secondHalfBudget: parseFloat(second) || 0,
+        extraBudget: parseFloat(extra) || 0,
         isActive,
       });
       if (result.success) { toast.success('Presupuesto actualizado'); router.refresh(); }
@@ -538,11 +540,12 @@ function BudgetConfigForm({
 }: {
   profile: ProfileData;
   config: BudgetConfig | null;
-  onSave: (profileId: string, first: string, second: string, isActive: boolean) => void;
+  onSave: (profileId: string, first: string, second: string, extra: string, isActive: boolean) => void;
   isPending: boolean;
 }) {
   const [first, setFirst] = useState(config?.firstHalfBudget.toString() || '');
   const [second, setSecond] = useState(config?.secondHalfBudget.toString() || '');
+  const [extra, setExtra] = useState(config?.extraBudget?.toString() || '');
   const [isActive, setIsActive] = useState(config?.isActive ?? false);
 
   return (
@@ -570,11 +573,15 @@ function BudgetConfigForm({
               <label className="block text-xs text-text-muted mb-1">2da Quincena (ARS)</label>
               <CurrencyInput value={second} onChange={(e) => setSecond(e.target.value)} className="input-field" placeholder="50000" />
             </div>
+            <div className="col-span-2">
+              <label className="block text-xs text-text-muted mb-1">Saldo Mes Anterior o Extra (ARS)</label>
+              <CurrencyInput value={extra} onChange={(e) => setExtra(e.target.value)} className="input-field" placeholder="0" />
+            </div>
           </div>
         </>
       )}
       <button
-        onClick={() => onSave(profile.id, first, second, isActive)}
+        onClick={() => onSave(profile.id, first, second, extra, isActive)}
         disabled={isPending}
         className="gradient-btn px-4 py-2 text-sm disabled:opacity-50"
       >

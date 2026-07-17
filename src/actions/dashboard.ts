@@ -306,7 +306,8 @@ export async function getBudgetStatus(profileId: string): Promise<BudgetStatus |
     const lastDayOfMonth = new Date(year, month + 1, 0).getDate();
     const isFirstHalf = day >= lastDayOfMonth || day <= 15;
     const currentHalf: 1 | 2 = isFirstHalf ? 1 : 2;
-    const budget = currentHalf === 1 ? config.firstHalfBudget : config.secondHalfBudget;
+    const baseBudget = currentHalf === 1 ? config.firstHalfBudget : config.secondHalfBudget;
+    const budget = baseBudget + (config.extraBudget || 0);
 
     let startDate: Date;
     let endDate: Date;

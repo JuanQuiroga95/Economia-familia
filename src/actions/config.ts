@@ -139,6 +139,7 @@ export async function updateBudgetConfig(data: {
   profileId: string;
   firstHalfBudget: number;
   secondHalfBudget: number;
+  extraBudget?: number;
   isActive?: boolean;
 }) {
   try {
@@ -147,12 +148,14 @@ export async function updateBudgetConfig(data: {
       update: {
         firstHalfBudget: data.firstHalfBudget,
         secondHalfBudget: data.secondHalfBudget,
+        ...(data.extraBudget !== undefined && { extraBudget: data.extraBudget }),
         ...(data.isActive !== undefined && { isActive: data.isActive }),
       },
       create: {
         profileId: data.profileId,
         firstHalfBudget: data.firstHalfBudget,
         secondHalfBudget: data.secondHalfBudget,
+        extraBudget: data.extraBudget ?? 0,
         isActive: data.isActive ?? true,
       },
     });
