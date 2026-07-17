@@ -34,6 +34,8 @@ interface BudgetConfig {
   profileId: string;
   firstHalfBudget: number;
   secondHalfBudget: number;
+  budgetType: string;
+  monthlyBudget: number;
   extraBudget: number;
   isActive: boolean;
   profile: { id: string; name: string };
