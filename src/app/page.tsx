@@ -177,6 +177,54 @@ export default function LandingPage() {
               <li className="flex items-start gap-2"><span>✓</span> <span>El Dashboard unifica todo tu patrimonio.</span></li>
             </ul>
           </motion.div>
+
+          {/* Feature 5 */}
+          <motion.div 
+            className="glass-card p-8 lg:p-10 group"
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: 0.5 }}
+          >
+            <div className="flex items-center gap-4 mb-6">
+              <div className="w-14 h-14 rounded-2xl bg-bg-primary border border-accent/30 flex items-center justify-center text-3xl group-hover:scale-110 group-hover:border-accent transition-all duration-300">
+                🤖
+              </div>
+              <h3 className="text-2xl font-bold">Bot de Telegram Integrado</h3>
+            </div>
+            <p className="text-text-muted leading-relaxed mb-4">
+              Controlá tus gastos sin siquiera abrir la aplicación utilizando nuestro asistente virtual integrado en Telegram.
+            </p>
+            <ul className="space-y-2 text-sm text-text-secondary">
+              <li className="flex items-start gap-2"><span>✓</span> <span>Cargá gastos al instante enviando un simple <strong>mensaje de texto o audio</strong>.</span></li>
+              <li className="flex items-start gap-2"><span>✓</span> <span>Consultá tu balance actual con un comando rápido.</span></li>
+              <li className="flex items-start gap-2"><span>✓</span> <span>Ideal para registros rápidos en la calle o supermercado.</span></li>
+            </ul>
+          </motion.div>
+
+          {/* Feature 6 */}
+          <motion.div 
+            className="glass-card p-8 lg:p-10 group"
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: 0.6 }}
+          >
+            <div className="flex items-center gap-4 mb-6">
+              <div className="w-14 h-14 rounded-2xl bg-bg-primary border border-accent/30 flex items-center justify-center text-3xl group-hover:scale-110 group-hover:border-accent transition-all duration-300">
+                🔔
+              </div>
+              <h3 className="text-2xl font-bold">Notificaciones y Alertas</h3>
+            </div>
+            <p className="text-text-muted leading-relaxed mb-4">
+              Mantené el control absoluto en tiempo real. Nunca más te vas a olvidar de anotar un gasto o de que se te venza un plazo fijo.
+            </p>
+            <ul className="space-y-2 text-sm text-text-secondary">
+              <li className="flex items-start gap-2"><span>✓</span> <span>Recibí notificaciones Push en tu celular cuando tu pareja carga un gasto.</span></li>
+              <li className="flex items-start gap-2"><span>✓</span> <span>Avisos de vencimientos y cierres de mes.</span></li>
+              <li className="flex items-start gap-2"><span>✓</span> <span>Seguridad y privacidad garantizada sin instalaciones complejas.</span></li>
+            </ul>
+          </motion.div>
         </div>
       </section>
 
