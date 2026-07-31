@@ -16,6 +16,7 @@ export async function createIncome(data: IncomeFormData) {
         date: parseArgDate(data.date),
         description: data.description,
         profileId: data.profileId,
+        paymentMethod: data.paymentMethod || 'TRANSFERENCIA',
       },
     });
 
@@ -92,6 +93,7 @@ export async function updateIncome(id: string, data: Partial<IncomeFormData>) {
         ...(data.currency && { currency: data.currency }),
         ...(data.date && { date: require('@/lib/dateUtils').parseArgDate(data.date) }),
         ...(data.description && { description: data.description }),
+        ...(data.paymentMethod && { paymentMethod: data.paymentMethod }),
       },
     });
     revalidatePath('/ingresos');

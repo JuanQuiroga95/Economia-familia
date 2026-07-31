@@ -68,6 +68,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
   const [fundingSource, setFundingSource] = useState('balance');
   const [splitPercentage, setSplitPercentage] = useState<string>('');
   const [walletId, setWalletId] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'EFECTIVO' | 'TRANSFERENCIA'>('TRANSFERENCIA');
 
   const handleCreateCategory = () => {
     const name = window.prompt('Nombre de la nueva categoría (ej: Alimento perro):');
@@ -161,6 +162,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
         receiptUrl: receiptUrl || undefined,
         fundingSource,
         walletId: walletId || undefined,
+        paymentMethod,
       };
 
       const result = editingExpenseId 
@@ -184,6 +186,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
         setFundingSource('balance');
         setWalletId('');
         setSplitPercentage('');
+        setPaymentMethod('TRANSFERENCIA');
         setEditingExpenseId(null);
         setShowForm(false);
         router.refresh();
@@ -206,6 +209,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
     setReceiptUrl(expense.receiptUrl || '');
     setFundingSource('balance');
     setWalletId((expense as any).walletId || '');
+    setPaymentMethod((expense as any).paymentMethod || 'TRANSFERENCIA');
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -221,6 +225,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
     setFundingSource('balance');
     setWalletId('');
     setSplitPercentage('');
+    setPaymentMethod('TRANSFERENCIA');
   };
 
   const handleDelete = (id: string) => {
@@ -382,11 +387,40 @@ export default function GastosClient({ initialExpenses, categories, savings = []
               onChange={(e) => setWalletId(e.target.value)}
               className="input-field"
             >
-              <option value="">Saldo General (Efectivo)</option>
+              <option value="">Saldo General</option>
               {wallets.map((w) => (
                 <option key={w.id} value={w.id}>{w.name} ({w.currency})</option>
               ))}
             </select>
+          </div>
+
+          {/* Método de Pago */}
+          <div>
+            <label className="block text-sm text-text-secondary mb-1">Método de Pago</label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setPaymentMethod('EFECTIVO')}
+                className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
+                  paymentMethod === 'EFECTIVO'
+                    ? 'bg-accent text-white shadow-lg shadow-accent/25'
+                    : 'bg-bg-card text-text-secondary border border-border'
+                }`}
+              >
+                💵 Efectivo
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaymentMethod('TRANSFERENCIA')}
+                className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
+                  paymentMethod === 'TRANSFERENCIA'
+                    ? 'bg-accent text-white shadow-lg shadow-accent/25'
+                    : 'bg-bg-card text-text-secondary border border-border'
+                }`}
+              >
+                💳 Transferencia
+              </button>
+            </div>
           </div>
 
           {/* Tipo de gasto */}
@@ -534,6 +568,10 @@ export default function GastosClient({ initialExpenses, categories, savings = []
                     </span>
                     <span className="text-xs text-text-muted">•</span>
                     <span className="text-xs text-text-muted">{expense.profile.name}</span>
+                    <span className="text-xs text-text-muted">•</span>
+                    <span className="text-xs text-text-muted">
+                      {(expense as any).paymentMethod === 'EFECTIVO' ? '💵 Efectivo' : '💳 Transferencia'}
+                    </span>
                     {expense.type === 'COMPARTIDO' && (
                       <span className="text-xs px-1.5 py-0.5 rounded-full bg-accent/20 text-accent">
                         👥 Compartido

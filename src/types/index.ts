@@ -81,6 +81,7 @@ export interface IncomeFormData {
   date: string;
   description: string;
   profileId: string;
+  paymentMethod?: 'EFECTIVO' | 'TRANSFERENCIA';
 }
 
 export interface ExpenseFormData {
@@ -95,6 +96,7 @@ export interface ExpenseFormData {
   receiptUrl?: string;
   fundingSource?: string;
   splitPercentage?: number;
+  paymentMethod?: 'EFECTIVO' | 'TRANSFERENCIA';
 }
 
 export interface SavingsGoalFormData {

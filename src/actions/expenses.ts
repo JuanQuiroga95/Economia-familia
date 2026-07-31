@@ -72,6 +72,7 @@ export async function createExpense(data: ExpenseFormData) {
         paidFromPersonalBudget: data.type === 'COMPARTIDO' ? data.paidFromPersonalBudget : false,
         splitPercentage: data.type === 'COMPARTIDO' ? data.splitPercentage : null,
         receiptUrl: data.receiptUrl || null,
+        paymentMethod: data.paymentMethod || 'TRANSFERENCIA',
       },
     });
 
@@ -162,6 +163,7 @@ export async function updateExpense(id: string, data: Partial<ExpenseFormData>) 
     }
     // No permitimos editar fundingSource, ya que eso implica revertir/crear transacciones de ahorro/inversion complejas.
     delete updateData.fundingSource;
+    if (!updateData.paymentMethod) delete updateData.paymentMethod;
 
     await prisma.expense.update({
       where: { id },

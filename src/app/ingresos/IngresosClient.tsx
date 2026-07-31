@@ -44,6 +44,7 @@ export default function IngresosClient({ initialIncomes, wallets = [] }: Ingreso
   const [date, setDate] = useState(getLocalDateString());
   const [description, setDescription] = useState('');
   const [walletId, setWalletId] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'EFECTIVO' | 'TRANSFERENCIA'>('TRANSFERENCIA');
 
   const triggerConfetti = () => {
     const duration = 3000;
@@ -91,6 +92,7 @@ export default function IngresosClient({ initialIncomes, wallets = [] }: Ingreso
         description,
         profileId: activeProfile.id,
         walletId: walletId || undefined,
+        paymentMethod,
       };
 
       const result = editingIncomeId
@@ -103,6 +105,7 @@ export default function IngresosClient({ initialIncomes, wallets = [] }: Ingreso
         setAmount('');
         setDescription('');
         setWalletId('');
+        setPaymentMethod('TRANSFERENCIA');
         setEditingIncomeId(null);
         setShowForm(false);
         router.refresh();
@@ -119,6 +122,7 @@ export default function IngresosClient({ initialIncomes, wallets = [] }: Ingreso
     setDate(income.date.split('T')[0]);
     setDescription(income.description);
     setWalletId((income as any).walletId || '');
+    setPaymentMethod((income as any).paymentMethod || 'TRANSFERENCIA');
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -129,6 +133,7 @@ export default function IngresosClient({ initialIncomes, wallets = [] }: Ingreso
     setAmount('');
     setDescription('');
     setWalletId('');
+    setPaymentMethod('TRANSFERENCIA');
   };
 
   const handleDelete = (id: string) => {
@@ -235,11 +240,40 @@ export default function IngresosClient({ initialIncomes, wallets = [] }: Ingreso
               onChange={(e) => setWalletId(e.target.value)}
               className="input-field"
             >
-              <option value="">Saldo General (Efectivo)</option>
+              <option value="">Saldo General</option>
               {wallets.map((w) => (
                 <option key={w.id} value={w.id}>{w.name} ({w.currency})</option>
               ))}
             </select>
+          </div>
+
+          {/* Método de Pago */}
+          <div>
+            <label className="block text-sm text-text-secondary mb-1">Método de Pago</label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setPaymentMethod('EFECTIVO')}
+                className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
+                  paymentMethod === 'EFECTIVO'
+                    ? 'bg-accent text-white shadow-lg shadow-accent/25'
+                    : 'bg-bg-card text-text-secondary border border-border'
+                }`}
+              >
+                💵 Efectivo
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaymentMethod('TRANSFERENCIA')}
+                className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
+                  paymentMethod === 'TRANSFERENCIA'
+                    ? 'bg-accent text-white shadow-lg shadow-accent/25'
+                    : 'bg-bg-card text-text-secondary border border-border'
+                }`}
+              >
+                💳 Transferencia
+              </button>
+            </div>
           </div>
 
           <button
@@ -269,7 +303,7 @@ export default function IngresosClient({ initialIncomes, wallets = [] }: Ingreso
                 <div>
                   <p className="text-sm font-medium text-text-primary">{income.description}</p>
                   <p className="text-xs text-text-muted">
-                    {new Date(income.date).toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })} • {income.profile.name}
+                    {new Date(income.date).toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })} • {income.profile.name} • {(income as any).paymentMethod === 'EFECTIVO' ? '💵 Efectivo' : '💳 Transferencia'}
                   </p>
                 </div>
               </div>
