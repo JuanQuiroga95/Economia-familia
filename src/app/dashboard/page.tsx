@@ -10,6 +10,8 @@ import { getAccountId } from '@/lib/session';
 
 import { redirect } from 'next/navigation';
 
+import MonthCloseBannerWrapper from '@/components/dashboard/MonthCloseBannerWrapper';
+
 export default async function DashboardPage(props: { searchParams: Promise<{ month?: string; year?: string }> }) {
   const searchParams = await props.searchParams;
   const now = getArgDate();
@@ -48,6 +50,7 @@ export default async function DashboardPage(props: { searchParams: Promise<{ mon
 
   return (
     <AppLayout>
+      <MonthCloseBannerWrapper currentMonth={month} currentYear={year} />
       <MonthYearPicker month={month} year={year} />
       <DashboardClient
         stats={stats}

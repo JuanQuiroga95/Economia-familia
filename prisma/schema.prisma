@@ -28,6 +28,7 @@ model Account {
   savingsGoals    SavingsGoal[]
   wallets         Wallet[]
   sharedFundPayments SharedFundPayment[]
+  monthCloses     MonthClose[]
 }
 
 enum SplitMode {
@@ -270,4 +271,16 @@ model PushSubscription {
   profileId String
   profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
+}
+
+model MonthClose {
+  id        String   @id @default(cuid())
+  month     Int
+  year      Int
+  accountId String
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  action    String   // "CARRY_OVER" | "SAVINGS" | "IGNORE"
+  createdAt DateTime @default(now())
+
+  @@unique([accountId, month, year])
 }
