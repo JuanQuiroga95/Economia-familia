@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import Image from 'next/image';
 import { motion } from 'framer-motion';
+import HeroMockup from '@/components/landing/HeroMockup';
 
 export default function LandingPage() {
   return (
@@ -25,14 +25,14 @@ export default function LandingPage() {
           <Link href="/login" className="text-sm font-medium text-text-secondary hover:text-white transition-colors">
             Iniciar Sesión
           </Link>
-          <Link href="/register" className="gradient-btn px-5 py-2 text-sm">
+          <Link href="/register" className="gradient-btn px-5 py-2 text-sm hidden sm:block">
             Registrarse
           </Link>
         </div>
       </nav>
 
       {/* Hero Section */}
-      <main className="container mx-auto px-6 pt-20 pb-32 relative z-10">
+      <main className="container mx-auto px-6 pt-16 pb-24 relative z-10">
         <div className="flex flex-col lg:flex-row items-center justify-between gap-16">
           <motion.div 
             className="flex-1 text-center lg:text-left"
@@ -52,91 +52,159 @@ export default function LandingPage() {
                 Comenzar ahora
               </Link>
               <Link href="#features" className="px-8 py-4 text-lg font-medium text-text-secondary bg-bg-card border border-border rounded-xl hover:bg-bg-card-hover hover:text-white transition-all w-full sm:w-auto text-center">
-                Saber más
+                Ver características
               </Link>
             </div>
           </motion.div>
 
           <motion.div 
-            className="flex-1 relative w-full max-w-lg mx-auto lg:max-w-none"
-            initial={{ opacity: 0, scale: 0.8, rotate: -5 }}
-            animate={{ opacity: 1, scale: 1, rotate: 0 }}
+            className="flex-1 relative w-full max-w-lg mx-auto lg:max-w-none pt-10 lg:pt-0"
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 1, delay: 0.2, type: "spring" }}
           >
-            <div className="relative rounded-3xl overflow-hidden border border-border shadow-2xl shadow-accent/20">
-              <Image 
-                src="/mockup-dashboard.png" 
-                alt="Dashboard Mockup" 
-                width={800} 
-                height={600}
-                className="w-full h-auto object-cover"
-                priority
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-bg-primary/80 to-transparent pointer-events-none" />
-            </div>
-            
-            {/* Floating badges */}
-            <motion.div 
-              className="absolute -bottom-6 -left-6 glass-card p-4 flex items-center gap-3 animate-bounce"
-              style={{ animationDuration: '3s' }}
-            >
-              <div className="w-10 h-10 rounded-full bg-success/20 flex items-center justify-center text-success">
-                <span className="text-xl">📈</span>
-              </div>
-              <div>
-                <p className="text-sm font-bold">+15% Ahorro</p>
-                <p className="text-xs text-text-muted">Este mes</p>
-              </div>
-            </motion.div>
+            <HeroMockup />
           </motion.div>
         </div>
       </main>
 
-      {/* Features Section */}
+      {/* Detailed Features Section */}
       <section id="features" className="container mx-auto px-6 py-24 relative z-10">
         <motion.div 
-          className="text-center mb-16"
+          className="text-center mb-20"
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
         >
-          <h2 className="text-3xl md:text-4xl font-bold mb-4">Todo lo que necesitas en un solo lugar</h2>
-          <p className="text-text-muted max-w-xl mx-auto">Diseñado para ser intuitivo, rápido y adaptarse perfectamente a tus necesidades financieras del día a día.</p>
+          <h2 className="text-3xl md:text-5xl font-bold mb-6">Un ecosistema financiero completo</h2>
+          <p className="text-text-muted max-w-2xl mx-auto text-lg">Diseñado para ser intuitivo, rápido y adaptarse perfectamente a todas las necesidades financieras de tu día a día, solo o en pareja.</p>
         </motion.div>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {[
-            { icon: '📊', title: 'Control de Gastos', desc: 'Registra tus gastos diarios con un toque. Categoriza y visualiza en qué se va tu dinero.' },
-            { icon: '👥', title: 'Presupuesto Compartido', desc: 'Sincroniza cuentas con tu pareja. Dividan gastos compartidos manteniendo la privacidad de sus fondos personales.' },
-            { icon: '🎯', title: 'Metas de Ahorro', desc: 'Crea "chanchitos" virtuales para tus objetivos. Separa el dinero y mira cómo crecen tus ahorros.' },
-            { icon: '🌍', title: 'Inversiones y Divisas', desc: 'Gestiona plazos fijos, dólares, euros o cripto. Todo convertido a tu moneda local automáticamente.' }
-          ].map((feature, i) => (
-            <motion.div 
-              key={i}
-              className="glass-card p-8 flex flex-col items-center text-center group"
-              initial={{ opacity: 0, y: 30 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: i * 0.1 }}
-            >
-              <div className="w-16 h-16 rounded-2xl bg-bg-primary border border-border flex items-center justify-center text-3xl mb-6 group-hover:scale-110 group-hover:border-accent transition-all duration-300">
-                {feature.icon}
+        <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
+          
+          {/* Feature 1 */}
+          <motion.div 
+            className="glass-card p-8 lg:p-10 group"
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: 0.1 }}
+          >
+            <div className="flex items-center gap-4 mb-6">
+              <div className="w-14 h-14 rounded-2xl bg-bg-primary border border-accent/30 flex items-center justify-center text-3xl group-hover:scale-110 group-hover:border-accent transition-all duration-300">
+                📊
               </div>
-              <h3 className="text-xl font-bold mb-3">{feature.title}</h3>
-              <p className="text-text-muted text-sm">{feature.desc}</p>
-            </motion.div>
-          ))}
+              <h3 className="text-2xl font-bold">Gestión de Gastos e Ingresos</h3>
+            </div>
+            <p className="text-text-muted leading-relaxed mb-4">
+              Registra tus movimientos diarios en segundos. Mantén un historial limpio y organizado con <strong>categorías personalizables</strong>.
+            </p>
+            <ul className="space-y-2 text-sm text-text-secondary">
+              <li className="flex items-start gap-2"><span>✓</span> <span>Diferencia entre pagos en <strong>Efectivo</strong> y <strong>Transferencia</strong>.</span></li>
+              <li className="flex items-start gap-2"><span>✓</span> <span>Sube fotos de tus comprobantes o tickets.</span></li>
+              <li className="flex items-start gap-2"><span>✓</span> <span>Organiza el dinero en distintas Billeteras o Bancos.</span></li>
+            </ul>
+          </motion.div>
+
+          {/* Feature 2 */}
+          <motion.div 
+            className="glass-card p-8 lg:p-10 group"
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: 0.2 }}
+          >
+            <div className="flex items-center gap-4 mb-6">
+              <div className="w-14 h-14 rounded-2xl bg-bg-primary border border-accent/30 flex items-center justify-center text-3xl group-hover:scale-110 group-hover:border-accent transition-all duration-300">
+                👥
+              </div>
+              <h3 className="text-2xl font-bold">Presupuesto en Pareja</h3>
+            </div>
+            <p className="text-text-muted leading-relaxed mb-4">
+              Sincroniza tu cuenta con tu pareja para gestionar un <strong>fondo común</strong> sin perder la privacidad de tus gastos personales.
+            </p>
+            <ul className="space-y-2 text-sm text-text-secondary">
+              <li className="flex items-start gap-2"><span>✓</span> <span>Divide gastos equitativamente (50/50) o por porcentajes (Ej: 70/30).</span></li>
+              <li className="flex items-start gap-2"><span>✓</span> <span>Botón <strong>"Pagué Yo"</strong>: el sistema calcula automáticamente quién debe a quién.</span></li>
+              <li className="flex items-start gap-2"><span>✓</span> <span>Recibe <strong>Notificaciones Push</strong> cuando el otro registre un movimiento.</span></li>
+            </ul>
+          </motion.div>
+
+          {/* Feature 3 */}
+          <motion.div 
+            className="glass-card p-8 lg:p-10 group"
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: 0.3 }}
+          >
+            <div className="flex items-center gap-4 mb-6">
+              <div className="w-14 h-14 rounded-2xl bg-bg-primary border border-accent/30 flex items-center justify-center text-3xl group-hover:scale-110 group-hover:border-accent transition-all duration-300">
+                🎯
+              </div>
+              <h3 className="text-2xl font-bold">Metas de Ahorro</h3>
+            </div>
+            <p className="text-text-muted leading-relaxed mb-4">
+              Crea objetivos financieros ("chanchitos" virtuales) para ese viaje, computadora nueva o fondo de emergencias.
+            </p>
+            <ul className="space-y-2 text-sm text-text-secondary">
+              <li className="flex items-start gap-2"><span>✓</span> <span>Separa dinero mes a mes para acercarte a tu objetivo.</span></li>
+              <li className="flex items-start gap-2"><span>✓</span> <span>Mira tu progreso con barras de porcentaje claras.</span></li>
+              <li className="flex items-start gap-2"><span>✓</span> <span>Maneja ahorros en tu moneda local o en divisas fuertes.</span></li>
+            </ul>
+          </motion.div>
+
+          {/* Feature 4 */}
+          <motion.div 
+            className="glass-card p-8 lg:p-10 group"
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: 0.4 }}
+          >
+            <div className="flex items-center gap-4 mb-6">
+              <div className="w-14 h-14 rounded-2xl bg-bg-primary border border-accent/30 flex items-center justify-center text-3xl group-hover:scale-110 group-hover:border-accent transition-all duration-300">
+                🌍
+              </div>
+              <h3 className="text-2xl font-bold">Inversiones y Multimoneda</h3>
+            </div>
+            <p className="text-text-muted leading-relaxed mb-4">
+              Soporte nativo para <strong>Pesos (ARS), Dólares (USD) y Euros (EUR)</strong>. El sistema convierte todo automáticamente para darte un balance real.
+            </p>
+            <ul className="space-y-2 text-sm text-text-secondary">
+              <li className="flex items-start gap-2"><span>✓</span> <span>Registra Plazos Fijos, Fondos Comunes de Inversión, Bonos o Cripto.</span></li>
+              <li className="flex items-start gap-2"><span>✓</span> <span>Calcula tasas de retorno (TNA) y fechas de vencimiento.</span></li>
+              <li className="flex items-start gap-2"><span>✓</span> <span>El Dashboard unifica todo tu patrimonio.</span></li>
+            </ul>
+          </motion.div>
         </div>
       </section>
 
+      {/* Call to Action */}
+      <section className="container mx-auto px-6 py-20 relative z-10 text-center">
+        <motion.div 
+          className="glass-card p-12 md:p-16 max-w-4xl mx-auto rounded-[3rem] border border-accent/30 bg-gradient-to-b from-bg-card to-bg-primary relative overflow-hidden"
+          initial={{ opacity: 0, scale: 0.9 }}
+          whileInView={{ opacity: 1, scale: 1 }}
+          viewport={{ once: true }}
+        >
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-1 bg-gradient-to-r from-transparent via-accent to-transparent" />
+          <h2 className="text-3xl md:text-5xl font-bold mb-6">¿Listo para ordenar tus números?</h2>
+          <p className="text-text-muted text-lg mb-10 max-w-xl mx-auto">Únete a la nueva forma de entender y administrar tus finanzas personales y en pareja.</p>
+          <Link href="/register" className="gradient-btn px-10 py-5 text-xl shadow-xl shadow-accent/20 hover:shadow-accent/40 hover:scale-105 transition-all inline-block">
+            Crear mi cuenta gratis
+          </Link>
+        </motion.div>
+      </section>
+
       {/* Footer */}
-      <footer className="border-t border-border mt-12 py-8 relative z-10">
-        <div className="container mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4">
+      <footer className="border-t border-border mt-12 py-10 relative z-10">
+        <div className="container mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-center md:text-left">
           <div className="flex items-center gap-2 opacity-50">
             <span className="text-xl">💸</span>
             <span className="font-bold">EconoApp</span>
           </div>
-          <p className="text-sm text-text-muted">© {new Date().getFullYear()} EconoApp. Toma el control.</p>
+          <p className="text-sm text-text-muted">© {new Date().getFullYear()} EconoApp. Finanzas Inteligentes.</p>
         </div>
       </footer>
     </div>
