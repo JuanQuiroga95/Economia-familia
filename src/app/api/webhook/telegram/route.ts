@@ -6,6 +6,7 @@ import crypto from 'crypto';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
 const GROQ_API_KEY = process.env.GROQ_API_KEY!;
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY!;
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
 
 // ============================================
@@ -152,33 +153,51 @@ async function parseImagesWithAI(
   context: string,
   customInstruction: string = ''
 ): Promise<{ acciones: ParsedAction[] }> {
-  const groq = new Groq({ apiKey: GROQ_API_KEY });
-  
-  const contentArray: any[] = [
-    { type: 'text', text: `Eres un asistente experto en finanzas. Analiza cuidadosamente estas imágenes y extrae una LISTA DETALLADA Y EXHAUSTIVA de TODOS los movimientos financieros que aparezcan.\n\nPara CADA movimiento, indica claramente:\n1. Descripción exacta.\n2. Monto.\n3. Si es Ingreso o Gasto (por ejemplo, pagos o montos con signo '-' son Gastos; rendimientos, depósitos o montos con signo '+' son Ingresos).\n\nNO OMITAS NINGÚN MOVIMIENTO. Debes enumerar cada uno por separado.${customInstruction ? `\n\nInstrucción especial del usuario: "${customInstruction}"` : ''}` }
-  ];
-  
+  // Paso 1: Usar Google Gemini para analizar las imágenes (Groq ya no tiene modelos de visión)
+  const imageParts: any[] = [];
   for (const id of fileIds) {
     const buffer = await downloadTelegramFile(id);
     const base64 = buffer.toString('base64');
-    contentArray.push({
-      type: 'image_url',
-      image_url: { url: `data:image/jpeg;base64,${base64}` }
+    imageParts.push({
+      inline_data: { mime_type: 'image/jpeg', data: base64 }
     });
   }
 
-  const completion = await groq.chat.completions.create({
-    messages: [
-      { role: 'user', content: contentArray },
-    ],
-    model: 'llama-4-scout-17b-16e-instruct',
-    temperature: 0.1,
-    max_tokens: 500
-  });
+  const visionPrompt = `Eres un asistente experto en finanzas. Analiza cuidadosamente estas imágenes y extrae una LISTA DETALLADA Y EXHAUSTIVA de TODOS los movimientos financieros que aparezcan.
 
-  const rawVisionText = completion.choices[0]?.message?.content || '';
+Para CADA movimiento, indica claramente:
+1. Descripción exacta.
+2. Monto.
+3. Si es Ingreso o Gasto (por ejemplo, pagos o montos con signo '-' son Gastos; rendimientos, depósitos o montos con signo '+' son Ingresos).
 
-  // Paso 2: Forzar JSON con el modelo de texto
+NO OMITAS NINGÚN MOVIMIENTO. Debes enumerar cada uno por separado.${customInstruction ? `\n\nInstrucción especial del usuario: "${customInstruction}"` : ''}`;
+
+  const geminiRes = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GOOGLE_API_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { text: visionPrompt },
+            ...imageParts
+          ]
+        }],
+        generationConfig: { temperature: 0.1, maxOutputTokens: 800 }
+      })
+    }
+  );
+
+  const geminiData = await geminiRes.json();
+  const rawVisionText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+  if (!rawVisionText) {
+    throw new Error(`Gemini no devolvió texto. Respuesta: ${JSON.stringify(geminiData).slice(0, 200)}`);
+  }
+
+  // Paso 2: Forzar JSON con Groq (modelo de texto)
+  const groq = new Groq({ apiKey: GROQ_API_KEY });
   const walletsStr = wallets.length > 0 ? wallets.map(w => w.name).join(', ') : 'Ninguna';
   const jsonCompletion = await groq.chat.completions.create({
     messages: [
