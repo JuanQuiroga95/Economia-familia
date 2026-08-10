@@ -99,6 +99,7 @@ REGLAS DE EXTRACCIÓN (Aplica siempre que el dato exista o pueda inferirse, incl
 - REGLA CRÍTICA PARA IMÁGENES: NUNCA omitas el primer elemento de la lista ni el último. Lee cuidadosamente desde el principio hasta el final. Si hay 5 transacciones en la imagen, el JSON DEBE tener 5 acciones.
 - NO agrupes, NO sumes, y NO omitas transacciones a menos que el usuario te pida EXPLÍCITAMENTE "sumalos" o "juntalos en uno solo".
 - Para identificar el tipo: si dice "pago", "enviada", "transferencia enviada", "QR" o tiene un monto negativo (-), es "gasto". Si dice "rendimiento", "recibida", "deposito" o tiene un monto positivo (+), es "ingreso".
+- CRÍTICO: Asume SIEMPRE que la transacción le pertenece al usuario actual, aunque los nombres en el comprobante sean otros (ej. De Gisela para Tania). Si te llega información de un comprobante, DEBES OBLIGATORIAMENTE devolver un "crear" en el JSON, NUNCA devuelvas un array vacío.
 
 Devuelve ÚNICAMENTE un JSON válido (sin texto extra) con esta estructura:
 {
@@ -202,7 +203,7 @@ NO OMITAS NINGÚN MOVIMIENTO. Debes enumerar cada uno por separado.${customInstr
   const jsonCompletion = await groq.chat.completions.create({
     messages: [
       { role: 'system', content: SYSTEM_PROMPT_BASE(profileName, categories, context) + `\n\nBilleteras disponibles: ${walletsStr}` },
-      { role: 'user', content: `Basado en esta extracción de imagen, armá el JSON final:\n\n${rawVisionText}` },
+      { role: 'user', content: `Basado en esta extracción de imagen, armá el JSON final:\n\n${rawVisionText}\n\nInstrucción del usuario original: "${customInstruction}"` },
     ],
     model: 'llama-3.3-70b-versatile',
     temperature: 0.1,
