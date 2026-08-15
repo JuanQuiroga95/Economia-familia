@@ -1,6 +1,14 @@
 import { formatCurrency } from '@/lib/formatUtils';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getCardCategory } from '@/lib/cardCategory';
+import {
+  buildInstallments,
+  buildStatement,
+  firstInstallmentPeriod,
+  formatPeriod,
+} from '@/lib/cardUtils';
+import { getArgDate, getCurrentFinancialMonth, parseArgDate } from '@/lib/dateUtils';
 import Groq from 'groq-sdk';
 import crypto from 'crypto';
 
@@ -23,6 +31,71 @@ async function sendTelegramMessage(chatId: number | string, text: string, replyM
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
+}
+
+/**
+ * Vincula un perfil usando el PIN de 6 dígitos.
+ * Lo usa tanto el envío manual del código como el deep link "/start <PIN>".
+ */
+async function linkProfileWithCode(chatId: string, fromId: string, code: string) {
+  const profile = await prisma.profile.findFirst({
+    where: { telegramLinkCode: code },
+    include: { account: true },
+  });
+
+  if (!profile) {
+    await sendTelegramMessage(chatId, '❌ Código no válido o ya expirado.');
+    return;
+  }
+
+  await prisma.profile.update({
+    where: { id: profile.id },
+    data: { telegramChatId: fromId, telegramLinkCode: null },
+  });
+  await sendTelegramMessage(
+    chatId,
+    `✅ ¡Vinculación exitosa!\n👤 Perfil: <b>${profile.name}</b>\n🏠 Cuenta: <b>${profile.account?.label}</b>\n\nAhora podés enviarme tus gastos e ingresos por texto, fotos o audio. 🎙️📸`
+  );
+}
+
+// ============================================
+// Tarjetas de crédito
+// ============================================
+
+const normalize = (s: string) =>
+  s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+
+/**
+ * Busca la tarjeta que mencionó el usuario. Si no nombró ninguna y hay una sola,
+ * asume esa.
+ */
+function resolveCard<T extends { name: string }>(cards: T[], name?: string): T | null {
+  if (cards.length === 0) return null;
+  if (!name) return cards.length === 1 ? cards[0] : null;
+
+  const target = normalize(name);
+  if (!target) return cards.length === 1 ? cards[0] : null;
+
+  return (
+    cards.find((c) => normalize(c.name) === target) ||
+    cards.find((c) => normalize(c.name).includes(target) || target.includes(normalize(c.name))) ||
+    (cards.length === 1 ? cards[0] : null)
+  );
+}
+
+/** Estado del resumen de una tarjeta para un mes dado. */
+async function getCardStatement(cardId: string, month: number, year: number) {
+  const [installments, payments] = await Promise.all([
+    prisma.cardInstallment.findMany({
+      where: { purchase: { cardId } },
+      select: { amount: true, month: true, year: true },
+    }),
+    prisma.cardPayment.findMany({
+      where: { cardId },
+      select: { amount: true, month: true, year: true },
+    }),
+  ]);
+  return buildStatement(installments, payments, month, year);
 }
 
 async function downloadTelegramFile(fileId: string): Promise<Buffer> {
@@ -53,7 +126,7 @@ async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
 interface ParsedAction {
   accion: 'crear' | 'modificar' | 'eliminar' | 'link';
   entidad_id?: string;
-  tipo?: 'gasto' | 'ingreso';
+  tipo?: 'gasto' | 'ingreso' | 'consumo_tarjeta' | 'pago_tarjeta';
   monto?: number;
   moneda?: 'ARS' | 'USD' | 'EUR';
   descripcion?: string;
@@ -63,6 +136,9 @@ interface ParsedAction {
   pague_yo?: boolean;
   billetera?: string;
   fecha?: string;
+  tarjeta?: string;
+  cuotas?: number;
+  monto_es_por_cuota?: boolean;
 }
 
 const SYSTEM_PROMPT_BASE = (profileName: string, categories: string[], context: string) => {
@@ -87,9 +163,20 @@ REGLAS DE CLASIFICACIÓN DE ACCIÓN:
    -> DEBES identificar el 'entidad_id' usando el contexto.
 4. accion = "link": El usuario escribe palabras cortas como "app", "gasto", "ingreso", "menu", "modificar" solas, pidiendo acceder a la app.
 
+REGLAS DE TARJETAS DE CRÉDITO (solo si hay tarjetas disponibles listadas más abajo):
+- tipo = "consumo_tarjeta": el usuario compró algo CON una tarjeta de la lista, normalmente en cuotas.
+  (Ej: "Gasto con tarjeta Naranja de 120000 en 6 cuotas en el super", "compré una heladera con la Visa en 12 cuotas").
+  -> Devolvé también "tarjeta" (el nombre de la lista que mejor coincida) y "cuotas" (número; si no aclara, 1).
+  -> "monto" es el TOTAL de la compra. Si el usuario aclara que ese monto es el valor de CADA cuota
+     (ej: "6 cuotas de 20000"), poné "monto_es_por_cuota": true.
+- tipo = "pago_tarjeta": el usuario pagó el resumen de una tarjeta.
+  (Ej: "Pagué 80000 de la tarjeta Naranja", "pago del resumen de la Visa 50 lucas").
+  -> Devolvé "tarjeta" y "monto".
+- IMPORTANTE: si el nombre que dice NO coincide con ninguna tarjeta de la lista, tratalo como un gasto normal ("gasto").
+
 REGLAS DE EXTRACCIÓN (Aplica siempre que el dato exista o pueda inferirse, incluso para la acción "link"):
 - fecha: Si el usuario menciona cuándo ocurrió (ej: "ayer", "el 13 de julio", "hace 3 días"), calcúlalo en base a la FECHA DE HOY y devuélvelo en formato "YYYY-MM-DD". Si no menciona fecha explícita, omítelo o devuelve la de hoy.
-- tipo: "gasto" o "ingreso"
+- tipo: "gasto", "ingreso", "consumo_tarjeta" o "pago_tarjeta"
 - tipo_gasto: "compartido" o "propio" (por defecto "propio")
 - moneda: "ARS", "USD" o "EUR" (por defecto "ARS")
 - persona: nombre de quien lo hace (por defecto "${profileName}")
@@ -108,7 +195,7 @@ Devuelve ÚNICAMENTE un JSON válido (sin texto extra) con esta estructura:
       "accion": "crear" | "modificar" | "eliminar" | "link",
       "entidad_id": "id_string",
       "fecha": "YYYY-MM-DD",
-      "tipo": "gasto" | "ingreso",
+      "tipo": "gasto" | "ingreso" | "consumo_tarjeta" | "pago_tarjeta",
       "monto": numero,
       "moneda": "ARS",
       "descripcion": "texto",
@@ -116,24 +203,34 @@ Devuelve ÚNICAMENTE un JSON válido (sin texto extra) con esta estructura:
       "tipo_gasto": "propio" | "compartido",
       "persona": "nombre",
       "pague_yo": boolean,
-      "billetera": "nombre_billetera" // Si menciona una (ej: MP, Galicia, Uala)
+      "billetera": "nombre_billetera", // Si menciona una (ej: MP, Galicia, Uala)
+      "tarjeta": "nombre_tarjeta", // Solo para consumo_tarjeta / pago_tarjeta
+      "cuotas": numero, // Solo para consumo_tarjeta
+      "monto_es_por_cuota": boolean // Solo para consumo_tarjeta
     }
   ]
 }`;
 };
+
+/** Bloque de contexto extra (billeteras y tarjetas) que se agrega al prompt base. */
+function buildResourcesBlock(wallets: { name: string }[], cards: { name: string }[]) {
+  const walletsStr = wallets.length > 0 ? wallets.map((w) => w.name).join(', ') : 'Ninguna';
+  const cardsStr = cards.length > 0 ? cards.map((c) => c.name).join(', ') : 'Ninguna';
+  return `\n\nBilleteras disponibles: ${walletsStr}\nTarjetas de crédito disponibles: ${cardsStr}`;
+}
 
 async function parseTransactionWithAI(
   text: string,
   profileName: string,
   categories: string[],
   wallets: { id: string; name: string }[],
-  context: string
+  context: string,
+  cards: { name: string }[] = []
 ): Promise<{ acciones: ParsedAction[] }> {
-  const walletsStr = wallets.length > 0 ? wallets.map(w => w.name).join(', ') : 'Ninguna';
   const groq = new Groq({ apiKey: GROQ_API_KEY });
   const completion = await groq.chat.completions.create({
     messages: [
-      { role: 'system', content: SYSTEM_PROMPT_BASE(profileName, categories, context) + `\n\nBilleteras disponibles: ${walletsStr}` },
+      { role: 'system', content: SYSTEM_PROMPT_BASE(profileName, categories, context) + buildResourcesBlock(wallets, cards) },
       { role: 'user', content: text },
     ],
     model: 'llama-3.3-70b-versatile',
@@ -152,7 +249,8 @@ async function parseImagesWithAI(
   categories: string[],
   wallets: { id: string; name: string }[],
   context: string,
-  customInstruction: string = ''
+  customInstruction: string = '',
+  cards: { name: string }[] = []
 ): Promise<{ acciones: ParsedAction[] }> {
   // Paso 1: Usar Google Gemini para analizar las imágenes (Groq ya no tiene modelos de visión)
   const imageParts: any[] = [];
@@ -199,10 +297,9 @@ NO OMITAS NINGÚN MOVIMIENTO. Debes enumerar cada uno por separado.${customInstr
 
   // Paso 2: Forzar JSON con Groq (modelo de texto)
   const groq = new Groq({ apiKey: GROQ_API_KEY });
-  const walletsStr = wallets.length > 0 ? wallets.map(w => w.name).join(', ') : 'Ninguna';
   const jsonCompletion = await groq.chat.completions.create({
     messages: [
-      { role: 'system', content: SYSTEM_PROMPT_BASE(profileName, categories, context) + `\n\nBilleteras disponibles: ${walletsStr}` },
+      { role: 'system', content: SYSTEM_PROMPT_BASE(profileName, categories, context) + buildResourcesBlock(wallets, cards) },
       { role: 'user', content: `Basado en esta extracción de imagen, armá el JSON final:\n\n${rawVisionText}\n\nInstrucción del usuario original: "${customInstruction}"` },
     ],
     model: 'llama-3.3-70b-versatile',
@@ -302,6 +399,10 @@ export async function POST(request: NextRequest) {
         const id = data.replace('undo_expense_', '');
         await prisma.expense.delete({ where: { id } }).catch(() => {});
         await sendTelegramMessage(chatId, '🗑️ Gasto eliminado con éxito.');
+      } else if (data.startsWith('undo_purchase_')) {
+        const id = data.replace('undo_purchase_', '');
+        await prisma.cardPurchase.delete({ where: { id } }).catch(() => {});
+        await sendTelegramMessage(chatId, '🗑️ Consumo de tarjeta eliminado (con todas sus cuotas).');
       } else if (data.startsWith('undo_income_')) {
         const id = data.replace('undo_income_', '');
         await prisma.income.delete({ where: { id } }).catch(() => {});
@@ -323,14 +424,24 @@ export async function POST(request: NextRequest) {
     const fromId = message.from.id.toString();
     const text = message.text || '';
 
-    // ─── /start command ───
-    if (text === '/start') {
+    // ─── /start command (con o sin payload de deep link: "/start 123456") ───
+    if (text === '/start' || text.startsWith('/start ')) {
+      const payload = text.slice('/start'.length).trim();
+
+      // Deep link desde la web: t.me/<bot>?start=<PIN>
+      if (/^\d{6}$/.test(payload)) {
+        await linkProfileWithCode(chatId, fromId, payload);
+        return NextResponse.json({ ok: true });
+      }
+
       await sendTelegramMessage(
         chatId,
         '👋 ¡Hola! Soy tu bot de gastos de <b>EconoApp</b>.\n\n' +
           '📌 Para vincular tu cuenta, andá a <b>Configuración → Telegram</b> en la app web, generá tu PIN y enviámelo acá.\n\n' +
           '💡 Una vez vinculado, podés enviarme mensajes como:\n' +
           '• "Gasto 4500 en el chino compartido"\n' +
+          '• "Gasto con tarjeta Naranja de 120000 en 6 cuotas en el super"\n' +
+          '• "Pagué 80000 de la tarjeta Naranja"\n' +
           '• "Me equivoqué, el gasto del chino era de 5000"\n' +
           '• "Borrá el último ingreso"\n' +
           '• "gasto" (para abrir la app sin contraseña)'
@@ -340,24 +451,7 @@ export async function POST(request: NextRequest) {
 
     // ─── Try to link with PIN ───
     if (/^\d{6}$/.test(text.trim())) {
-      const code = text.trim();
-      const profile = await prisma.profile.findFirst({
-        where: { telegramLinkCode: code },
-        include: { account: true },
-      });
-
-      if (profile) {
-        await prisma.profile.update({
-          where: { id: profile.id },
-          data: { telegramChatId: fromId, telegramLinkCode: null },
-        });
-        await sendTelegramMessage(
-          chatId,
-          `✅ ¡Vinculación exitosa!\n👤 Perfil: <b>${profile.name}</b>\n🏠 Cuenta: <b>${profile.account?.label}</b>\n\nAhora podés enviarme tus gastos e ingresos por texto, fotos o audio. 🎙️📸`
-        );
-      } else {
-        await sendTelegramMessage(chatId, '❌ Código no válido o ya expirado.');
-      }
+      await linkProfileWithCode(chatId, fromId, text.trim());
       return NextResponse.json({ ok: true });
     }
 
@@ -434,9 +528,10 @@ export async function POST(request: NextRequest) {
        return NextResponse.json({ ok: true });
     }
 
-    const [categories, wallets] = await Promise.all([
+    const [categories, wallets, cards] = await Promise.all([
       prisma.category.findMany({ where: { accountId: profile.accountId } }),
-      prisma.wallet.findMany({ where: { accountId: profile.accountId } })
+      prisma.wallet.findMany({ where: { accountId: profile.accountId } }),
+      prisma.creditCard.findMany({ where: { profile: { accountId: profile.accountId } } }),
     ]);
     const categoryNames = categories.map((c) => c.name);
 
@@ -452,9 +547,9 @@ export async function POST(request: NextRequest) {
     let parsed: { acciones: ParsedAction[] };
     try {
       if (fileIdsToProcess.length > 0) {
-        parsed = await parseImagesWithAI(fileIdsToProcess, profile.name, categoryNames, wallets, contextStr, customInstruction);
+        parsed = await parseImagesWithAI(fileIdsToProcess, profile.name, categoryNames, wallets, contextStr, customInstruction, cards);
       } else {
-        parsed = await parseTransactionWithAI(messageText, profile.name, categoryNames, wallets, contextStr);
+        parsed = await parseTransactionWithAI(messageText, profile.name, categoryNames, wallets, contextStr, cards);
       }
     } catch (error: any) {
       console.error('Parse Error:', error);
@@ -492,6 +587,9 @@ export async function POST(request: NextRequest) {
       } else if (textLower.includes('inversion') || textLower.includes('inversión')) {
         path = '/inversiones';
         label = 'Inversiones';
+      } else if (textLower.includes('tarjeta')) {
+        path = '/tarjetas';
+        label = 'Tarjetas';
       } else if (textLower.includes('config')) {
         path = '/configuracion';
         label = 'Configuración';
@@ -527,10 +625,6 @@ export async function POST(request: NextRequest) {
           await sendTelegramMessage(chatId, '❌ No encontré el registro a modificar en tus últimos movimientos.');
           continue;
         }
-        
-        const { parseArgDate, getArgDate } = require('@/lib/dateUtils');
-        const today = getArgDate();
-        const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
         
         const matchedCategory = categories.find(c => c.name.toLowerCase() === action.categoria?.toLowerCase()) || categories.find((c) => c.name === 'Otros') || categories[0];
         
@@ -590,10 +684,121 @@ export async function POST(request: NextRequest) {
         if (otherProfile) targetProfile = { ...otherProfile, account: profile.account, accountId: profile.accountId };
       }
 
-      const { parseArgDate, getArgDate } = require('@/lib/dateUtils');
-      const { revalidatePath } = require('next/cache');
       const today = getArgDate();
       const dateStr = action.fecha || `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+      // ─── Tarjetas de crédito ───
+      if (action.tipo === 'consumo_tarjeta' || action.tipo === 'pago_tarjeta') {
+        const card = resolveCard(cards, action.tarjeta);
+
+        if (!card) {
+          const names = cards.map((c) => c.name).join(', ');
+          await sendTelegramMessage(
+            chatId,
+            cards.length === 0
+              ? '💳 Todavía no cargaste ninguna tarjeta. Creala en la app (sección <b>Tarjetas</b>) y después me la podés usar por acá.'
+              : `💳 No supe a qué tarjeta te referís. Las que tenés son: <b>${names}</b>.`
+          );
+          continue;
+        }
+
+        if (action.tipo === 'consumo_tarjeta') {
+          const cuotas = Math.max(1, Math.floor(action.cuotas || 1));
+          const total = action.monto_es_por_cuota ? action.monto * cuotas : action.monto;
+          const purchaseDate = parseArgDate(dateStr);
+          const first = firstInstallmentPeriod(purchaseDate, card.closingDay);
+          const schedule = buildInstallments(total, cuotas, first.month, first.year);
+
+          const purchase = await prisma.cardPurchase.create({
+            data: {
+              description: action.descripcion || 'Consumo desde Telegram',
+              totalAmount: total,
+              currency: card.currency,
+              date: purchaseDate,
+              installments: cuotas,
+              categoryId: action.categoria ? matchedCategory.id : null,
+              profileId: targetProfile.id,
+              type: action.tipo_gasto === 'compartido' ? 'COMPARTIDO' : 'PROPIO',
+              cardId: card.id,
+              schedule: { create: schedule },
+            },
+          });
+
+          const link = await createMagicLink(profile.accountId, '/tarjetas', appUrl);
+          await sendTelegramMessage(
+            chatId,
+            `💳 <b>Consumo cargado en ${card.name}</b>\n\n` +
+              `🛒 ${action.descripcion || 'Consumo'}\n` +
+              `💰 Total: <b>$${formatCurrency(total)}</b> ${card.currency}\n` +
+              `📆 ${cuotas} cuota${cuotas > 1 ? 's' : ''} de <b>$${formatCurrency(schedule[0].amount)}</b>\n` +
+              `▶️ Arranca en el resumen de <b>${formatPeriod(first.month, first.year)}</b>\n` +
+              `${action.tipo_gasto === 'compartido' ? '👥 Compartido' : '👤 Propio'} · ${targetProfile.name}\n\n` +
+              `<i>Ojo: esto todavía no cuenta como gasto. Cuando pagues la tarjeta, avisame y ahí lo registro.</i>`,
+            {
+              inline_keyboard: [
+                [
+                  { text: '🗑️ Deshacer', callback_data: `undo_purchase_${purchase.id}` },
+                  { text: '💳 Ver tarjetas', url: link },
+                ],
+              ],
+            }
+          );
+          continue;
+        }
+
+        // ─── Pago del resumen: esto sí genera un gasto real ───
+        const { month: payMonth, year: payYear } = getCurrentFinancialMonth(getArgDate());
+        const cardCategory = await getCardCategory(profile.accountId);
+        const paymentDate = parseArgDate(dateStr);
+
+        const expense = await prisma.expense.create({
+          data: {
+            amount: action.monto,
+            currency: card.currency,
+            date: paymentDate,
+            description: `Pago tarjeta ${card.name} (${formatPeriod(payMonth, payYear)})`,
+            categoryId: cardCategory.id,
+            profileId: targetProfile.id,
+            type: action.tipo_gasto === 'compartido' ? 'COMPARTIDO' : 'PROPIO',
+            paidFromPersonalBudget: action.tipo_gasto === 'compartido' ? action.pague_yo === true : false,
+          },
+        });
+
+        await prisma.cardPayment.create({
+          data: {
+            amount: action.monto,
+            currency: card.currency,
+            date: paymentDate,
+            month: payMonth,
+            year: payYear,
+            cardId: card.id,
+            profileId: targetProfile.id,
+            expenseId: expense.id,
+          },
+        });
+
+        const statement = await getCardStatement(card.id, payMonth, payYear);
+        const link = await createMagicLink(profile.accountId, '/tarjetas', appUrl);
+        await sendTelegramMessage(
+          chatId,
+          `✅ <b>Pago de ${card.name} registrado</b>\n\n` +
+            `💸 Pagaste: <b>$${formatCurrency(action.monto)}</b> ${card.currency}\n` +
+            `🧾 Resumen de ${formatPeriod(payMonth, payYear)}: $${formatCurrency(statement.totalDue)}\n` +
+            (statement.pending > 0
+              ? `⚠️ Queda una deuda de <b>$${formatCurrency(statement.pending)}</b> que pasa al mes que viene.`
+              : `🎉 La tarjeta queda al día.`) +
+            `\n\n<i>Ya lo cargué como gasto de ${targetProfile.name}.</i>`,
+          {
+            inline_keyboard: [
+              [
+                { text: '🗑️ Deshacer', callback_data: `undo_expense_${expense.id}` },
+                { text: '💳 Ver tarjetas', url: link },
+              ],
+            ],
+          }
+        );
+        continue;
+      }
 
       if (action.tipo === 'ingreso') {
         const inc = await prisma.income.create({
@@ -623,6 +828,7 @@ export async function POST(request: NextRequest) {
     const { revalidatePath } = require('next/cache');
     revalidatePath('/gastos');
     revalidatePath('/ingresos');
+    revalidatePath('/tarjetas');
     revalidatePath('/dashboard');
 
     return NextResponse.json({ ok: true });

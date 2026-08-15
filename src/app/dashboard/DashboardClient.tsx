@@ -8,6 +8,8 @@ import BudgetTracker from '@/components/dashboard/BudgetTracker';
 import SharedFundCard from '@/components/dashboard/SharedFundCard';
 import UserExpenseChart from '@/components/dashboard/UserExpenseChart';
 import CategoryBudgetProgress from '@/components/dashboard/CategoryBudgetProgress';
+import CreditCardsSummary from '@/components/dashboard/CreditCardsSummary';
+import type { CardsSummary } from '@/actions/cards';
 import type { BudgetStatus, CategoryBreakdown, SharedFundStats, UserExpenseBreakdown, CategoryBudgetStatus, SplitBalanceDetail } from '@/types';
 import { formatCurrency } from '@/lib/formatUtils';
 
@@ -23,6 +25,7 @@ interface DashboardClientProps {
   userExpenseBreakdown: UserExpenseBreakdown[];
   categoryBudgets: CategoryBudgetStatus[];
   walletBalances?: { id: string; name: string; currency: string; balance: number }[];
+  cardsSummary?: CardsSummary;
 }
 
 const monthNames = [
@@ -41,6 +44,7 @@ export default function DashboardClient({
   userExpenseBreakdown,
   categoryBudgets,
   walletBalances = [],
+  cardsSummary,
 }: DashboardClientProps) {
 
   const [isBalanceExpanded, setIsBalanceExpanded] = useState(false);
@@ -174,6 +178,9 @@ export default function DashboardClient({
           ))}
         </div>
       )}
+
+      {/* Tarjetas de crédito */}
+      {cardsSummary && <CreditCardsSummary summary={cardsSummary} />}
 
       {/* Category Budgets */}
       {categoryBudgets && categoryBudgets.length > 0 && (

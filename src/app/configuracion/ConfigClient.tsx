@@ -6,6 +6,7 @@ import { generateTelegramLinkCode, unlinkTelegram } from '@/actions/telegram';
 import toast from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
 import { CurrencyInput } from '@/components/CurrencyInput';
+import { telegramBotUrl } from '@/lib/telegram';
 
 interface ExchangeRate {
   id: string;
@@ -384,8 +385,18 @@ export default function ConfigClient({ exchangeRates, categories, wallets, budge
                     <div className="px-4 py-2 bg-bg-secondary rounded-lg font-mono text-accent text-lg tracking-widest text-center w-full sm:w-auto">
                       {profile.telegramLinkCode}
                     </div>
-                    <div className="text-xs text-text-muted text-center sm:text-left max-w-[200px]">
-                      Enviá este código al bot en Telegram para vincular tu cuenta.
+                    <div className="flex flex-col items-center sm:items-start gap-1 w-full sm:w-auto">
+                      <a
+                        href={telegramBotUrl(profile.telegramLinkCode)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="gradient-btn px-4 py-2 text-sm w-full sm:w-auto text-center"
+                      >
+                        Vincular en Telegram
+                      </a>
+                      <span className="text-[11px] text-text-muted text-center sm:text-left max-w-[200px]">
+                        O enviá el código al bot a mano.
+                      </span>
                     </div>
                   </div>
                 ) : (
@@ -408,7 +419,7 @@ export default function ConfigClient({ exchangeRates, categories, wallets, budge
           ))}
           <div className="mt-2 text-center">
             <a
-              href="https://t.me/TuEconoAppBot"
+              href={telegramBotUrl()}
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm text-accent hover:underline flex items-center justify-center gap-2"

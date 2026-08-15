@@ -7,6 +7,7 @@ const navItems = [
   { href: '/dashboard', label: 'Inicio', icon: '🏠' },
   { href: '/ingresos', label: 'Ingresos', icon: '💰' },
   { href: '/gastos', label: 'Gastos', icon: '💸' },
+  { href: '/tarjetas', label: 'Tarjetas', icon: '💳' },
   { href: '/ahorros', label: 'Ahorros', icon: '🏦' },
   { href: '/configuracion', label: 'Config', icon: '⚙️' },
 ];
@@ -23,7 +24,7 @@ export default function BottomNav() {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex flex-col items-center gap-0.5 py-2 px-3 min-w-[4rem] transition-all duration-200 ${
+              className={`flex flex-col items-center gap-0.5 py-2 px-2 min-w-[3.25rem] transition-all duration-200 ${
                 isActive
                   ? 'text-accent'
                   : 'text-text-muted'

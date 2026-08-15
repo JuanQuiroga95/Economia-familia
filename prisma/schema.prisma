@@ -55,6 +55,9 @@ model Profile {
   budgetConfigs       BudgetConfig[]
   sharedFundPayments  SharedFundPayment[]
   pushSubscriptions   PushSubscription[]
+  creditCards         CreditCard[]
+  cardPurchases       CardPurchase[]
+  cardPayments        CardPayment[]
 }
 
 model Category {
@@ -66,6 +69,7 @@ model Category {
   account   Account?  @relation(fields: [accountId], references: [id], onDelete: Cascade)
   expenses  Expense[]
   categoryBudgets CategoryBudget[]
+  cardPurchases   CardPurchase[]
 }
 
 model Wallet {
@@ -128,11 +132,112 @@ model Expense {
   paymentMethod String @default("TRANSFERENCIA")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  // Si este gasto nació de pagar el resumen de una tarjeta
+  cardPayment CardPayment?
 }
 
 enum ExpenseType {
   PROPIO
   COMPARTIDO
+}
+
+// ============================================
+// Tarjetas de crédito
+// ============================================
+
+/// Una tarjeta pertenece a un perfil (es personal), pero cada consumo
+/// puede marcarse como propio o compartido.
+model CreditCard {
+  id          String  @id @default(cuid())
+  name        String  // Ej: "Naranja", "Visa Galicia"
+  bank        String?
+  lastFour    String? // Últimos 4 dígitos, solo para identificarla
+  currency    String  @default("ARS")
+  creditLimit Float?  // Límite / monto de la tarjeta
+  closingDay  Int     @default(25) // Día de cierre del resumen
+  dueDay      Int     @default(10) // Día de vencimiento
+  color       String  @default("#f97316")
+  isActive    Boolean @default(true)
+
+  profileId String
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  purchases CardPurchase[]
+  payments  CardPayment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Un consumo hecho con la tarjeta. NO genera un Expense:
+/// el gasto real aparece cuando se paga el resumen (ver CardPayment).
+model CardPurchase {
+  id           String   @id @default(cuid())
+  description  String
+  totalAmount  Float // Total del consumo (todas las cuotas)
+  currency     String   @default("ARS")
+  date         DateTime // Fecha de la compra
+  installments Int      @default(1) // Cantidad de cuotas
+
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id])
+
+  profileId String // Quién hizo el consumo
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  type            ExpenseType @default(PROPIO)
+  splitPercentage Float?
+
+  cardId String
+  card   CreditCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  schedule CardInstallment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Cada cuota de un consumo, ya asignada al resumen (mes/año) en que se paga.
+model CardInstallment {
+  id     String @id @default(cuid())
+  number Int // 3 de 12
+  amount Float
+  month  Int // Mes del resumen en que cae
+  year   Int
+
+  purchaseId String
+  purchase   CardPurchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+
+  @@unique([purchaseId, number])
+  @@index([month, year])
+}
+
+/// Pago del resumen. Esto SÍ genera un Expense real.
+/// Lo que no se paga queda como deuda y se arrastra al mes siguiente.
+model CardPayment {
+  id       String   @id @default(cuid())
+  amount   Float
+  currency String   @default("ARS")
+  date     DateTime
+  month    Int // Resumen que se está pagando
+  year     Int
+  note     String?
+
+  cardId String
+  card   CreditCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  profileId String
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  // Gasto generado por este pago. Si se borra el gasto, se borra el pago
+  // y la deuda vuelve a figurar.
+  expenseId String?  @unique
+  expense   Expense? @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([cardId, year, month])
 }
 
 model SavingsGoal {
