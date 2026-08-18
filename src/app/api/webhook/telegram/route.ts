@@ -20,6 +20,21 @@ const GROQ_API_KEY = process.env.GROQ_API_KEY!;
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY!;
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
 
+// Modelos de texto de Groq en orden de preferencia.
+// Groq rota/da de baja modelos seguido: si uno responde 404 (model_not_found) se prueba el siguiente.
+// Se puede forzar uno concreto con la env var GROQ_TEXT_MODEL.
+const GROQ_TEXT_MODELS = process.env.GROQ_TEXT_MODEL
+  ? [process.env.GROQ_TEXT_MODEL]
+  : ['qwen/qwen3.6-27b', 'openai/gpt-oss-120b', 'llama-3.3-70b-versatile'];
+
+const GROQ_AUDIO_MODELS = process.env.GROQ_AUDIO_MODEL
+  ? [process.env.GROQ_AUDIO_MODEL]
+  : ['whisper-large-v3', 'whisper-large-v3-turbo'];
+
+function isModelNotFound(error: any): boolean {
+  return error?.status === 404 || /model_not_found|does not exist/i.test(error?.message || '');
+}
+
 // ============================================
 // Telegram helpers
 // ============================================
@@ -108,12 +123,18 @@ async function downloadTelegramFile(fileId: string): Promise<Buffer> {
 async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
   const groq = new Groq({ apiKey: GROQ_API_KEY });
   const file = new File([new Uint8Array(audioBuffer)], 'audio.ogg', { type: 'audio/ogg' });
-  const transcription = await groq.audio.transcriptions.create({
-    file,
-    model: 'whisper-large-v3',
-    language: 'es',
-  });
-  return transcription.text;
+  let lastError: any;
+  for (const model of GROQ_AUDIO_MODELS) {
+    try {
+      const transcription = await groq.audio.transcriptions.create({ file, model, language: 'es' });
+      return transcription.text;
+    } catch (error: any) {
+      if (!isModelNotFound(error)) throw error;
+      console.warn(`Groq: modelo de audio ${model} no disponible, probando el siguiente.`);
+      lastError = error;
+    }
+  }
+  throw lastError || new Error('Ningun modelo de audio de Groq disponible.');
 }
 
 interface ParsedAction {
@@ -242,6 +263,43 @@ function buildResourcesBlock(
   return `\n\nBilleteras disponibles: ${walletsStr}\nTarjetas de crédito disponibles: ${cardsStr}\nPréstamos disponibles: ${loansStr}`;
 }
 
+/**
+ * Limpia la respuesta del modelo: los modelos de razonamiento (Qwen, gpt-oss)
+ * pueden anteponer bloques <think> o envolver el JSON en fences.
+ */
+function extractJsonObject(raw: string): string {
+  let s = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  s = s.replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+  const start = s.indexOf('{');
+  const end = s.lastIndexOf('}');
+  return start !== -1 && end > start ? s.slice(start, end + 1) : '{}';
+}
+
+/** Completion JSON contra Groq probando los modelos de GROQ_TEXT_MODELS en orden. */
+async function groqJsonCompletion(
+  messages: { role: 'system' | 'user'; content: string }[]
+): Promise<any> {
+  const groq = new Groq({ apiKey: GROQ_API_KEY });
+  let lastError: any;
+  for (const model of GROQ_TEXT_MODELS) {
+    try {
+      const completion = await groq.chat.completions.create({
+        messages,
+        model,
+        temperature: 0.1,
+        max_tokens: 1500,
+        response_format: { type: 'json_object' },
+      });
+      return JSON.parse(extractJsonObject(completion.choices[0]?.message?.content || '{}'));
+    } catch (error: any) {
+      if (!isModelNotFound(error)) throw error;
+      console.warn(`Groq: modelo de texto ${model} no disponible, probando el siguiente.`);
+      lastError = error;
+    }
+  }
+  throw lastError || new Error('Ningun modelo de texto de Groq disponible.');
+}
+
 async function parseTransactionWithAI(
   text: string,
   profileName: string,
@@ -251,20 +309,10 @@ async function parseTransactionWithAI(
   cards: { name: string }[] = [],
   loans: { name: string }[] = []
 ): Promise<{ acciones: ParsedAction[] }> {
-  const groq = new Groq({ apiKey: GROQ_API_KEY });
-  const completion = await groq.chat.completions.create({
-    messages: [
-      { role: 'system', content: SYSTEM_PROMPT_BASE(profileName, categories, context) + buildResourcesBlock(wallets, cards, loans) },
-      { role: 'user', content: text },
-    ],
-    model: 'llama-3.3-70b-versatile',
-    temperature: 0.1,
-    max_tokens: 300,
-    response_format: { type: 'json_object' },
-  });
-
-  const content = completion.choices[0]?.message?.content || '{}';
-  return JSON.parse(content);
+  return groqJsonCompletion([
+    { role: 'system', content: SYSTEM_PROMPT_BASE(profileName, categories, context) + buildResourcesBlock(wallets, cards, loans) },
+    { role: 'user', content: text },
+  ]);
 }
 
 async function parseImagesWithAI(
@@ -321,20 +369,10 @@ NO OMITAS NINGÚN MOVIMIENTO. Debes enumerar cada uno por separado.${customInstr
   }
 
   // Paso 2: Forzar JSON con Groq (modelo de texto)
-  const groq = new Groq({ apiKey: GROQ_API_KEY });
-  const jsonCompletion = await groq.chat.completions.create({
-    messages: [
-      { role: 'system', content: SYSTEM_PROMPT_BASE(profileName, categories, context) + buildResourcesBlock(wallets, cards, loans) },
-      { role: 'user', content: `Basado en esta extracción de imagen, armá el JSON final:\n\n${rawVisionText}\n\nInstrucción del usuario original: "${customInstruction}"` },
-    ],
-    model: 'llama-3.3-70b-versatile',
-    temperature: 0.1,
-    max_tokens: 300,
-    response_format: { type: 'json_object' },
-  });
-
-  const jsonContent = jsonCompletion.choices[0]?.message?.content || '{}';
-  return JSON.parse(jsonContent);
+  return groqJsonCompletion([
+    { role: 'system', content: SYSTEM_PROMPT_BASE(profileName, categories, context) + buildResourcesBlock(wallets, cards, loans) },
+    { role: 'user', content: `Basado en esta extracción de imagen, armá el JSON final:\n\n${rawVisionText}\n\nInstrucción del usuario original: "${customInstruction}"` },
+  ]);
 }
 
 // ============================================
@@ -692,7 +730,7 @@ export async function POST(request: NextRequest) {
       try {
         const groq = new Groq({ apiKey: GROQ_API_KEY });
         const models = await groq.models.list();
-        activeModels = models.data.map(m => m.id).filter(id => id.includes('vision') || id.includes('llama') || id.includes('qwen')).join(', ');
+        activeModels = models.data.map(m => m.id).sort().join(', ');
       } catch (e) {
         console.error('Error fetching models:', e);
       }
