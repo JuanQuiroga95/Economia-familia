@@ -1,10 +1,17 @@
-import { NextResponse } from 'next/server';
-import { Groq } from 'groq-sdk';
+export const dynamic = 'force-dynamic';
 
-// Lista todos los modelos disponibles en la cuenta de Groq.
-// Sin filtro: Groq da de baja modelos seguido y necesitamos ver la lista real para elegir.
+import { NextResponse } from 'next/server';
+import { estadoModelos } from '@/lib/groqModels';
+
+/**
+ * Estado de los modelos de Groq: cuál está usando el bot, cuáles quedan de
+ * respaldo y la lista completa de la cuenta. Sirve para saber qué pasó cuando
+ * Groq da de baja un modelo.
+ */
 export async function GET() {
-  const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-  const models = await groq.models.list();
-  return NextResponse.json(models.data.map((m) => m.id).sort());
+  try {
+    return NextResponse.json(await estadoModelos());
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message || 'Error consultando Groq' }, { status: 500 });
+  }
 }

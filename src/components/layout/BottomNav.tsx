@@ -15,7 +15,7 @@ const navItems = [
 const moreItems = [
   { href: '/ingresos', label: 'Ingresos', icon: '💰' },
   { href: '/prestamos', label: 'Préstamos', icon: '🏦' },
-  { href: '/ahorros', label: 'Ahorros', icon: '🏦' },
+  { href: '/ahorros', label: 'Ahorros', icon: '🐷' },
   { href: '/inversiones', label: 'Inversiones', icon: '📈' },
   { href: '/configuracion', label: 'Configuración', icon: '⚙️' },
 ];
@@ -34,8 +34,13 @@ export default function BottomNav() {
           className="lg:hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm animate-fade-in"
           onClick={() => setShowMore(false)}
         >
+          {/*
+            El padding de abajo deja libre el alto de la barra de navegación
+            (~4rem + safe area), que es fixed y se dibuja por encima del sheet.
+            Sin eso, la última fila de ítems queda cortada por la barra.
+          */}
           <div
-            className="absolute bottom-0 left-0 right-0 bg-bg-secondary border-t border-border rounded-t-2xl p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] animate-slide-up"
+            className="absolute bottom-0 left-0 right-0 max-h-[75vh] overflow-y-auto overscroll-contain bg-bg-secondary border-t border-border rounded-t-2xl p-4 pb-[calc(5rem+env(safe-area-inset-bottom))] animate-slide-up"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="w-10 h-1 bg-border rounded-full mx-auto mb-4" />

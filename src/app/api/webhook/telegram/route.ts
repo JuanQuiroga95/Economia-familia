@@ -13,27 +13,13 @@ import { loanProgress, nextPendingInstallment } from '@/lib/loanUtils';
 import { sendTelegramMessage } from '@/lib/telegramSend';
 import { getArgDate, getCurrentFinancialMonth, parseArgDate } from '@/lib/dateUtils';
 import Groq from 'groq-sdk';
+import { candidatosAudio, candidatosTexto, conModelo, estadoModelos } from '@/lib/groqModels';
 import crypto from 'crypto';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
 const GROQ_API_KEY = process.env.GROQ_API_KEY!;
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY!;
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
-
-// Modelos de texto de Groq en orden de preferencia.
-// Groq rota/da de baja modelos seguido: si uno responde 404 (model_not_found) se prueba el siguiente.
-// Se puede forzar uno concreto con la env var GROQ_TEXT_MODEL.
-const GROQ_TEXT_MODELS = process.env.GROQ_TEXT_MODEL
-  ? [process.env.GROQ_TEXT_MODEL]
-  : ['qwen/qwen3.6-27b', 'openai/gpt-oss-120b', 'llama-3.3-70b-versatile'];
-
-const GROQ_AUDIO_MODELS = process.env.GROQ_AUDIO_MODEL
-  ? [process.env.GROQ_AUDIO_MODEL]
-  : ['whisper-large-v3', 'whisper-large-v3-turbo'];
-
-function isModelNotFound(error: any): boolean {
-  return error?.status === 404 || /model_not_found|does not exist/i.test(error?.message || '');
-}
 
 // ============================================
 // Telegram helpers
@@ -123,18 +109,11 @@ async function downloadTelegramFile(fileId: string): Promise<Buffer> {
 async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
   const groq = new Groq({ apiKey: GROQ_API_KEY });
   const file = new File([new Uint8Array(audioBuffer)], 'audio.ogg', { type: 'audio/ogg' });
-  let lastError: any;
-  for (const model of GROQ_AUDIO_MODELS) {
-    try {
-      const transcription = await groq.audio.transcriptions.create({ file, model, language: 'es' });
-      return transcription.text;
-    } catch (error: any) {
-      if (!isModelNotFound(error)) throw error;
-      console.warn(`Groq: modelo de audio ${model} no disponible, probando el siguiente.`);
-      lastError = error;
-    }
-  }
-  throw lastError || new Error('Ningun modelo de audio de Groq disponible.');
+
+  return conModelo(candidatosAudio, async (model) => {
+    const transcription = await groq.audio.transcriptions.create({ file, model, language: 'es' });
+    return transcription.text;
+  });
 }
 
 interface ParsedAction {
@@ -280,24 +259,17 @@ async function groqJsonCompletion(
   messages: { role: 'system' | 'user'; content: string }[]
 ): Promise<any> {
   const groq = new Groq({ apiKey: GROQ_API_KEY });
-  let lastError: any;
-  for (const model of GROQ_TEXT_MODELS) {
-    try {
-      const completion = await groq.chat.completions.create({
-        messages,
-        model,
-        temperature: 0.1,
-        max_tokens: 1500,
-        response_format: { type: 'json_object' },
-      });
-      return JSON.parse(extractJsonObject(completion.choices[0]?.message?.content || '{}'));
-    } catch (error: any) {
-      if (!isModelNotFound(error)) throw error;
-      console.warn(`Groq: modelo de texto ${model} no disponible, probando el siguiente.`);
-      lastError = error;
-    }
-  }
-  throw lastError || new Error('Ningun modelo de texto de Groq disponible.');
+
+  return conModelo(candidatosTexto, async (model) => {
+    const completion = await groq.chat.completions.create({
+      messages,
+      model,
+      temperature: 0.1,
+      max_tokens: 1500,
+      response_format: { type: 'json_object' },
+    });
+    return JSON.parse(extractJsonObject(completion.choices[0]?.message?.content || '{}'));
+  });
 }
 
 async function parseTransactionWithAI(
@@ -726,15 +698,14 @@ export async function POST(request: NextRequest) {
       }
     } catch (error: any) {
       console.error('Parse Error:', error);
-      let activeModels = 'No se pudo obtener la lista de modelos.';
+      let detalle = 'No se pudo consultar el estado de los modelos.';
       try {
-        const groq = new Groq({ apiKey: GROQ_API_KEY });
-        const models = await groq.models.list();
-        activeModels = models.data.map(m => m.id).sort().join(', ');
+        const estado = await estadoModelos();
+        detalle = `Modelo en uso: ${estado.textoEnUso}\nModelos activos en Groq: ${estado.todos.join(', ')}`;
       } catch (e) {
         console.error('Error fetching models:', e);
       }
-      await sendTelegramMessage(chatId, `❌ Falló la IA.\nError: ${error.message || 'Desconocido'}\nModelos activos en Groq: ${activeModels}`);
+      await sendTelegramMessage(chatId, `❌ Falló la IA.\nError: ${error.message || 'Desconocido'}\n${detalle}`);
       return NextResponse.json({ ok: true });
     }
 

@@ -7,6 +7,7 @@ import { buildStatement } from '@/lib/periodUtils';
 import { formatCurrency } from '@/lib/formatUtils';
 import { sendTelegramMessage } from '@/lib/telegramSend';
 import { sendPushNotification } from '@/lib/push';
+import { estadoModelos } from '@/lib/groqModels';
 
 /**
  * Recordatorio diario: avisa lo que vence hoy y mañana (agenda, cuotas de
@@ -36,6 +37,43 @@ function autorizado(request: NextRequest) {
   return request.headers.get('x-vercel-cron') !== null || process.env.NODE_ENV !== 'production';
 }
 
+/**
+ * Chequeo diario de los modelos de Groq. El bot se banca solo que le den de
+ * baja un modelo (elige otro), pero avisa para poder actualizar la lista de
+ * preferidos antes de que se quede sin respaldo.
+ *
+ * Va al chat de ADMIN_TELEGRAM_CHAT_ID; si no está seteado, al primer perfil
+ * vinculado, así no se le avisa a toda la familia de algo que no les sirve.
+ */
+async function avisarSiGroqCambio() {
+  try {
+    const estado = await estadoModelos();
+    if (!estado.degradado) return;
+
+    const destino =
+      process.env.ADMIN_TELEGRAM_CHAT_ID ||
+      (
+        await prisma.profile.findFirst({
+          where: { telegramChatId: { not: null } },
+          orderBy: { createdAt: 'asc' },
+          select: { telegramChatId: true },
+        })
+      )?.telegramChatId;
+
+    if (!destino) return;
+
+    await sendTelegramMessage(
+      destino,
+      '🤖 <b>Groq cambió los modelos</b>\n\n' +
+        `Se dieron de baja: ${estado.preferidosCaidos.join(', ')}\n` +
+        `El bot está usando <b>${estado.textoEnUso}</b> como reemplazo automático.\n\n` +
+        '<i>Anda igual, pero conviene actualizar TEXTO_PREFERIDOS en src/lib/groqModels.ts.</i>'
+    );
+  } catch (error) {
+    console.error('[CRON] No se pudo chequear los modelos de Groq:', error);
+  }
+}
+
 function linea(aviso: Aviso) {
   const monto = aviso.monto != null ? ` — <b>$${formatCurrency(aviso.monto)}</b>` : '';
   return `• ${aviso.icon} ${aviso.texto}${monto}`;
@@ -45,6 +83,8 @@ export async function GET(request: NextRequest) {
   if (!autorizado(request)) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   }
+
+  await avisarSiGroqCambio();
 
   const hoy = getArgDate();
   const { month, year } = getCurrentFinancialMonth(hoy);

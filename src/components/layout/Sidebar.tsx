@@ -11,7 +11,7 @@ const navItems = [
   { href: '/agenda', label: 'Agenda', icon: '🗓️' },
   { href: '/tarjetas', label: 'Tarjetas', icon: '💳' },
   { href: '/prestamos', label: 'Préstamos', icon: '🏦' },
-  { href: '/ahorros', label: 'Ahorros', icon: '💰' },
+  { href: '/ahorros', label: 'Ahorros', icon: '🐷' },
 ];
 
 export default function Sidebar() {
