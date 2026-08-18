@@ -9,7 +9,11 @@ import SharedFundCard from '@/components/dashboard/SharedFundCard';
 import UserExpenseChart from '@/components/dashboard/UserExpenseChart';
 import CategoryBudgetProgress from '@/components/dashboard/CategoryBudgetProgress';
 import CreditCardsSummary from '@/components/dashboard/CreditCardsSummary';
+import LoansSummary from '@/components/dashboard/LoansSummary';
+import AgendaSummary from '@/components/dashboard/AgendaSummary';
 import type { CardsSummary } from '@/actions/cards';
+import type { LoansSummary as LoansSummaryData } from '@/actions/loans';
+import type { AgendaSummary as AgendaSummaryData } from '@/actions/agenda';
 import type { BudgetStatus, CategoryBreakdown, SharedFundStats, UserExpenseBreakdown, CategoryBudgetStatus, SplitBalanceDetail } from '@/types';
 import { formatCurrency } from '@/lib/formatUtils';
 
@@ -26,6 +30,8 @@ interface DashboardClientProps {
   categoryBudgets: CategoryBudgetStatus[];
   walletBalances?: { id: string; name: string; currency: string; balance: number }[];
   cardsSummary?: CardsSummary;
+  loansSummary?: LoansSummaryData;
+  agendaSummary?: AgendaSummaryData;
 }
 
 const monthNames = [
@@ -45,6 +51,8 @@ export default function DashboardClient({
   categoryBudgets,
   walletBalances = [],
   cardsSummary,
+  loansSummary,
+  agendaSummary,
 }: DashboardClientProps) {
 
   const [isBalanceExpanded, setIsBalanceExpanded] = useState(false);
@@ -179,8 +187,14 @@ export default function DashboardClient({
         </div>
       )}
 
+      {/* Agenda de gastos previstos */}
+      {agendaSummary && <AgendaSummary summary={agendaSummary} />}
+
       {/* Tarjetas de crédito */}
       {cardsSummary && <CreditCardsSummary summary={cardsSummary} />}
+
+      {/* Préstamos */}
+      {loansSummary && <LoansSummary summary={loansSummary} />}
 
       {/* Category Budgets */}
       {categoryBudgets && categoryBudgets.length > 0 && (

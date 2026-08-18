@@ -5,6 +5,8 @@ import DashboardClient from './DashboardClient';
 import MonthYearPicker from '@/components/ui/MonthYearPicker';
 import { getDashboardStats, getCategoryBreakdown, getMonthlyComparison, getBudgetStatus, getSharedFundStats, getUserExpenseBreakdown, getCategoryBudgetStatuses, getWalletBalances } from '@/actions/dashboard';
 import { getCardsSummary } from '@/actions/cards';
+import { getLoansSummary } from '@/actions/loans';
+import { getAgendaSummary } from '@/actions/agenda';
 import { prisma } from '@/lib/prisma';
 import { getCurrentFinancialMonth, getArgDate } from '@/lib/dateUtils';
 import { getAccountId } from '@/lib/session';
@@ -33,7 +35,7 @@ export default async function DashboardPage(props: { searchParams: Promise<{ mon
     orderBy: { name: 'asc' },
   });
 
-  const [stats, categoryData, monthlyData, sharedFundStats, userExpenseBreakdown, categoryBudgets, walletBalances, cardsSummary] = await Promise.all([
+  const [stats, categoryData, monthlyData, sharedFundStats, userExpenseBreakdown, categoryBudgets, walletBalances, cardsSummary, loansSummary, agendaSummary] = await Promise.all([
     getDashboardStats(month, year),
     getCategoryBreakdown(month, year),
     getMonthlyComparison(),
@@ -42,6 +44,8 @@ export default async function DashboardPage(props: { searchParams: Promise<{ mon
     getCategoryBudgetStatuses(month, year),
     getWalletBalances(),
     getCardsSummary(month, year),
+    getLoansSummary(month, year),
+    getAgendaSummary(month, year),
   ]);
 
   // Get budget status for ALL profiles that have an active budget config
@@ -67,6 +71,8 @@ export default async function DashboardPage(props: { searchParams: Promise<{ mon
         categoryBudgets={categoryBudgets}
         walletBalances={walletBalances}
         cardsSummary={cardsSummary}
+        loansSummary={loansSummary}
+        agendaSummary={agendaSummary}
       />
     </AppLayout>
   );

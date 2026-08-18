@@ -150,6 +150,22 @@ npm run db:seed
 - Tasa de retorno y vencimiento
 - Resumen por moneda
 
+### Tarjetas de crédito
+- Consumos en cuotas asignados al resumen que corresponde según el día de cierre
+- El consumo no es gasto: el gasto nace al pagar el resumen
+- Deuda arrastrada, cuotas a futuro y crédito disponible
+
+### Préstamos
+- Carga por valor de cuota, total a devolver o cálculo por TNA (sistema francés)
+- Plan de cuotas completo, con atrasos y adelantos
+- Préstamos tomados (generan gasto) y otorgados (generan ingreso)
+
+### Agenda
+- Checklist de gastos previstos del mes: no afecta el balance
+- Fijos que se repiten solos todos los meses y eventuales
+- Agrupado por quincena, con el total de plata que hace falta
+- Un ítem se puede convertir en gasto real con un toque
+
 ### Configuración
 - Tipo de cambio mensual
 - Gestión de categorías
@@ -167,7 +183,41 @@ SavingsTransaction → Movimientos de ahorro
 Investment     → Inversiones
 ExchangeRate   → Tipo de cambio mensual
 BudgetConfig   → Presupuesto quincenal
+CreditCard     → Tarjetas de crédito
+CardPurchase   → Consumos con tarjeta
+CardInstallment→ Cuotas de cada consumo
+CardPayment    → Pagos de resumen (generan un Expense)
+Loan           → Préstamos tomados u otorgados
+LoanInstallment→ Plan de cuotas del préstamo
+LoanPayment    → Pagos/cobros de cuota (generan Expense o Income)
+PlannedExpense → Ítems de la agenda de gastos previstos
 ```
+
+## 🔔 Recordatorios automáticos
+
+`vercel.json` define un cron diario (9:00 hora Argentina) que pega a
+`/api/cron/recordatorios` y avisa por push y por Telegram lo que vence hoy y
+mañana: ítems de la agenda, cuotas de préstamos y vencimientos de tarjetas.
+Lo atrasado se recuerda solo los lunes.
+
+Opcional: definir `CRON_SECRET` en Vercel para que el endpoint solo acepte
+llamadas del cron (Vercel manda el header `Authorization: Bearer $CRON_SECRET`).
+
+Para probarlo a mano:
+
+```bash
+curl "https://TU-APP.vercel.app/api/cron/recordatorios?secret=$CRON_SECRET"
+```
+
+## 🤖 Bot de Telegram
+
+Además de gastos e ingresos por texto, foto o audio, el bot entiende:
+
+- `"Gasto con tarjeta Naranja de 120000 en 6 cuotas en el super"`
+- `"Pagué 80000 de la tarjeta Naranja"`
+- `"Pagué la cuota del préstamo Nación"`
+- `"Anotá en la agenda el alquiler de 450 mil el día 5"`
+- Comandos: `/estado`, `/agenda`, `/prestamos`
 
 ## 📝 Licencia
 

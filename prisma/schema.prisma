@@ -29,6 +29,7 @@ model Account {
   wallets         Wallet[]
   sharedFundPayments SharedFundPayment[]
   monthCloses     MonthClose[]
+  plannedExpenses PlannedExpense[]
 }
 
 enum SplitMode {
@@ -58,6 +59,9 @@ model Profile {
   creditCards         CreditCard[]
   cardPurchases       CardPurchase[]
   cardPayments        CardPayment[]
+  loans               Loan[]
+  loanPayments        LoanPayment[]
+  plannedExpenses     PlannedExpense[]
 }
 
 model Category {
@@ -70,6 +74,8 @@ model Category {
   expenses  Expense[]
   categoryBudgets CategoryBudget[]
   cardPurchases   CardPurchase[]
+  plannedExpenses PlannedExpense[]
+  loans           Loan[]
 }
 
 model Wallet {
@@ -99,6 +105,9 @@ model Income {
   paymentMethod String @default("TRANSFERENCIA")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  // Si este ingreso nació del cobro de una cuota de un préstamo otorgado
+  loanPayment LoanPayment?
 }
 
 model Expense {
@@ -135,6 +144,12 @@ model Expense {
 
   // Si este gasto nació de pagar el resumen de una tarjeta
   cardPayment CardPayment?
+
+  // Si este gasto nació de pagar una cuota de un préstamo
+  loanPayment LoanPayment?
+
+  // Si este gasto nació de marcar un ítem de la agenda como pagado
+  plannedExpense PlannedExpense?
 }
 
 enum ExpenseType {
@@ -238,6 +253,156 @@ model CardPayment {
   createdAt DateTime @default(now())
 
   @@index([cardId, year, month])
+}
+
+// ============================================
+// Préstamos
+// ============================================
+
+enum LoanKind {
+  /// Nos prestaron plata: cada cuota que pagamos es un gasto real.
+  TOMADO
+  /// Prestamos nosotros: cada cuota que nos devuelven es un ingreso real.
+  OTORGADO
+}
+
+/// Un préstamo con cuotas fijas. Igual que las tarjetas, el préstamo en sí
+/// no mueve el balance: recién impacta cuando se paga (o se cobra) una cuota.
+model Loan {
+  id                String   @id @default(cuid())
+  name              String // Ej: "Préstamo personal Nación"
+  lender            String? // Banco, financiera o persona
+  kind              LoanKind @default(TOMADO)
+  currency          String   @default("ARS")
+  principal         Float // Plata que se recibió / se prestó
+  totalToRepay      Float // Total a devolver (capital + intereses)
+  installments      Int // Cantidad de cuotas
+  installmentAmount Float // Valor de cada cuota
+  interestRate      Float? // TNA %, informativo
+  firstMonth        Int // Mes de la primera cuota
+  firstYear         Int
+  dueDay            Int      @default(10) // Día del mes en que vence la cuota
+  color             String   @default("#8b5cf6")
+  notes             String?
+  isActive          Boolean  @default(true)
+
+  /// Tipo por defecto para los pagos (propio o compartido).
+  type            ExpenseType @default(PROPIO)
+  splitPercentage Float?
+
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id])
+
+  profileId String
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  schedule LoanInstallment[]
+  payments LoanPayment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Cada cuota del plan de pagos, ya asignada al mes en que vence.
+model LoanInstallment {
+  id     String @id @default(cuid())
+  number Int // 3 de 24
+  amount Float
+  month  Int
+  year   Int
+
+  loanId String
+  loan   Loan   @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  @@unique([loanId, number])
+  @@index([month, year])
+}
+
+/// Pago (o cobro) de una cuota. Esto SÍ genera un movimiento real:
+/// un gasto si el préstamo es TOMADO, un ingreso si es OTORGADO.
+model LoanPayment {
+  id       String   @id @default(cuid())
+  amount   Float
+  currency String   @default("ARS")
+  date     DateTime
+  month    Int // Cuota de qué mes se está pagando
+  year     Int
+  note     String?
+
+  loanId String
+  loan   Loan   @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  profileId String
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  expenseId String?  @unique
+  expense   Expense? @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+
+  incomeId String? @unique
+  income   Income? @relation(fields: [incomeId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([loanId, year, month])
+}
+
+// ============================================
+// Agenda de gastos previstos
+// ============================================
+
+enum PlannedKind {
+  /// Todos los meses: alquiler, expensas, colegio.
+  FIJO
+  /// Puede pasar o no: regalo de cumpleaños, service del auto.
+  EVENTUAL
+}
+
+enum PlannedStatus {
+  PENDIENTE
+  HECHO
+  /// Este mes no va (se salteó), pero sigue en la agenda de los próximos.
+  OMITIDO
+}
+
+/// Anotador de gastos previstos del mes. NO afecta el balance:
+/// es una ayuda memoria. Si se quiere, se puede convertir en un gasto real.
+model PlannedExpense {
+  id       String        @id @default(cuid())
+  title    String
+  amount   Float? // Estimado, opcional
+  currency String        @default("ARS")
+  day      Int? // Día aproximado del mes
+  month    Int
+  year     Int
+  kind     PlannedKind   @default(FIJO)
+  status   PlannedStatus @default(PENDIENTE)
+  notes    String?
+
+  /// Se repite todos los meses (se clona solo al abrir el mes siguiente).
+  isRecurring Boolean @default(false)
+  /// Agrupa todas las repeticiones mensuales del mismo ítem.
+  seriesId    String?
+
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id])
+
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  /// Quién se encarga (opcional).
+  profileId String?
+  profile   Profile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
+
+  /// Gasto real generado desde la agenda. Si se borra el gasto, el ítem queda
+  /// igual pero desvinculado.
+  expenseId String?  @unique
+  expense   Expense? @relation(fields: [expenseId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([accountId, year, month])
+  @@index([seriesId])
 }
 
 model SavingsGoal {

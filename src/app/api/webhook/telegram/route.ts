@@ -8,6 +8,9 @@ import {
   firstInstallmentPeriod,
   formatPeriod,
 } from '@/lib/cardUtils';
+import { getLoanCategory } from '@/lib/loanCategory';
+import { loanProgress, nextPendingInstallment } from '@/lib/loanUtils';
+import { sendTelegramMessage } from '@/lib/telegramSend';
 import { getArgDate, getCurrentFinancialMonth, parseArgDate } from '@/lib/dateUtils';
 import Groq from 'groq-sdk';
 import crypto from 'crypto';
@@ -21,17 +24,7 @@ const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
 // Telegram helpers
 // ============================================
 
-async function sendTelegramMessage(chatId: number | string, text: string, replyMarkup?: any) {
-  const body: any = { chat_id: chatId, text, parse_mode: 'HTML' };
-  if (replyMarkup) {
-    body.reply_markup = replyMarkup;
-  }
-  await fetch(`${TELEGRAM_API}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-}
+// sendTelegramMessage vive en @/lib/telegramSend: lo comparte el cron de recordatorios.
 
 /**
  * Vincula un perfil usando el PIN de 6 dígitos.
@@ -66,10 +59,10 @@ const normalize = (s: string) =>
   s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
 
 /**
- * Busca la tarjeta que mencionó el usuario. Si no nombró ninguna y hay una sola,
- * asume esa.
+ * Busca por nombre la tarjeta o el préstamo que mencionó el usuario.
+ * Si no nombró ninguno y hay uno solo, asume ese.
  */
-function resolveCard<T extends { name: string }>(cards: T[], name?: string): T | null {
+function resolveByName<T extends { name: string }>(cards: T[], name?: string): T | null {
   if (cards.length === 0) return null;
   if (!name) return cards.length === 1 ? cards[0] : null;
 
@@ -126,7 +119,7 @@ async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
 interface ParsedAction {
   accion: 'crear' | 'modificar' | 'eliminar' | 'link';
   entidad_id?: string;
-  tipo?: 'gasto' | 'ingreso' | 'consumo_tarjeta' | 'pago_tarjeta';
+  tipo?: 'gasto' | 'ingreso' | 'consumo_tarjeta' | 'pago_tarjeta' | 'pago_prestamo' | 'agenda';
   monto?: number;
   moneda?: 'ARS' | 'USD' | 'EUR';
   descripcion?: string;
@@ -139,6 +132,10 @@ interface ParsedAction {
   tarjeta?: string;
   cuotas?: number;
   monto_es_por_cuota?: boolean;
+  prestamo?: string;
+  dia?: number;
+  recurrente?: boolean;
+  agenda_tipo?: 'fijo' | 'eventual';
 }
 
 const SYSTEM_PROMPT_BASE = (profileName: string, categories: string[], context: string) => {
@@ -174,6 +171,23 @@ REGLAS DE TARJETAS DE CRÉDITO (solo si hay tarjetas disponibles listadas más a
   -> Devolvé "tarjeta" y "monto".
 - IMPORTANTE: si el nombre que dice NO coincide con ninguna tarjeta de la lista, tratalo como un gasto normal ("gasto").
 
+REGLAS DE PRÉSTAMOS (solo si hay préstamos disponibles listados más abajo):
+- tipo = "pago_prestamo": el usuario pagó (o cobró) una cuota de un préstamo de la lista.
+  (Ej: "Pagué la cuota del préstamo Nación", "pagué 95000 del préstamo del auto", "me pagaron la cuota que le presté a Marcos").
+  -> Devolvé "prestamo" (el nombre de la lista que mejor coincida) y "monto".
+  -> Si NO dice el monto pero sí el préstamo, omití "monto": se usa el valor de la cuota.
+- IMPORTANTE: si el nombre no coincide con ningún préstamo de la lista, tratalo como un gasto normal.
+
+REGLAS DE AGENDA (ayuda memoria de gastos previstos, NO afecta el balance):
+- tipo = "agenda": el usuario quiere ANOTAR o RECORDAR un gasto que todavía no ocurrió.
+  (Ej: "anotá en la agenda el alquiler de 450 mil el día 5", "acordate que el 20 hay que pagar el seguro",
+   "recordame pagar las expensas", "agendá el cumpleaños de mamá, unos 50 lucas").
+  -> Palabras clave: "anotá", "agendá", "recordame", "acordate", "no te olvides", "tengo que pagar", "viene".
+  -> Devolvé "descripcion" (qué es), "monto" (si lo dice; puede faltar) y "dia" (día del mes, si lo dice).
+  -> "recurrente": true si dice que es todos los meses ("el alquiler todos los meses", "fijo").
+  -> "agenda_tipo": "fijo" si es un gasto que se repite o es seguro; "eventual" si es algo que puede pasar.
+- CRÍTICO: si el gasto YA ocurrió (lo pagó), es "gasto", NO "agenda". La agenda es solo para lo que viene.
+
 REGLAS DE EXTRACCIÓN (Aplica siempre que el dato exista o pueda inferirse, incluso para la acción "link"):
 - fecha: Si el usuario menciona cuándo ocurrió (ej: "ayer", "el 13 de julio", "hace 3 días"), calcúlalo en base a la FECHA DE HOY y devuélvelo en formato "YYYY-MM-DD". Si no menciona fecha explícita, omítelo o devuelve la de hoy.
 - tipo: "gasto", "ingreso", "consumo_tarjeta" o "pago_tarjeta"
@@ -206,17 +220,26 @@ Devuelve ÚNICAMENTE un JSON válido (sin texto extra) con esta estructura:
       "billetera": "nombre_billetera", // Si menciona una (ej: MP, Galicia, Uala)
       "tarjeta": "nombre_tarjeta", // Solo para consumo_tarjeta / pago_tarjeta
       "cuotas": numero, // Solo para consumo_tarjeta
-      "monto_es_por_cuota": boolean // Solo para consumo_tarjeta
+      "monto_es_por_cuota": boolean, // Solo para consumo_tarjeta
+      "prestamo": "nombre_prestamo", // Solo para pago_prestamo
+      "dia": numero, // Solo para agenda: día del mes
+      "recurrente": boolean, // Solo para agenda: se repite todos los meses
+      "agenda_tipo": "fijo" | "eventual" // Solo para agenda
     }
   ]
 }`;
 };
 
-/** Bloque de contexto extra (billeteras y tarjetas) que se agrega al prompt base. */
-function buildResourcesBlock(wallets: { name: string }[], cards: { name: string }[]) {
+/** Bloque de contexto extra (billeteras, tarjetas y préstamos) que se agrega al prompt base. */
+function buildResourcesBlock(
+  wallets: { name: string }[],
+  cards: { name: string }[],
+  loans: { name: string }[] = []
+) {
   const walletsStr = wallets.length > 0 ? wallets.map((w) => w.name).join(', ') : 'Ninguna';
   const cardsStr = cards.length > 0 ? cards.map((c) => c.name).join(', ') : 'Ninguna';
-  return `\n\nBilleteras disponibles: ${walletsStr}\nTarjetas de crédito disponibles: ${cardsStr}`;
+  const loansStr = loans.length > 0 ? loans.map((l) => l.name).join(', ') : 'Ninguno';
+  return `\n\nBilleteras disponibles: ${walletsStr}\nTarjetas de crédito disponibles: ${cardsStr}\nPréstamos disponibles: ${loansStr}`;
 }
 
 async function parseTransactionWithAI(
@@ -225,12 +248,13 @@ async function parseTransactionWithAI(
   categories: string[],
   wallets: { id: string; name: string }[],
   context: string,
-  cards: { name: string }[] = []
+  cards: { name: string }[] = [],
+  loans: { name: string }[] = []
 ): Promise<{ acciones: ParsedAction[] }> {
   const groq = new Groq({ apiKey: GROQ_API_KEY });
   const completion = await groq.chat.completions.create({
     messages: [
-      { role: 'system', content: SYSTEM_PROMPT_BASE(profileName, categories, context) + buildResourcesBlock(wallets, cards) },
+      { role: 'system', content: SYSTEM_PROMPT_BASE(profileName, categories, context) + buildResourcesBlock(wallets, cards, loans) },
       { role: 'user', content: text },
     ],
     model: 'llama-3.3-70b-versatile',
@@ -250,7 +274,8 @@ async function parseImagesWithAI(
   wallets: { id: string; name: string }[],
   context: string,
   customInstruction: string = '',
-  cards: { name: string }[] = []
+  cards: { name: string }[] = [],
+  loans: { name: string }[] = []
 ): Promise<{ acciones: ParsedAction[] }> {
   // Paso 1: Usar Google Gemini para analizar las imágenes (Groq ya no tiene modelos de visión)
   const imageParts: any[] = [];
@@ -299,7 +324,7 @@ NO OMITAS NINGÚN MOVIMIENTO. Debes enumerar cada uno por separado.${customInstr
   const groq = new Groq({ apiKey: GROQ_API_KEY });
   const jsonCompletion = await groq.chat.completions.create({
     messages: [
-      { role: 'system', content: SYSTEM_PROMPT_BASE(profileName, categories, context) + buildResourcesBlock(wallets, cards) },
+      { role: 'system', content: SYSTEM_PROMPT_BASE(profileName, categories, context) + buildResourcesBlock(wallets, cards, loans) },
       { role: 'user', content: `Basado en esta extracción de imagen, armá el JSON final:\n\n${rawVisionText}\n\nInstrucción del usuario original: "${customInstruction}"` },
     ],
     model: 'llama-3.3-70b-versatile',
@@ -403,6 +428,32 @@ export async function POST(request: NextRequest) {
         const id = data.replace('undo_purchase_', '');
         await prisma.cardPurchase.delete({ where: { id } }).catch(() => {});
         await sendTelegramMessage(chatId, '🗑️ Consumo de tarjeta eliminado (con todas sus cuotas).');
+      } else if (data.startsWith('undo_loanpay_')) {
+        const id = data.replace('undo_loanpay_', '');
+        const payment = await prisma.loanPayment.findUnique({ where: { id } });
+        if (payment?.expenseId) {
+          await prisma.expense.delete({ where: { id: payment.expenseId } }).catch(() => {});
+        }
+        if (payment?.incomeId) {
+          await prisma.income.delete({ where: { id: payment.incomeId } }).catch(() => {});
+        }
+        await prisma.loanPayment.delete({ where: { id } }).catch(() => {});
+        await sendTelegramMessage(chatId, '🗑️ Pago de préstamo eliminado.');
+      } else if (data.startsWith('undo_planned_')) {
+        const id = data.replace('undo_planned_', '');
+        await prisma.plannedExpense.delete({ where: { id } }).catch(() => {});
+        await sendTelegramMessage(chatId, '🗑️ Lo saqué de la agenda.');
+      } else if (data.startsWith('done_planned_')) {
+        const id = data.replace('done_planned_', '');
+        const item = await prisma.plannedExpense
+          .update({ where: { id }, data: { status: 'HECHO' } })
+          .catch(() => null);
+        await sendTelegramMessage(
+          chatId,
+          item
+            ? `✅ Marqué <b>${item.title}</b> como resuelto en la agenda.\n\n<i>Ojo: esto no carga el gasto. Si querés que impacte en el balance, decime "gasté X en ${item.title}".</i>`
+            : '❌ No encontré ese ítem en la agenda.'
+        );
       } else if (data.startsWith('undo_income_')) {
         const id = data.replace('undo_income_', '');
         await prisma.income.delete({ where: { id } }).catch(() => {});
@@ -442,6 +493,9 @@ export async function POST(request: NextRequest) {
           '• "Gasto 4500 en el chino compartido"\n' +
           '• "Gasto con tarjeta Naranja de 120000 en 6 cuotas en el super"\n' +
           '• "Pagué 80000 de la tarjeta Naranja"\n' +
+          '• "Pagué la cuota del préstamo Nación"\n' +
+          '• "Anotá en la agenda el alquiler de 450 mil el día 5"\n' +
+          '• /agenda o /prestamos para ver cómo venís\n' +
           '• "Me equivoqué, el gasto del chino era de 5000"\n' +
           '• "Borrá el último ingreso"\n' +
           '• "gasto" (para abrir la app sin contraseña)'
@@ -470,6 +524,83 @@ export async function POST(request: NextRequest) {
     if (text === '/estado') {
       const budgetInfo = await getBudgetRemaining(profile.id);
       await sendTelegramMessage(chatId, budgetInfo ? `📊 <b>Estado de ${profile.name}</b>${budgetInfo}` : `📊 No tenés presupuesto configurado.`);
+      return NextResponse.json({ ok: true });
+    }
+
+    // ─── /agenda command ───
+    if (text === '/agenda') {
+      const { month: aMonth, year: aYear } = getCurrentFinancialMonth(getArgDate());
+      const items = await prisma.plannedExpense.findMany({
+        where: { accountId: profile.accountId, month: aMonth, year: aYear, status: { not: 'OMITIDO' } },
+        include: { category: { select: { icon: true } } },
+        orderBy: [{ day: 'asc' }, { createdAt: 'asc' }],
+      });
+
+      if (items.length === 0) {
+        await sendTelegramMessage(
+          chatId,
+          `🗓️ Tu agenda de <b>${formatPeriod(aMonth, aYear)}</b> está vacía.\n\n<i>Podés anotar cosas diciéndome "anotá en la agenda el alquiler de 450 mil el día 5".</i>`
+        );
+        return NextResponse.json({ ok: true });
+      }
+
+      const pendientes = items.filter((i) => i.status === 'PENDIENTE');
+      const total = items.reduce((acc, i) => acc + (i.amount || 0), 0);
+      const falta = pendientes.reduce((acc, i) => acc + (i.amount || 0), 0);
+
+      const lista = items
+        .map((i) => {
+          const check = i.status === 'HECHO' ? '✅' : '⬜';
+          const cuando = i.day ? ` (día ${i.day})` : '';
+          const monto = i.amount ? ` — $${formatCurrency(i.amount)}` : '';
+          return `${check} ${i.category?.icon || '📌'} ${i.title}${cuando}${monto}`;
+        })
+        .join('\n');
+
+      const agendaLink = await createMagicLink(profile.accountId, '/agenda', appUrl);
+      await sendTelegramMessage(
+        chatId,
+        `🗓️ <b>Agenda de ${formatPeriod(aMonth, aYear)}</b>\n\n${lista}\n\n` +
+          `💰 Previsto: <b>$${formatCurrency(total)}</b>\n` +
+          `⏳ Falta: <b>$${formatCurrency(falta)}</b> (${pendientes.length} pendiente${pendientes.length === 1 ? '' : 's'})`,
+        { inline_keyboard: [[{ text: '🗓️ Abrir agenda', url: agendaLink }]] }
+      );
+      return NextResponse.json({ ok: true });
+    }
+
+    // ─── /prestamos command ───
+    if (text === '/prestamos') {
+      const { month: lMonth, year: lYear } = getCurrentFinancialMonth(getArgDate());
+      const misLoans = await prisma.loan.findMany({
+        where: { profile: { accountId: profile.accountId }, isActive: true },
+        include: { schedule: true, payments: true },
+      });
+
+      if (misLoans.length === 0) {
+        await sendTelegramMessage(chatId, '🏦 Todavía no cargaste ningún préstamo en la app.');
+        return NextResponse.json({ ok: true });
+      }
+
+      const lista = misLoans
+        .map((l) => {
+          const prog = loanProgress(l.schedule, l.payments);
+          const next = nextPendingInstallment(l.schedule, l.payments, lMonth, lYear);
+          const icono = l.kind === 'TOMADO' ? '🏦' : '🤝';
+          const detalle = next
+            ? `próxima: cuota ${next.number} de ${formatPeriod(next.month, next.year)} ($${formatCurrency(next.amount)})`
+            : 'sin cuotas pendientes';
+          return (
+            `${icono} <b>${l.name}</b>\n` +
+            `   ${prog.paidInstallments}/${prog.totalInstallments} cuotas · falta <b>$${formatCurrency(prog.remaining)}</b>\n` +
+            `   ${detalle}`
+          );
+        })
+        .join('\n\n');
+
+      const loansLink = await createMagicLink(profile.accountId, '/prestamos', appUrl);
+      await sendTelegramMessage(chatId, `🏦 <b>Tus préstamos</b>\n\n${lista}`, {
+        inline_keyboard: [[{ text: '🏦 Ver préstamos', url: loansLink }]],
+      });
       return NextResponse.json({ ok: true });
     }
 
@@ -528,10 +659,14 @@ export async function POST(request: NextRequest) {
        return NextResponse.json({ ok: true });
     }
 
-    const [categories, wallets, cards] = await Promise.all([
+    const [categories, wallets, cards, loans] = await Promise.all([
       prisma.category.findMany({ where: { accountId: profile.accountId } }),
       prisma.wallet.findMany({ where: { accountId: profile.accountId } }),
       prisma.creditCard.findMany({ where: { profile: { accountId: profile.accountId } } }),
+      prisma.loan.findMany({
+        where: { profile: { accountId: profile.accountId }, isActive: true },
+        include: { schedule: true, payments: true },
+      }),
     ]);
     const categoryNames = categories.map((c) => c.name);
 
@@ -547,9 +682,9 @@ export async function POST(request: NextRequest) {
     let parsed: { acciones: ParsedAction[] };
     try {
       if (fileIdsToProcess.length > 0) {
-        parsed = await parseImagesWithAI(fileIdsToProcess, profile.name, categoryNames, wallets, contextStr, customInstruction, cards);
+        parsed = await parseImagesWithAI(fileIdsToProcess, profile.name, categoryNames, wallets, contextStr, customInstruction, cards, loans);
       } else {
-        parsed = await parseTransactionWithAI(messageText, profile.name, categoryNames, wallets, contextStr, cards);
+        parsed = await parseTransactionWithAI(messageText, profile.name, categoryNames, wallets, contextStr, cards, loans);
       }
     } catch (error: any) {
       console.error('Parse Error:', error);
@@ -590,6 +725,12 @@ export async function POST(request: NextRequest) {
       } else if (textLower.includes('tarjeta')) {
         path = '/tarjetas';
         label = 'Tarjetas';
+      } else if (textLower.includes('prestamo') || textLower.includes('préstamo')) {
+        path = '/prestamos';
+        label = 'Préstamos';
+      } else if (textLower.includes('agenda') || textLower.includes('recordatorio')) {
+        path = '/agenda';
+        label = 'Agenda';
       } else if (textLower.includes('config')) {
         path = '/configuracion';
         label = 'Configuración';
@@ -671,7 +812,9 @@ export async function POST(request: NextRequest) {
       }
 
       // ─── Create Action ───
-      if (!action.monto || action.monto <= 0) {
+      // La agenda y las cuotas de préstamo pueden venir sin monto: se completan solas.
+      const montoOpcional = action.tipo === 'agenda' || action.tipo === 'pago_prestamo';
+      if ((!action.monto || action.monto <= 0) && !montoOpcional) {
         await sendTelegramMessage(chatId, '❌ No pude detectar un monto válido.');
         continue;
       }
@@ -687,9 +830,172 @@ export async function POST(request: NextRequest) {
       const today = getArgDate();
       const dateStr = action.fecha || `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
+      // ─── Agenda: ayuda memoria, NO toca el balance ───
+      if (action.tipo === 'agenda') {
+        const actual = getCurrentFinancialMonth(getArgDate());
+        const fecha = action.fecha ? parseArgDate(action.fecha) : null;
+        const mes = fecha ? fecha.getMonth() + 1 : actual.month;
+        const anio = fecha ? fecha.getFullYear() : actual.year;
+        // Si la IA solo puso la fecha de hoy por defecto, no la tomamos como el día del gasto.
+        const dia =
+          action.dia ??
+          (fecha && fecha.toDateString() !== today.toDateString() ? fecha.getDate() : null);
+        const esRecurrente = action.recurrente === true;
+
+        const item = await prisma.plannedExpense.create({
+          data: {
+            title: action.descripcion || 'Gasto previsto',
+            amount: action.monto && action.monto > 0 ? action.monto : null,
+            currency: action.moneda || 'ARS',
+            day: dia ? Math.min(31, Math.max(1, dia)) : null,
+            month: mes,
+            year: anio,
+            kind: action.agenda_tipo === 'eventual' ? 'EVENTUAL' : 'FIJO',
+            isRecurring: esRecurrente,
+            categoryId: action.categoria ? matchedCategory.id : null,
+            profileId: action.persona ? targetProfile.id : null,
+            accountId: profile.accountId,
+          },
+        });
+
+        // La serie se identifica con el id del primer ítem.
+        if (esRecurrente) {
+          await prisma.plannedExpense.update({
+            where: { id: item.id },
+            data: { seriesId: item.id },
+          });
+        }
+
+        const agendaLink = await createMagicLink(profile.accountId, '/agenda', appUrl);
+        await sendTelegramMessage(
+          chatId,
+          `🗓️ <b>Anotado en la agenda</b>\n\n` +
+            `📌 ${item.title}\n` +
+            (item.amount ? `💰 Estimado: <b>$${formatCurrency(item.amount)}</b> ${item.currency}\n` : '') +
+            (item.day ? `📅 Día ${item.day} de ${formatPeriod(mes, anio)}\n` : `📅 ${formatPeriod(mes, anio)}\n`) +
+            (esRecurrente ? `🔁 Se repite todos los meses\n` : '') +
+            `\n<i>Esto no mueve el balance: es para acordarte. Cuando lo pagues, avisame y lo cargo como gasto.</i>`,
+          {
+            inline_keyboard: [
+              [
+                { text: '🗑️ Deshacer', callback_data: `undo_planned_${item.id}` },
+                { text: '🗓️ Ver agenda', url: agendaLink },
+              ],
+            ],
+          }
+        );
+        continue;
+      }
+
+      // ─── Cuota de préstamo: esto sí genera un movimiento real ───
+      if (action.tipo === 'pago_prestamo') {
+        const loan = resolveByName(loans, action.prestamo);
+
+        if (!loan) {
+          const names = loans.map((l) => l.name).join(', ');
+          await sendTelegramMessage(
+            chatId,
+            loans.length === 0
+              ? '🏦 Todavía no cargaste ningún préstamo. Crealo en la app (sección <b>Préstamos</b>) y después me lo podés usar por acá.'
+              : `🏦 No supe a qué préstamo te referís. Los que tenés son: <b>${names}</b>.`
+          );
+          continue;
+        }
+
+        const { month: payMonth, year: payYear } = getCurrentFinancialMonth(getArgDate());
+        const paymentDate = parseArgDate(dateStr);
+        const period = formatPeriod(payMonth, payYear);
+        const monto = action.monto && action.monto > 0 ? action.monto : loan.installmentAmount;
+        const esTomado = loan.kind === 'TOMADO';
+
+        let expenseId: string | null = null;
+        let incomeId: string | null = null;
+
+        if (esTomado) {
+          const propia = loan.categoryId ? categories.find((c) => c.id === loan.categoryId) : null;
+          const loanCategory = propia || (await getLoanCategory(profile.accountId));
+          const expense = await prisma.expense.create({
+            data: {
+              amount: monto,
+              currency: loan.currency,
+              date: paymentDate,
+              description: `Cuota ${loan.name} (${period})`,
+              categoryId: loanCategory.id,
+              profileId: targetProfile.id,
+              type: action.tipo_gasto === 'compartido' ? 'COMPARTIDO' : loan.type,
+              paidFromPersonalBudget:
+                action.tipo_gasto === 'compartido' ? action.pague_yo === true : false,
+            },
+          });
+          expenseId = expense.id;
+        } else {
+          const income = await prisma.income.create({
+            data: {
+              amount: monto,
+              currency: loan.currency,
+              date: paymentDate,
+              description: `Cobro ${loan.name} (${period})`,
+              profileId: targetProfile.id,
+            },
+          });
+          incomeId = income.id;
+        }
+
+        const payment = await prisma.loanPayment.create({
+          data: {
+            amount: monto,
+            currency: loan.currency,
+            date: paymentDate,
+            month: payMonth,
+            year: payYear,
+            loanId: loan.id,
+            profileId: targetProfile.id,
+            expenseId,
+            incomeId,
+          },
+        });
+
+        const pagosActualizados = [
+          ...loan.payments,
+          { amount: monto, month: payMonth, year: payYear },
+        ];
+        const prog = loanProgress(loan.schedule, pagosActualizados);
+        const next = nextPendingInstallment(loan.schedule, pagosActualizados, payMonth, payYear);
+        const loansLink = await createMagicLink(profile.accountId, '/prestamos', appUrl);
+
+        await sendTelegramMessage(
+          chatId,
+          `${esTomado ? '✅' : '💰'} <b>${esTomado ? 'Cuota pagada' : 'Cobro registrado'}: ${loan.name}</b>\n\n` +
+            `${esTomado ? '💸 Pagaste' : '💰 Cobraste'}: <b>$${formatCurrency(monto)}</b> ${loan.currency}\n` +
+            `📆 Cuotas: <b>${prog.paidInstallments}/${prog.totalInstallments}</b>\n` +
+            `🏦 ${esTomado ? 'Te falta pagar' : 'Te deben'}: <b>$${formatCurrency(prog.remaining)}</b>\n` +
+            (prog.isSettled
+              ? `\n🎉 <b>¡Préstamo cancelado!</b>`
+              : next
+                ? `\n▶️ Próxima: cuota ${next.number} de ${formatPeriod(next.month, next.year)} ($${formatCurrency(next.amount)})`
+                : '') +
+            `\n\n<i>Ya lo cargué como ${esTomado ? 'gasto' : 'ingreso'} de ${targetProfile.name}.</i>`,
+          {
+            inline_keyboard: [
+              [
+                { text: '🗑️ Deshacer', callback_data: `undo_loanpay_${payment.id}` },
+                { text: '🏦 Ver préstamos', url: loansLink },
+              ],
+            ],
+          }
+        );
+        continue;
+      }
+
+      // De acá en adelante (tarjetas, gastos e ingresos) el monto es obligatorio.
+      if (!action.monto || action.monto <= 0) {
+        await sendTelegramMessage(chatId, '❌ No pude detectar un monto válido.');
+        continue;
+      }
+
       // ─── Tarjetas de crédito ───
       if (action.tipo === 'consumo_tarjeta' || action.tipo === 'pago_tarjeta') {
-        const card = resolveCard(cards, action.tarjeta);
+        const card = resolveByName(cards, action.tarjeta);
 
         if (!card) {
           const names = cards.map((c) => c.name).join(', ');
@@ -829,6 +1135,8 @@ export async function POST(request: NextRequest) {
     revalidatePath('/gastos');
     revalidatePath('/ingresos');
     revalidatePath('/tarjetas');
+    revalidatePath('/prestamos');
+    revalidatePath('/agenda');
     revalidatePath('/dashboard');
 
     return NextResponse.json({ ok: true });

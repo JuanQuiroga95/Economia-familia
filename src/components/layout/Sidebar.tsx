@@ -8,8 +8,10 @@ const navItems = [
   { href: '/dashboard', label: 'Inicio', icon: '🏠' },
   { href: '/ingresos', label: 'Ingresos', icon: '💰' },
   { href: '/gastos', label: 'Gastos', icon: '💸' },
+  { href: '/agenda', label: 'Agenda', icon: '🗓️' },
   { href: '/tarjetas', label: 'Tarjetas', icon: '💳' },
-  { href: '/ahorros', label: 'Ahorros', icon: '🏦' },
+  { href: '/prestamos', label: 'Préstamos', icon: '🏦' },
+  { href: '/ahorros', label: 'Ahorros', icon: '💰' },
 ];
 
 export default function Sidebar() {
