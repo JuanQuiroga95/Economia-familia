@@ -13,7 +13,7 @@ import { loanProgress, nextPendingInstallment } from '@/lib/loanUtils';
 import { sendTelegramMessage } from '@/lib/telegramSend';
 import { getArgDate, getCurrentFinancialMonth, parseArgDate } from '@/lib/dateUtils';
 import Groq from 'groq-sdk';
-import { candidatosAudio, candidatosTexto, conModelo, estadoModelos } from '@/lib/groqModels';
+import { candidatosAudio, candidatosTexto, conModelo, esFalloDeJson, estadoModelos } from '@/lib/groqModels';
 import crypto from 'crypto';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
@@ -254,6 +254,20 @@ function extractJsonObject(raw: string): string {
   return start !== -1 && end > start ? s.slice(start, end + 1) : '{}';
 }
 
+/**
+ * Cuánto puede razonar cada familia de modelos antes de contestar.
+ *
+ * El razonamiento se come el presupuesto de tokens y deja el JSON a medio
+ * cerrar, que es lo que Groq rechaza con `json_validate_failed`. Para esta
+ * tarea (mapear un mensaje a acciones) no hace falta razonar: Qwen acepta
+ * apagarlo del todo con 'none' y gpt-oss sólo baja hasta 'low'.
+ */
+function esfuerzoDeRazonamiento(model: string): 'none' | 'low' | undefined {
+  if (/qwen/i.test(model)) return 'none';
+  if (/gpt-oss/i.test(model)) return 'low';
+  return undefined;
+}
+
 /** Completion JSON contra Groq probando los modelos de GROQ_TEXT_MODELS en orden. */
 async function groqJsonCompletion(
   messages: { role: 'system' | 'user'; content: string }[]
@@ -261,14 +275,40 @@ async function groqJsonCompletion(
   const groq = new Groq({ apiKey: GROQ_API_KEY });
 
   return conModelo(candidatosTexto, async (model) => {
-    const completion = await groq.chat.completions.create({
+    const base = {
       messages,
       model,
       temperature: 0.1,
-      max_tokens: 1500,
-      response_format: { type: 'json_object' },
-    });
-    return JSON.parse(extractJsonObject(completion.choices[0]?.message?.content || '{}'));
+      // Con `max_tokens` chico el razonamiento se comía el JSON entero.
+      max_completion_tokens: 4000,
+      reasoning_effort: esfuerzoDeRazonamiento(model),
+    };
+
+    let contenido: string | null | undefined;
+    try {
+      const completion = await groq.chat.completions.create({
+        ...base,
+        response_format: { type: 'json_object' },
+      });
+      contenido = completion.choices[0]?.message?.content;
+    } catch (error) {
+      // El modo JSON de Groq valida del lado del servidor y rechaza la
+      // respuesta entera. Le damos una segunda chance en texto libre: el
+      // JSON suele estar bien, sólo viene con <think> o fences alrededor.
+      if (!esFalloDeJson(error)) throw error;
+      console.warn(`[GROQ] ${model} falló el modo JSON, reintento en texto libre.`);
+      const completion = await groq.chat.completions.create(base);
+      contenido = completion.choices[0]?.message?.content;
+    }
+
+    const json = JSON.parse(extractJsonObject(contenido || '{}'));
+    // Un objeto vacío es respuesta basura: que conModelo pruebe el siguiente.
+    if (!Array.isArray(json?.acciones)) {
+      throw Object.assign(new Error(`json_validate_failed: ${model} no devolvió acciones`), {
+        code: 'json_validate_failed',
+      });
+    }
+    return json;
   });
 }
 

@@ -10,8 +10,12 @@ import Groq from 'groq-sdk';
  * todos, se cae a cualquier otro modelo de chat disponible en vez de romperse.
  */
 
-/** Modelos que Groq lista pero que no sirven para chat/JSON. */
-const NO_SIRVE_PARA_CHAT = /whisper|orpheus|tts|prompt-guard|safeguard|embed|moderation|allam/i;
+/**
+ * Modelos que Groq lista pero que no sirven para chat/JSON.
+ * Los `compound` quedan afuera aparte: son sistemas con herramientas y no
+ * aceptan `response_format: json_object`, que es como le pedimos las acciones.
+ */
+const NO_SIRVE_PARA_CHAT = /whisper|orpheus|tts|prompt-guard|safeguard|embed|moderation|allam|compound/i;
 
 /** Orden de preferencia para texto. El primero vivo es el que se usa. */
 export const TEXTO_PREFERIDOS = [
@@ -29,6 +33,24 @@ let cache: { ids: string[]; at: number } | null = null;
 /** ¿El error es "este modelo ya no existe"? */
 export function esModeloInexistente(error: any): boolean {
   return error?.status === 404 || /model_not_found|does not exist/i.test(error?.message || '');
+}
+
+/**
+ * ¿El modelo no supo devolver el JSON que le pedimos?
+ *
+ * Groq valida el JSON del lado del servidor y tira un 400 `json_validate_failed`
+ * (muchas veces con `failed_generation` vacío) cuando el modelo se va en tokens
+ * de razonamiento y no llega a cerrar el objeto. No es un problema del pedido:
+ * es este modelo puntual, así que conviene pasar al siguiente en vez de cortar.
+ */
+export function esFalloDeJson(error: any): boolean {
+  const code = error?.error?.error?.code ?? error?.error?.code ?? error?.code;
+  return code === 'json_validate_failed' || /json_validate_failed/i.test(error?.message || '');
+}
+
+/** Errores que ameritan probar con otro modelo en vez de propagarse. */
+export function convieneProbarOtroModelo(error: any): boolean {
+  return esModeloInexistente(error) || esFalloDeJson(error);
 }
 
 /** Modelos vivos en la cuenta, cacheados en memoria del lambda. */
@@ -96,8 +118,10 @@ export async function conModelo<T>(
       try {
         return await fn(modelo);
       } catch (error: any) {
-        if (!esModeloInexistente(error)) throw error;
-        console.warn(`[GROQ] ${modelo} ya no existe, pruebo el siguiente.`);
+        if (!convieneProbarOtroModelo(error)) throw error;
+        console.warn(
+          `[GROQ] ${modelo} no sirvió (${esModeloInexistente(error) ? 'ya no existe' : 'JSON inválido'}), pruebo el siguiente.`
+        );
         ultimoError = error;
       }
     }
