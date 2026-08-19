@@ -8,14 +8,14 @@ import { usePathname } from 'next/navigation';
 const navItems = [
   { href: '/dashboard', label: 'Inicio', icon: '🏠' },
   { href: '/gastos', label: 'Gastos', icon: '💸' },
-  { href: '/agenda', label: 'Agenda', icon: '🗓️' },
-  { href: '/tarjetas', label: 'Tarjetas', icon: '💳' },
+  { href: '/ingresos', label: 'Ingresos', icon: '💰' },
+  { href: '/ahorros', label: 'Ahorros', icon: '🐷' },
 ];
 
 const moreItems = [
-  { href: '/ingresos', label: 'Ingresos', icon: '💰' },
+  { href: '/agenda', label: 'Agenda', icon: '🗓️' },
+  { href: '/tarjetas', label: 'Tarjetas', icon: '💳' },
   { href: '/prestamos', label: 'Préstamos', icon: '🏦' },
-  { href: '/ahorros', label: 'Ahorros', icon: '🐷' },
   { href: '/inversiones', label: 'Inversiones', icon: '📈' },
   { href: '/configuracion', label: 'Configuración', icon: '⚙️' },
 ];
