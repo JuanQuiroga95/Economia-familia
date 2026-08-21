@@ -29,7 +29,11 @@ export default function BudgetTracker({ status }: { status: BudgetStatus | null 
           💳 Presupuesto de {status.profileName}
         </h3>
         <span className={`text-xs font-medium px-2 py-1 rounded-full ${colors.light} ${colors.text}`}>
-          {status.currentHalf === 1 ? '1ra Quincena' : '2da Quincena'}
+          {!status.esMesActual
+            ? 'Mes completo'
+            : status.currentHalf === 1
+              ? '1ra Quincena'
+              : '2da Quincena'}
         </span>
       </div>
 

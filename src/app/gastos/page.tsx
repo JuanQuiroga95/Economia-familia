@@ -1,10 +1,10 @@
 export const dynamic = 'force-dynamic';
 
 import AppLayout from '@/components/layout/AppLayout';
+import { parseMonthYear } from '@/lib/monthParams';
 import GastosClient from './GastosClient';
 import MonthYearPicker from '@/components/ui/MonthYearPicker';
 import { getExpenses, getCategories } from '@/actions/expenses';
-import { getCurrentFinancialMonth, getArgDate } from '@/lib/dateUtils';
 import { getAccountId } from '@/lib/session';
 import { prisma } from '@/lib/prisma';
 
@@ -14,11 +14,7 @@ import { getWallets } from '@/actions/wallets';
 
 export default async function GastosPage(props: { searchParams: Promise<{ month?: string; year?: string }> }) {
   const searchParams = await props.searchParams;
-  const now = getArgDate();
-  const current = getCurrentFinancialMonth(now);
-  
-  const month = searchParams.month ? parseInt(searchParams.month) : current.month;
-  const year = searchParams.year ? parseInt(searchParams.year) : current.year;
+  const { month, year } = parseMonthYear(searchParams);
 
   const accountId = await getAccountId();
   const account = accountId ? await prisma.account.findUnique({

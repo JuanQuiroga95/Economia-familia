@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import { upsertExchangeRate, createCategory, deleteCategory, updateBudgetConfig, updateSplitMode } from '@/actions/config';
 import { generateTelegramLinkCode, unlinkTelegram } from '@/actions/telegram';
 import toast from 'react-hot-toast';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { useRouter } from 'next/navigation';
 import { CurrencyInput } from '@/components/CurrencyInput';
 import { telegramBotUrl } from '@/lib/telegram';
@@ -67,6 +68,7 @@ const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep
 import { createWallet, deleteWallet } from '@/actions/wallets';
 
 export default function ConfigClient({ exchangeRates, categories, wallets, budgetConfigs, profiles, splitMode: initialSplitMode, splitPercentA: initialPercentA, splitPercentB: initialPercentB, showSplitBalance: initialShowSplitBalance }: ConfigClientProps) {
+  const confirmar = useConfirm();
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
   const now = new Date();
@@ -122,8 +124,14 @@ export default function ConfigClient({ exchangeRates, categories, wallets, budge
     });
   };
 
-  const handleDeleteCategory = (id: string) => {
-    if (!confirm('¿Borrar categoría?')) return;
+  const handleDeleteCategory = async (id: string) => {
+    const ok = await confirmar({
+      titulo: '¿Borrar esta categoría?',
+      detalle: 'Si tiene gastos asociados no se va a poder borrar.',
+      tono: 'peligro',
+      confirmar: 'Borrar',
+    });
+    if (!ok) return;
     startTransition(async () => {
       const result = await deleteCategory(id);
       if (result.success) { toast.success('Categoría borrada'); router.refresh(); }
@@ -145,8 +153,15 @@ export default function ConfigClient({ exchangeRates, categories, wallets, budge
     });
   };
 
-  const handleDeleteWallet = (id: string) => {
-    if (!confirm('¿Borrar billetera? Se mantendrán los gastos e ingresos previos pero pasarán al balance general.')) return;
+  const handleDeleteWallet = async (id: string) => {
+    const ok = await confirmar({
+      titulo: '¿Borrar esta billetera?',
+      detalle:
+        'Los gastos e ingresos que tenía se mantienen, pero pasan a contar solo en el balance general.',
+      tono: 'peligro',
+      confirmar: 'Borrar',
+    });
+    if (!ok) return;
     startTransition(async () => {
       const result = await deleteWallet(id);
       if (result.success) { toast.success('Billetera borrada'); router.refresh(); }

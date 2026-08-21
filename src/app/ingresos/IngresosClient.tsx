@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import { useProfile } from '@/hooks/useProfile';
 import { createIncome, deleteIncome, updateIncome } from '@/actions/income';
 import toast from 'react-hot-toast';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { useRouter } from 'next/navigation';
 import confetti from 'canvas-confetti';
 import { CurrencyInput } from '@/components/CurrencyInput';
@@ -27,6 +28,7 @@ interface IngresosClientProps {
 
 export default function IngresosClient({ initialIncomes, wallets = [] }: IngresosClientProps) {
   const { activeProfile } = useProfile();
+  const confirmar = useConfirm();
   const [showForm, setShowForm] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [editingIncomeId, setEditingIncomeId] = useState<string | null>(null);
@@ -81,7 +83,16 @@ export default function IngresosClient({ initialIncomes, wallets = [] }: Ingreso
     }
 
     if (editingIncomeId) {
-      if (!window.confirm('¿Estás seguro que querés guardar estos cambios?')) return;
+      const ok = await confirmar({
+        titulo: '¿Guardar los cambios del ingreso?',
+        confirmar: 'Guardar',
+        resumen: [
+          { etiqueta: 'Monto', valor: `$${formatCurrency(parseFloat(amount) || 0)} ${currency}` },
+          { etiqueta: 'Concepto', valor: description || '(sin descripción)' },
+          { etiqueta: 'Fecha', valor: date },
+        ],
+      });
+      if (!ok) return;
     }
 
     startTransition(async () => {
@@ -136,8 +147,13 @@ export default function IngresosClient({ initialIncomes, wallets = [] }: Ingreso
     setPaymentMethod('TRANSFERENCIA');
   };
 
-  const handleDelete = (id: string) => {
-    if (!window.confirm('¿Estás seguro que querés eliminar este ingreso?')) return;
+  const handleDelete = async (id: string) => {
+    const ok = await confirmar({
+      titulo: '¿Eliminar este ingreso?',
+      tono: 'peligro',
+      confirmar: 'Eliminar',
+    });
+    if (!ok) return;
     startTransition(async () => {
       const result = await deleteIncome(id);
       if (result.success) {

@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { useProfile } from '@/hooks/useProfile';
 import { CurrencyInput } from '@/components/CurrencyInput';
 import { formatCurrency } from '@/lib/formatUtils';
@@ -111,6 +112,7 @@ export default function PrestamosClient({
   year,
 }: PrestamosClientProps) {
   const { activeProfile } = useProfile();
+  const confirmar = useConfirm();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
@@ -260,13 +262,15 @@ export default function PrestamosClient({
                     </div>
                   </div>
                   <button
-                    onClick={() => {
-                      if (
-                        !window.confirm(
-                          `¿Eliminar el préstamo "${loan.name}"? Se borran sus cuotas y su historial de pagos. Los gastos ya registrados se mantienen.`
-                        )
-                      )
-                        return;
+                    onClick={async () => {
+                      const ok = await confirmar({
+                        titulo: `¿Eliminar el préstamo "${loan.name}"?`,
+                        detalle:
+                          'Se borran sus cuotas y su historial de pagos. Los gastos ya registrados en Gastos se mantienen.',
+                        tono: 'peligro',
+                        confirmar: 'Eliminar préstamo',
+                      });
+                      if (!ok) return;
                       startTransition(async () => {
                         const res = await deleteLoan(loan.id);
                         if (res.success) {
@@ -487,15 +491,19 @@ export default function PrestamosClient({
                             ${formatCurrency(p.amount)}
                           </span>
                           <button
-                            onClick={() => {
-                              if (
-                                !window.confirm(
-                                  esTomado
-                                    ? '¿Eliminar este pago? También se borra el gasto que generó.'
-                                    : '¿Eliminar este cobro? También se borra el ingreso que generó.'
-                                )
-                              )
-                                return;
+                            onClick={async () => {
+                              const ok = await confirmar({
+                                titulo: esTomado ? '¿Eliminar este pago?' : '¿Eliminar este cobro?',
+                                detalle: esTomado
+                                  ? 'También se borra el gasto que generó, y la cuota vuelve a figurar impaga.'
+                                  : 'También se borra el ingreso que generó, y la cuota vuelve a figurar sin cobrar.',
+                                tono: 'peligro',
+                                confirmar: 'Eliminar',
+                                resumen: [
+                                  { etiqueta: 'Monto', valor: `$${formatCurrency(p.amount)}` },
+                                ],
+                              });
+                              if (!ok) return;
                               startTransition(async () => {
                                 const res = await deleteLoanPayment(p.id);
                                 if (res.success) {

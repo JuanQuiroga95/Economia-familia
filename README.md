@@ -4,7 +4,7 @@ Aplicación web de gestión financiera para Juan y Tania. Controla ingresos, gas
 
 ## 🚀 Stack Tecnológico
 
-- **Framework**: Next.js 15+ (App Router)
+- **Framework**: Next.js 16 (App Router)
 - **Frontend**: React 19, Tailwind CSS 4
 - **Base de Datos**: Neon (PostgreSQL) + Prisma ORM
 - **Autenticación**: NextAuth.js v4
@@ -171,6 +171,43 @@ npm run db:seed
 - Gestión de categorías
 - Presupuesto quincenal configurable
 
+### Administración (`/admin`)
+Solo para cuentas marcadas como admin. Lista todas las familias con sus
+integrantes, la actividad de cada una y el balance del mes, y permite cambiar
+el usuario y la contraseña de cualquier familia.
+
+Las contraseñas **no se pueden ver**: la base guarda un hash bcrypt, que es de
+una sola vía. Lo único posible es asignar una nueva.
+
+#### La cuenta `master`
+
+Es una cuenta de administración pura: **no es una familia**, no tiene perfiles
+ni movimientos, y al entrar va derecho a `/admin`. Existe aparte justamente
+para poder renombrarle el usuario o cambiarle la clave a cualquier familia sin
+que el seed la vuelva a crear en el próximo deploy.
+
+El seed la crea (y le restaura clave y permiso de admin en cada deploy, que es
+la forma de recuperar el acceso si alguien se lo saca desde el panel) **solo si
+está definida `MASTER_ADMIN_PASSWORD_HASH`**. Si no está, no se crea nada.
+
+```bash
+# Generar el hash para ponerlo en la variable de entorno
+node -e "console.log(require('bcryptjs').hashSync('TU_CONTRASEÑA', 12))"
+```
+
+| Variable | Para qué |
+|----------|----------|
+| `MASTER_ADMIN_PASSWORD_HASH` | Hash bcrypt de la clave de `master`. Sin esto la cuenta no se crea. |
+| `ADMIN_USERNAME` | Qué usuario arranca con acceso al panel (normalmente `master`). |
+
+`ADMIN_USERNAME` es solo el arranque: la primera vez que esa cuenta entra a
+`/admin` se le marca `isAdmin` en la base y ya no depende más de la variable.
+
+### Monedas
+Los movimientos se pueden cargar en ARS, USD y EUR, pero **los totales
+consolidados del dashboard son solo en ARS** (ver `src/lib/reportFilters.ts`).
+Los saldos en otras monedas se ven por separado en Ahorros e Inversiones.
+
 ## 🗃️ Estructura de la Base de Datos
 
 ```
@@ -191,6 +228,8 @@ Loan           → Préstamos tomados u otorgados
 LoanInstallment→ Plan de cuotas del préstamo
 LoanPayment    → Pagos/cobros de cuota (generan Expense o Income)
 PlannedExpense → Ítems de la agenda de gastos previstos
+InvestmentTransaction → Aportes y rescates de una inversión
+TelegramPending → Lo que el bot interpretó y espera confirmación
 ```
 
 ## 🔔 Recordatorios automáticos
@@ -210,6 +249,25 @@ curl "https://TU-APP.vercel.app/api/cron/recordatorios?secret=$CRON_SECRET"
 ```
 
 ## 🤖 Bot de Telegram
+
+**Seguridad:** definir `TELEGRAM_WEBHOOK_SECRET` y registrar el webhook con ese
+secreto. Sin eso, cualquiera que conozca la URL puede mandarle comandos al bot.
+
+La forma fácil: entrar a **`/admin`** y apretar *Registrar webhook* en la
+tarjeta del bot. La app ya tiene el token y el secreto, así que se configura
+sola y de paso muestra si Telegram está teniendo errores de entrega (un 401 ahí
+significa que el secreto no coincide).
+
+A mano, si hace falta:
+
+```bash
+curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook"   -d "url=https://TU-APP.vercel.app/api/webhook/telegram"   -d "secret_token=$TELEGRAM_WEBHOOK_SECRET"
+```
+
+**Confirmación:** lo que llega por **audio o foto** no se guarda directo. El bot
+muestra lo que entendió y espera que toques *Confirmar*, porque una
+transcripción o la lectura de una imagen pueden salir mal. El texto escrito a
+mano sí se carga en el momento, con su botón de deshacer.
 
 Además de gastos e ingresos por texto, foto o audio, el bot entiende:
 

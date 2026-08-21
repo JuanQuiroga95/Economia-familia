@@ -15,6 +15,10 @@ model Account {
 
   magicToken String? @unique
 
+  /// Cuenta con acceso al panel de administración (/admin).
+  /// El primer admin se puede marcar con la variable ADMIN_USERNAME.
+  isAdmin Boolean @default(false)
+
   profiles   Profile[]
   categories Category[]
 
@@ -48,11 +52,15 @@ model Profile {
   // Telegram integration
   telegramChatId  String?  @unique
   telegramLinkCode String?
+  /// El PIN vence: si no, un código viejo queda válido para siempre y es
+  /// forzable a fuerza de probar números de 6 cifras.
+  telegramLinkCodeExpiresAt DateTime?
 
   incomes             Income[]
   expenses            Expense[]
   savingsTransactions SavingsTransaction[]
   investments         Investment[]
+  investmentTransactions InvestmentTransaction[]
   budgetConfigs       BudgetConfig[]
   sharedFundPayments  SharedFundPayment[]
   pushSubscriptions   PushSubscription[]
@@ -455,8 +463,30 @@ model Investment {
   notes       String?
   profileId   String
   profile     Profile         @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  transactions InvestmentTransaction[]
+
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
+}
+
+/// Movimientos de una inversión. Igual que en los ahorros, sirve para que el
+/// balance del mes sepa que la plata salió de la inversión y no de la nada.
+/// El alta de la inversión NO genera un movimiento: el monto inicial se
+/// reconstruye como (amount actual + retiros).
+model InvestmentTransaction {
+  id           String      @id @default(cuid())
+  amount       Float
+  type         SavingsType
+  description  String?
+  investmentId String
+  investment   Investment  @relation(fields: [investmentId], references: [id], onDelete: Cascade)
+  profileId    String
+  profile      Profile     @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  date         DateTime    @default(now())
+  createdAt    DateTime    @default(now())
+
+  @@index([investmentId])
 }
 
 enum InvestmentType {
@@ -533,6 +563,22 @@ model TelegramDraft {
   fileIds      String[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+/// Acciones que la IA interpretó de un audio o una foto y todavía esperan
+/// que la persona las confirme desde Telegram. Nada de esto tocó la base:
+/// recién al confirmar se crean los gastos, ingresos o consumos.
+model TelegramPending {
+  id        String   @id @default(cuid())
+  chatId    String
+  profileId String
+  /// Array de ParsedAction tal cual lo devolvió el modelo.
+  actions   Json
+  /// De dónde salió: "audio" o "imagen". Solo para el mensaje de resumen.
+  origen    String   @default("audio")
+  createdAt DateTime @default(now())
+
+  @@index([chatId])
 }
 
 model PushSubscription {

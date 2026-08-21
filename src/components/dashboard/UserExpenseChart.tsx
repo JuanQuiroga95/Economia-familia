@@ -1,6 +1,6 @@
 'use client';
 import { formatCurrency } from '@/lib/formatUtils';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell } from 'recharts';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from 'recharts';
 import type { UserExpenseBreakdown } from '@/types';
 
 interface UserExpenseChartProps {

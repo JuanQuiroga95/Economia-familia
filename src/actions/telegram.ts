@@ -1,5 +1,6 @@
 'use server';
 
+import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
 import { getAccountId } from '@/lib/session';
 import { revalidatePath } from 'next/cache';
@@ -18,16 +19,21 @@ export async function generateTelegramLinkCode(profileId: string) {
     });
     if (!profile) return { success: false, error: 'Perfil no encontrado' };
 
-    // Generar PIN de 6 dígitos
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    // PIN de 6 dígitos con aleatoriedad criptográfica (Math.random no sirve
+    // para algo que da acceso a la cuenta).
+    const code = String(crypto.randomInt(100000, 1000000));
 
+    const MINUTOS_DE_VIDA = 15;
     await prisma.profile.update({
       where: { id: profileId },
-      data: { telegramLinkCode: code },
+      data: {
+        telegramLinkCode: code,
+        telegramLinkCodeExpiresAt: new Date(Date.now() + MINUTOS_DE_VIDA * 60_000),
+      },
     });
 
     revalidatePath('/configuracion');
-    return { success: true, code };
+    return { success: true, code, expiraEnMinutos: MINUTOS_DE_VIDA };
   } catch (error) {
     console.error('Error generating telegram link code:', error);
     return { success: false, error: 'Error al generar código' };
@@ -49,7 +55,7 @@ export async function unlinkTelegram(profileId: string) {
 
     await prisma.profile.update({
       where: { id: profileId },
-      data: { telegramChatId: null, telegramLinkCode: null },
+      data: { telegramChatId: null, telegramLinkCode: null, telegramLinkCodeExpiresAt: null },
     });
 
     revalidatePath('/configuracion');

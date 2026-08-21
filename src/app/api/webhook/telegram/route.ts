@@ -1,6 +1,8 @@
 import { formatCurrency } from '@/lib/formatUtils';
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { revalidatePath } from 'next/cache';
 import { getCardCategory } from '@/lib/cardCategory';
 import {
   buildInstallments,
@@ -33,18 +35,26 @@ const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
  */
 async function linkProfileWithCode(chatId: string, fromId: string, code: string) {
   const profile = await prisma.profile.findFirst({
-    where: { telegramLinkCode: code },
+    where: {
+      telegramLinkCode: code,
+      // El PIN vale 15 minutos. Los códigos viejos sin vencimiento (de antes de
+      // este cambio) se tratan como vencidos: hay que generar uno nuevo.
+      telegramLinkCodeExpiresAt: { gt: new Date() },
+    },
     include: { account: true },
   });
 
   if (!profile) {
-    await sendTelegramMessage(chatId, '❌ Código no válido o ya expirado.');
+    await sendTelegramMessage(
+      chatId,
+      '❌ Código no válido o vencido. Generá uno nuevo en Configuración → Telegram (dura 15 minutos).'
+    );
     return;
   }
 
   await prisma.profile.update({
     where: { id: profile.id },
-    data: { telegramChatId: fromId, telegramLinkCode: null },
+    data: { telegramChatId: fromId, telegramLinkCode: null, telegramLinkCodeExpiresAt: null },
   });
   await sendTelegramMessage(
     chatId,
@@ -139,7 +149,6 @@ interface ParsedAction {
 }
 
 const SYSTEM_PROMPT_BASE = (profileName: string, categories: string[], context: string) => {
-  const { getArgDate } = require('@/lib/dateUtils');
   const today = getArgDate();
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
@@ -398,7 +407,6 @@ async function getBudgetRemaining(profileId: string): Promise<string> {
     });
     if (!config) return '';
 
-    const { getArgDate } = require('@/lib/dateUtils');
     const now = getArgDate();
     const day = now.getDate();
     const year = now.getFullYear();
@@ -455,307 +463,156 @@ async function createMagicLink(accountId: string, path: string = '/gastos', appU
   return `${appUrl}/magic?token=${token}&redirect=${path}`;
 }
 
+
+
 // ============================================
-// Main webhook handler
+// Seguridad del webhook
 // ============================================
 
-export async function POST(request: NextRequest) {
-  try {
-    const appUrl = request.nextUrl.origin || process.env.NEXT_PUBLIC_APP_URL || 'https://economia-familia.vercel.app';
-    const body = await request.json();
-    
-    // Handle callback query (inline buttons)
-    if (body.callback_query) {
-      const cb = body.callback_query;
-      const chatId = cb.message.chat.id;
-      const data = cb.data; 
-      
-      if (data.startsWith('undo_expense_')) {
-        const id = data.replace('undo_expense_', '');
-        await prisma.expense.delete({ where: { id } }).catch(() => {});
-        await sendTelegramMessage(chatId, '🗑️ Gasto eliminado con éxito.');
-      } else if (data.startsWith('undo_purchase_')) {
-        const id = data.replace('undo_purchase_', '');
-        await prisma.cardPurchase.delete({ where: { id } }).catch(() => {});
-        await sendTelegramMessage(chatId, '🗑️ Consumo de tarjeta eliminado (con todas sus cuotas).');
-      } else if (data.startsWith('undo_loanpay_')) {
-        const id = data.replace('undo_loanpay_', '');
-        const payment = await prisma.loanPayment.findUnique({ where: { id } });
-        if (payment?.expenseId) {
-          await prisma.expense.delete({ where: { id: payment.expenseId } }).catch(() => {});
-        }
-        if (payment?.incomeId) {
-          await prisma.income.delete({ where: { id: payment.incomeId } }).catch(() => {});
-        }
-        await prisma.loanPayment.delete({ where: { id } }).catch(() => {});
-        await sendTelegramMessage(chatId, '🗑️ Pago de préstamo eliminado.');
-      } else if (data.startsWith('undo_planned_')) {
-        const id = data.replace('undo_planned_', '');
-        await prisma.plannedExpense.delete({ where: { id } }).catch(() => {});
-        await sendTelegramMessage(chatId, '🗑️ Lo saqué de la agenda.');
-      } else if (data.startsWith('done_planned_')) {
-        const id = data.replace('done_planned_', '');
-        const item = await prisma.plannedExpense
-          .update({ where: { id }, data: { status: 'HECHO' } })
-          .catch(() => null);
-        await sendTelegramMessage(
-          chatId,
-          item
-            ? `✅ Marqué <b>${item.title}</b> como resuelto en la agenda.\n\n<i>Ojo: esto no carga el gasto. Si querés que impacte en el balance, decime "gasté X en ${item.title}".</i>`
-            : '❌ No encontré ese ítem en la agenda.'
-        );
-      } else if (data.startsWith('undo_income_')) {
-        const id = data.replace('undo_income_', '');
-        await prisma.income.delete({ where: { id } }).catch(() => {});
-        await sendTelegramMessage(chatId, '🗑️ Ingreso eliminado con éxito.');
-      }
-      
-      await fetch(`${TELEGRAM_API}/answerCallbackQuery`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ callback_query_id: cb.id }),
-      });
-      return NextResponse.json({ ok: true });
+/**
+ * Telegram manda este header en cada update si se configuró `secret_token`
+ * en setWebhook. Sin esto, cualquiera puede POSTear al endpoint y disparar
+ * los botones de "deshacer" con el id que quiera.
+ *
+ * Si la variable no está seteada se acepta igual, para no dejar el bot mudo
+ * en un deploy viejo, pero se avisa por consola.
+ */
+function webhookAutorizado(request: NextRequest) {
+  const secreto = process.env.TELEGRAM_WEBHOOK_SECRET;
+  if (!secreto) {
+    console.warn('[TELEGRAM] Sin TELEGRAM_WEBHOOK_SECRET: el webhook acepta cualquier origen.');
+    return true;
+  }
+  return request.headers.get('x-telegram-bot-api-secret-token') === secreto;
+}
+
+/** El perfil vinculado a este chat de Telegram, o null si no está vinculado. */
+async function perfilDelChat(fromId: string) {
+  const profile = await prisma.profile.findFirst({
+    where: { telegramChatId: fromId },
+    include: { account: true },
+  });
+  return profile && profile.accountId ? profile : null;
+}
+
+// ============================================
+// Resumen para confirmar
+// ============================================
+
+const NOMBRE_TIPO: Record<string, string> = {
+  gasto: 'Gasto',
+  ingreso: 'Ingreso',
+  consumo_tarjeta: 'Consumo con tarjeta',
+  pago_tarjeta: 'Pago de tarjeta',
+  pago_prestamo: 'Cuota de préstamo',
+  agenda: 'Anotación en la agenda',
+};
+
+const ICONO_TIPO: Record<string, string> = {
+  gasto: '💸',
+  ingreso: '💰',
+  consumo_tarjeta: '💳',
+  pago_tarjeta: '🧾',
+  pago_prestamo: '🏦',
+  agenda: '🗓️',
+};
+
+/**
+ * Arma el mensaje que se muestra ANTES de guardar nada, para que la persona
+ * revise que la IA entendió bien lo que dijo o lo que decía la foto.
+ */
+function resumenDeAcciones(
+  acciones: ParsedAction[],
+  origen: string,
+  categories: { name: string; icon: string }[]
+) {
+  const fuente = origen === 'imagen' ? 'la imagen' : 'el audio';
+  const cabecera =
+    acciones.length === 1
+      ? `🤔 <b>Esto entendí de ${fuente}:</b>`
+      : `🤔 <b>Esto entendí de ${fuente}</b> (${acciones.length} movimientos):`;
+
+  const items = acciones.map((a, i) => {
+    const tipo = a.tipo || 'gasto';
+    const icono = ICONO_TIPO[tipo] || '📌';
+    const nombre = NOMBRE_TIPO[tipo] || 'Movimiento';
+    const numero = acciones.length > 1 ? `<b>${i + 1}.</b> ` : '';
+
+    const partes: string[] = [];
+    partes.push(`${numero}${icono} <b>${nombre}</b>`);
+    if (a.descripcion) partes.push(`   📝 ${a.descripcion}`);
+    if (a.monto && a.monto > 0) {
+      partes.push(`   💵 <b>$${formatCurrency(a.monto)}</b> ${a.moneda || 'ARS'}`);
+    } else if (tipo === 'agenda') {
+      partes.push('   💵 <i>sin monto estimado</i>');
+    } else if (tipo === 'pago_prestamo') {
+      partes.push('   💵 <i>el valor de la cuota</i>');
     }
 
-    const message = body.message;
-    if (!message) return NextResponse.json({ ok: true });
-
-    const chatId = message.chat.id.toString();
-    const fromId = message.from.id.toString();
-    const text = message.text || '';
-
-    // ─── /start command (con o sin payload de deep link: "/start 123456") ───
-    if (text === '/start' || text.startsWith('/start ')) {
-      const payload = text.slice('/start'.length).trim();
-
-      // Deep link desde la web: t.me/<bot>?start=<PIN>
-      if (/^\d{6}$/.test(payload)) {
-        await linkProfileWithCode(chatId, fromId, payload);
-        return NextResponse.json({ ok: true });
-      }
-
-      await sendTelegramMessage(
-        chatId,
-        '👋 ¡Hola! Soy tu bot de gastos de <b>EconoApp</b>.\n\n' +
-          '📌 Para vincular tu cuenta, andá a <b>Configuración → Telegram</b> en la app web, generá tu PIN y enviámelo acá.\n\n' +
-          '💡 Una vez vinculado, podés enviarme mensajes como:\n' +
-          '• "Gasto 4500 en el chino compartido"\n' +
-          '• "Gasto con tarjeta Naranja de 120000 en 6 cuotas en el super"\n' +
-          '• "Pagué 80000 de la tarjeta Naranja"\n' +
-          '• "Pagué la cuota del préstamo Nación"\n' +
-          '• "Anotá en la agenda el alquiler de 450 mil el día 5"\n' +
-          '• /agenda o /prestamos para ver cómo venís\n' +
-          '• "Me equivoqué, el gasto del chino era de 5000"\n' +
-          '• "Borrá el último ingreso"\n' +
-          '• "gasto" (para abrir la app sin contraseña)'
-      );
-      return NextResponse.json({ ok: true });
+    if (a.categoria) {
+      const cat = categories.find((c) => c.name.toLowerCase() === a.categoria?.toLowerCase());
+      partes.push(`   📂 ${cat ? `${cat.icon} ${cat.name}` : a.categoria}`);
     }
+    if (a.tarjeta) partes.push(`   💳 Tarjeta: ${a.tarjeta}`);
+    if (a.cuotas && a.cuotas > 1) partes.push(`   📆 ${a.cuotas} cuotas`);
+    if (a.prestamo) partes.push(`   🏦 Préstamo: ${a.prestamo}`);
+    if (a.fecha) partes.push(`   📅 ${a.fecha}`);
+    if (a.dia) partes.push(`   📅 Día ${a.dia}`);
+    if (a.tipo_gasto === 'compartido') partes.push('   👥 Compartido');
+    if (a.recurrente) partes.push('   🔁 Todos los meses');
 
-    // ─── Try to link with PIN ───
-    if (/^\d{6}$/.test(text.trim())) {
-      await linkProfileWithCode(chatId, fromId, text.trim());
-      return NextResponse.json({ ok: true });
-    }
+    return partes.join('\n');
+  });
 
-    // ─── Check if user is linked ───
-    const profile = await prisma.profile.findFirst({
-      where: { telegramChatId: fromId },
-      include: { account: true },
-    });
+  const total = acciones
+    .filter((a) => a.tipo !== 'agenda' && a.monto && a.monto > 0)
+    .reduce((acc, a) => acc + (a.monto || 0), 0);
 
-    if (!profile || !profile.accountId) {
-      await sendTelegramMessage(chatId, '⚠️ Tu cuenta no está vinculada. Generá un PIN en Configuración → Telegram.');
-      return NextResponse.json({ ok: true });
-    }
+  const pie =
+    acciones.length > 1 && total > 0
+      ? `\n\n➕ <b>Total: $${formatCurrency(total)}</b>`
+      : '';
 
-    // ─── /estado command ───
-    if (text === '/estado') {
-      const budgetInfo = await getBudgetRemaining(profile.id);
-      await sendTelegramMessage(chatId, budgetInfo ? `📊 <b>Estado de ${profile.name}</b>${budgetInfo}` : `📊 No tenés presupuesto configurado.`);
-      return NextResponse.json({ ok: true });
-    }
+  return (
+    `${cabecera}\n\n${items.join('\n\n')}${pie}\n\n` +
+    '<i>Todavía no guardé nada. Si está bien, dale Confirmar; si no, descartalo y escribimelo.</i>'
+  );
+}
 
-    // ─── /agenda command ───
-    if (text === '/agenda') {
-      const { month: aMonth, year: aYear } = getCurrentFinancialMonth(getArgDate());
-      const items = await prisma.plannedExpense.findMany({
-        where: { accountId: profile.accountId, month: aMonth, year: aYear, status: { not: 'OMITIDO' } },
-        include: { category: { select: { icon: true } } },
-        orderBy: [{ day: 'asc' }, { createdAt: 'asc' }],
-      });
+// ============================================
+// Ejecutor de acciones
+// ============================================
 
-      if (items.length === 0) {
-        await sendTelegramMessage(
-          chatId,
-          `🗓️ Tu agenda de <b>${formatPeriod(aMonth, aYear)}</b> está vacía.\n\n<i>Podés anotar cosas diciéndome "anotá en la agenda el alquiler de 450 mil el día 5".</i>`
-        );
-        return NextResponse.json({ ok: true });
-      }
+type PerfilDeBot = { id: string; name: string; accountId: string };
 
-      const pendientes = items.filter((i) => i.status === 'PENDIENTE');
-      const total = items.reduce((acc, i) => acc + (i.amount || 0), 0);
-      const falta = pendientes.reduce((acc, i) => acc + (i.amount || 0), 0);
+/**
+ * Aplica en la base las acciones que interpretó la IA.
+ *
+ * Vive aparte del handler porque se llama desde dos lados: directo cuando el
+ * mensaje es de texto, y desde el botón "Confirmar" cuando vino de un audio o
+ * de una foto (ahí la persona ve primero lo que se va a cargar).
+ */
+async function ejecutarAcciones(
+  acciones: ParsedAction[],
+  profile: PerfilDeBot,
+  chatId: string,
+  appUrl: string,
+  textoOriginal: string
+) {
+  const messageText = textoOriginal;
 
-      const lista = items
-        .map((i) => {
-          const check = i.status === 'HECHO' ? '✅' : '⬜';
-          const cuando = i.day ? ` (día ${i.day})` : '';
-          const monto = i.amount ? ` — $${formatCurrency(i.amount)}` : '';
-          return `${check} ${i.category?.icon || '📌'} ${i.title}${cuando}${monto}`;
-        })
-        .join('\n');
+  // Se vuelven a leer acá y no se reciben por parámetro porque esta función
+  // también corre desde el botón "Confirmar", que llega en otro request.
+  const [categories, cards, loans] = await Promise.all([
+    prisma.category.findMany({ where: { accountId: profile.accountId } }),
+    prisma.creditCard.findMany({ where: { profile: { accountId: profile.accountId } } }),
+    prisma.loan.findMany({
+      where: { profile: { accountId: profile.accountId }, isActive: true },
+      include: { schedule: true, payments: true },
+    }),
+  ]);
 
-      const agendaLink = await createMagicLink(profile.accountId, '/agenda', appUrl);
-      await sendTelegramMessage(
-        chatId,
-        `🗓️ <b>Agenda de ${formatPeriod(aMonth, aYear)}</b>\n\n${lista}\n\n` +
-          `💰 Previsto: <b>$${formatCurrency(total)}</b>\n` +
-          `⏳ Falta: <b>$${formatCurrency(falta)}</b> (${pendientes.length} pendiente${pendientes.length === 1 ? '' : 's'})`,
-        { inline_keyboard: [[{ text: '🗓️ Abrir agenda', url: agendaLink }]] }
-      );
-      return NextResponse.json({ ok: true });
-    }
-
-    // ─── /prestamos command ───
-    if (text === '/prestamos') {
-      const { month: lMonth, year: lYear } = getCurrentFinancialMonth(getArgDate());
-      const misLoans = await prisma.loan.findMany({
-        where: { profile: { accountId: profile.accountId }, isActive: true },
-        include: { schedule: true, payments: true },
-      });
-
-      if (misLoans.length === 0) {
-        await sendTelegramMessage(chatId, '🏦 Todavía no cargaste ningún préstamo en la app.');
-        return NextResponse.json({ ok: true });
-      }
-
-      const lista = misLoans
-        .map((l) => {
-          const prog = loanProgress(l.schedule, l.payments);
-          const next = nextPendingInstallment(l.schedule, l.payments, lMonth, lYear);
-          const icono = l.kind === 'TOMADO' ? '🏦' : '🤝';
-          const detalle = next
-            ? `próxima: cuota ${next.number} de ${formatPeriod(next.month, next.year)} ($${formatCurrency(next.amount)})`
-            : 'sin cuotas pendientes';
-          return (
-            `${icono} <b>${l.name}</b>\n` +
-            `   ${prog.paidInstallments}/${prog.totalInstallments} cuotas · falta <b>$${formatCurrency(prog.remaining)}</b>\n` +
-            `   ${detalle}`
-          );
-        })
-        .join('\n\n');
-
-      const loansLink = await createMagicLink(profile.accountId, '/prestamos', appUrl);
-      await sendTelegramMessage(chatId, `🏦 <b>Tus préstamos</b>\n\n${lista}`, {
-        inline_keyboard: [[{ text: '🏦 Ver préstamos', url: loansLink }]],
-      });
-      return NextResponse.json({ ok: true });
-    }
-
-    let messageText = (message.text || message.caption || '').trim();
-
-    // ─── Process Photos (Draft logic) ───
-    if (message.photo) {
-      const photo = message.photo[message.photo.length - 1]; // highest res
-      let draft = await prisma.telegramDraft.findUnique({ where: { chatId } });
-      if (draft) {
-        await prisma.telegramDraft.update({
-          where: { chatId },
-          data: { fileIds: { push: photo.file_id } }
-        });
-      } else {
-        await prisma.telegramDraft.create({
-          data: { chatId, fileIds: [photo.file_id] }
-        });
-      }
-      
-      if (messageText.length === 0) {
-        await sendTelegramMessage(chatId, '📸 <i>Imagen guardada en borrador.</i>\n\nPodés mandarme <b>más fotos</b> si querés agruparlas, o escribí <b>"procesar"</b> para unirlas todas en un solo gasto.');
-        return NextResponse.json({ ok: true });
-      }
-    }
-
-    if (message.voice) {
-      try {
-        await sendTelegramMessage(chatId, '🎙️ Procesando audio...');
-        const audioBuffer = await downloadTelegramFile(message.voice.file_id);
-        messageText = await transcribeAudio(audioBuffer);
-      } catch (error) {
-        await sendTelegramMessage(chatId, '❌ No pude procesar el audio.');
-        return NextResponse.json({ ok: true });
-      }
-    }
-
-    // ─── Process Draft ───
-    const isProcesar = messageText.toLowerCase().replace(/[^a-z]/g, '') === 'procesar';
-    let fileIdsToProcess: string[] = [];
-    let customInstruction = '';
-    
-    const draft = await prisma.telegramDraft.findUnique({ where: { chatId } });
-    if (draft && draft.fileIds.length > 0) {
-      // Si hay un draft, cualquier texto que llegue (o si dice procesar) gatilla el procesamiento.
-      if (isProcesar || messageText.length > 0) {
-        fileIdsToProcess = draft.fileIds;
-        customInstruction = isProcesar ? '' : messageText;
-        await prisma.telegramDraft.delete({ where: { chatId } });
-        await sendTelegramMessage(chatId, `🔍 Analizando ${fileIdsToProcess.length} imagen/es con IA Visual...`);
-      } else if (!message.photo) {
-        // No hay foto ni texto nuevo, no hacemos nada
-        return NextResponse.json({ ok: true });
-      }
-    } else if (messageText.length === 0 && !message.photo) {
-       return NextResponse.json({ ok: true });
-    }
-
-    const [categories, wallets, cards, loans] = await Promise.all([
-      prisma.category.findMany({ where: { accountId: profile.accountId } }),
-      prisma.wallet.findMany({ where: { accountId: profile.accountId } }),
-      prisma.creditCard.findMany({ where: { profile: { accountId: profile.accountId } } }),
-      prisma.loan.findMany({
-        where: { profile: { accountId: profile.accountId }, isActive: true },
-        include: { schedule: true, payments: true },
-      }),
-    ]);
-    const categoryNames = categories.map((c) => c.name);
-
-    const recentExpenses = await prisma.expense.findMany({ where: { profile: { accountId: profile.accountId } }, orderBy: { createdAt: 'desc' }, take: 10 });
-    const recentIncomes = await prisma.income.findMany({ where: { profile: { accountId: profile.accountId } }, orderBy: { createdAt: 'desc' }, take: 5 });
-    
-    const contextStr = [
-      ...recentExpenses.map(e => `[Gasto] ID: ${e.id}, Monto: ${e.amount}, Desc: ${e.description}`),
-      ...recentIncomes.map(i => `[Ingreso] ID: ${i.id}, Monto: ${i.amount}, Desc: ${i.description}`)
-    ].join('\n');
-
-    // ─── Parse with AI ───
-    let parsed: { acciones: ParsedAction[] };
-    try {
-      if (fileIdsToProcess.length > 0) {
-        parsed = await parseImagesWithAI(fileIdsToProcess, profile.name, categoryNames, wallets, contextStr, customInstruction, cards, loans);
-      } else {
-        parsed = await parseTransactionWithAI(messageText, profile.name, categoryNames, wallets, contextStr, cards, loans);
-      }
-    } catch (error: any) {
-      console.error('Parse Error:', error);
-      let detalle = 'No se pudo consultar el estado de los modelos.';
-      try {
-        const estado = await estadoModelos();
-        detalle = `Modelo en uso: ${estado.textoEnUso}\nModelos activos en Groq: ${estado.todos.join(', ')}`;
-      } catch (e) {
-        console.error('Error fetching models:', e);
-      }
-      await sendTelegramMessage(chatId, `❌ Falló la IA.\nError: ${error.message || 'Desconocido'}\n${detalle}`);
-      return NextResponse.json({ ok: true });
-    }
-
-    // ─── Execute Actions ───
-    if (!parsed.acciones || !Array.isArray(parsed.acciones) || parsed.acciones.length === 0) {
-      await sendTelegramMessage(chatId, '❌ No encontré ninguna acción válida.');
-      return NextResponse.json({ ok: true });
-    }
-
-    for (const action of parsed.acciones) {
+  for (const action of acciones) {
       // ─── Link Action ───
       if (action.accion === 'link') {
         const textLower = messageText.toLowerCase();
@@ -803,7 +660,7 @@ export async function POST(request: NextRequest) {
           await prisma.income.delete({ where: { id: action.entidad_id } }).catch(() => {});
           await sendTelegramMessage(chatId, '🗑️ Registro eliminado correctamente.');
           continue;
-        } catch (e) {
+        } catch {
           await sendTelegramMessage(chatId, '❌ Error al eliminar.');
           continue;
         }
@@ -836,7 +693,7 @@ export async function POST(request: NextRequest) {
             await sendTelegramMessage(chatId, `✏️ <b>Gasto modificado:</b>\nNuevo monto: $${formatCurrency(action.monto || exp.amount)}\nDesc: ${action.descripcion || exp.description}`);
             updated = true;
           }
-        } catch (e) {}
+        } catch {}
 
         if (!updated) {
           try {
@@ -853,7 +710,7 @@ export async function POST(request: NextRequest) {
               await sendTelegramMessage(chatId, `✏️ <b>Ingreso modificado:</b>\nNuevo monto: $${formatCurrency(action.monto || inc.amount)}\nDesc: ${action.descripcion || inc.description}`);
               updated = true;
             }
-          } catch (e) {}
+          } catch {}
         }
 
         if (!updated) await sendTelegramMessage(chatId, '❌ No se pudo modificar. ¿Seguro que es un registro reciente?');
@@ -870,10 +727,17 @@ export async function POST(request: NextRequest) {
 
       const matchedCategory = categories.find((c) => c.name.toLowerCase() === action.categoria?.toLowerCase()) || categories.find((c) => c.name === 'Otros') || categories[0];
       
-      let targetProfile = profile;
+      let targetProfile: PerfilDeBot = profile;
       if (action.persona && action.persona.toLowerCase() !== profile.name.toLowerCase()) {
         const otherProfile = await prisma.profile.findFirst({ where: { accountId: profile.accountId, name: { contains: action.persona, mode: 'insensitive' } } });
-        if (otherProfile) targetProfile = { ...otherProfile, account: profile.account, accountId: profile.accountId };
+        // Solo se acepta un perfil de la misma cuenta.
+        if (otherProfile) {
+          targetProfile = {
+            id: otherProfile.id,
+            name: otherProfile.name,
+            accountId: profile.accountId,
+          };
+        }
       }
 
       const today = getArgDate();
@@ -1178,15 +1042,429 @@ export async function POST(request: NextRequest) {
           { inline_keyboard: [[{ text: '🗑️ Deshacer', callback_data: `undo_expense_${exp.id}` }, { text: '✏️ Editar en App', url: link }]] }
         );
       }
-    } // End of for (const action of parsed.acciones)
+  }
 
-    const { revalidatePath } = require('next/cache');
-    revalidatePath('/gastos');
-    revalidatePath('/ingresos');
-    revalidatePath('/tarjetas');
-    revalidatePath('/prestamos');
-    revalidatePath('/agenda');
-    revalidatePath('/dashboard');
+  revalidatePath('/gastos');
+  revalidatePath('/ingresos');
+  revalidatePath('/tarjetas');
+  revalidatePath('/prestamos');
+  revalidatePath('/agenda');
+  revalidatePath('/dashboard');
+}
+
+// ============================================
+// Main webhook handler
+// ============================================
+
+export async function POST(request: NextRequest) {
+  try {
+    // Solo Telegram puede hablar con este endpoint. Sin esto, un POST armado a
+    // mano podía borrar cualquier gasto pasando su id en `callback_query`.
+    if (!webhookAutorizado(request)) {
+      return NextResponse.json({ error: 'forbidden' }, { status: 401 });
+    }
+
+    const appUrl = request.nextUrl.origin || process.env.NEXT_PUBLIC_APP_URL || 'https://economia-familia.vercel.app';
+    const body = await request.json();
+
+    // Handle callback query (inline buttons)
+    if (body.callback_query) {
+      const cb = body.callback_query;
+      const chatId = cb.message.chat.id;
+      const data: string = cb.data;
+
+      const responder = async (texto: string) => {
+        await sendTelegramMessage(chatId, texto);
+      };
+      const cerrar = async () => {
+        await fetch(`${TELEGRAM_API}/answerCallbackQuery`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ callback_query_id: cb.id }),
+        });
+        return NextResponse.json({ ok: true });
+      };
+
+      // Cada botón se resuelve contra el perfil del chat que lo apretó: nadie
+      // puede tocar los movimientos de otra familia adivinando un id.
+      const quien = await perfilDelChat(String(cb.from?.id ?? ''));
+      if (!quien) {
+        await responder('⚠️ Tu cuenta no está vinculada. Generá un PIN en Configuración → Telegram.');
+        return cerrar();
+      }
+      const cuenta = quien.accountId!;
+
+      if (data.startsWith('confirmar_')) {
+        const id = data.replace('confirmar_', '');
+        const pendiente = await prisma.telegramPending.findFirst({
+          where: { id, profileId: quien.id },
+        });
+        if (!pendiente) {
+          await responder('❌ Eso ya se confirmó o se descartó.');
+          return cerrar();
+        }
+        await prisma.telegramPending.delete({ where: { id } }).catch(() => {});
+        await responder('👌 Dale, lo cargo...');
+        await ejecutarAcciones(
+          pendiente.actions as unknown as ParsedAction[],
+          { id: quien.id, name: quien.name, accountId: cuenta },
+          String(chatId),
+          appUrl,
+          ''
+        );
+        return cerrar();
+      }
+
+      if (data.startsWith('descartar_')) {
+        const id = data.replace('descartar_', '');
+        await prisma.telegramPending
+          .deleteMany({ where: { id, profileId: quien.id } })
+          .catch(() => {});
+        await responder('🗑️ Listo, no cargué nada. Escribime de nuevo cómo es y lo hacemos bien.');
+        return cerrar();
+      }
+
+      if (data.startsWith('undo_expense_')) {
+        const id = data.replace('undo_expense_', '');
+        const borrado = await prisma.expense
+          .deleteMany({ where: { id, profile: { accountId: cuenta } } })
+          .catch(() => ({ count: 0 }));
+        await responder(borrado.count ? '🗑️ Gasto eliminado con éxito.' : '❌ No encontré ese gasto.');
+      } else if (data.startsWith('undo_purchase_')) {
+        const id = data.replace('undo_purchase_', '');
+        const borrado = await prisma.cardPurchase
+          .deleteMany({ where: { id, card: { profile: { accountId: cuenta } } } })
+          .catch(() => ({ count: 0 }));
+        await responder(
+          borrado.count
+            ? '🗑️ Consumo de tarjeta eliminado (con todas sus cuotas).'
+            : '❌ No encontré ese consumo.'
+        );
+      } else if (data.startsWith('undo_loanpay_')) {
+        const id = data.replace('undo_loanpay_', '');
+        const payment = await prisma.loanPayment.findFirst({
+          where: { id, loan: { profile: { accountId: cuenta } } },
+        });
+        if (!payment) {
+          await responder('❌ No encontré ese pago.');
+        } else {
+          if (payment.expenseId) {
+            await prisma.expense.delete({ where: { id: payment.expenseId } }).catch(() => {});
+          }
+          if (payment.incomeId) {
+            await prisma.income.delete({ where: { id: payment.incomeId } }).catch(() => {});
+          }
+          await prisma.loanPayment.delete({ where: { id } }).catch(() => {});
+          await responder('🗑️ Pago de préstamo eliminado.');
+        }
+      } else if (data.startsWith('undo_planned_')) {
+        const id = data.replace('undo_planned_', '');
+        const borrado = await prisma.plannedExpense
+          .deleteMany({ where: { id, accountId: cuenta } })
+          .catch(() => ({ count: 0 }));
+        await responder(borrado.count ? '🗑️ Lo saqué de la agenda.' : '❌ No encontré ese ítem.');
+      } else if (data.startsWith('done_planned_')) {
+        const id = data.replace('done_planned_', '');
+        const item = await prisma.plannedExpense.findFirst({ where: { id, accountId: cuenta } });
+        if (!item) {
+          await responder('❌ No encontré ese ítem en la agenda.');
+        } else {
+          await prisma.plannedExpense.update({ where: { id }, data: { status: 'HECHO' } });
+          await responder(
+            `✅ Marqué <b>${item.title}</b> como resuelto en la agenda.\n\n<i>Ojo: esto no carga el gasto. Si querés que impacte en el balance, decime "gasté X en ${item.title}".</i>`
+          );
+        }
+      } else if (data.startsWith('undo_income_')) {
+        const id = data.replace('undo_income_', '');
+        const borrado = await prisma.income
+          .deleteMany({ where: { id, profile: { accountId: cuenta } } })
+          .catch(() => ({ count: 0 }));
+        await responder(borrado.count ? '🗑️ Ingreso eliminado con éxito.' : '❌ No encontré ese ingreso.');
+      }
+
+      return cerrar();
+    }
+
+
+    const message = body.message;
+    if (!message) return NextResponse.json({ ok: true });
+
+    const chatId = message.chat.id.toString();
+    const fromId = message.from.id.toString();
+    const text = message.text || '';
+
+    // ─── /start command (con o sin payload de deep link: "/start 123456") ───
+    if (text === '/start' || text.startsWith('/start ')) {
+      const payload = text.slice('/start'.length).trim();
+
+      // Deep link desde la web: t.me/<bot>?start=<PIN>
+      if (/^\d{6}$/.test(payload)) {
+        await linkProfileWithCode(chatId, fromId, payload);
+        return NextResponse.json({ ok: true });
+      }
+
+      await sendTelegramMessage(
+        chatId,
+        '👋 ¡Hola! Soy tu bot de gastos de <b>EconoApp</b>.\n\n' +
+          '📌 Para vincular tu cuenta, andá a <b>Configuración → Telegram</b> en la app web, generá tu PIN y enviámelo acá.\n\n' +
+          '💡 Una vez vinculado, podés enviarme mensajes como:\n' +
+          '• "Gasto 4500 en el chino compartido"\n' +
+          '• "Gasto con tarjeta Naranja de 120000 en 6 cuotas en el super"\n' +
+          '• "Pagué 80000 de la tarjeta Naranja"\n' +
+          '• "Pagué la cuota del préstamo Nación"\n' +
+          '• "Anotá en la agenda el alquiler de 450 mil el día 5"\n' +
+          '• /agenda o /prestamos para ver cómo venís\n' +
+          '• "Me equivoqué, el gasto del chino era de 5000"\n' +
+          '• "Borrá el último ingreso"\n' +
+          '• "gasto" (para abrir la app sin contraseña)'
+      );
+      return NextResponse.json({ ok: true });
+    }
+
+    // ─── Try to link with PIN ───
+    if (/^\d{6}$/.test(text.trim())) {
+      await linkProfileWithCode(chatId, fromId, text.trim());
+      return NextResponse.json({ ok: true });
+    }
+
+    // ─── Check if user is linked ───
+    const profile = await prisma.profile.findFirst({
+      where: { telegramChatId: fromId },
+      include: { account: true },
+    });
+
+    if (!profile || !profile.accountId) {
+      await sendTelegramMessage(chatId, '⚠️ Tu cuenta no está vinculada. Generá un PIN en Configuración → Telegram.');
+      return NextResponse.json({ ok: true });
+    }
+
+    // ─── /estado command ───
+    if (text === '/estado') {
+      const budgetInfo = await getBudgetRemaining(profile.id);
+      await sendTelegramMessage(chatId, budgetInfo ? `📊 <b>Estado de ${profile.name}</b>${budgetInfo}` : `📊 No tenés presupuesto configurado.`);
+      return NextResponse.json({ ok: true });
+    }
+
+    // ─── /agenda command ───
+    if (text === '/agenda') {
+      const { month: aMonth, year: aYear } = getCurrentFinancialMonth(getArgDate());
+      const items = await prisma.plannedExpense.findMany({
+        where: { accountId: profile.accountId, month: aMonth, year: aYear, status: { not: 'OMITIDO' } },
+        include: { category: { select: { icon: true } } },
+        orderBy: [{ day: 'asc' }, { createdAt: 'asc' }],
+      });
+
+      if (items.length === 0) {
+        await sendTelegramMessage(
+          chatId,
+          `🗓️ Tu agenda de <b>${formatPeriod(aMonth, aYear)}</b> está vacía.\n\n<i>Podés anotar cosas diciéndome "anotá en la agenda el alquiler de 450 mil el día 5".</i>`
+        );
+        return NextResponse.json({ ok: true });
+      }
+
+      const pendientes = items.filter((i) => i.status === 'PENDIENTE');
+      const total = items.reduce((acc, i) => acc + (i.amount || 0), 0);
+      const falta = pendientes.reduce((acc, i) => acc + (i.amount || 0), 0);
+
+      const lista = items
+        .map((i) => {
+          const check = i.status === 'HECHO' ? '✅' : '⬜';
+          const cuando = i.day ? ` (día ${i.day})` : '';
+          const monto = i.amount ? ` — $${formatCurrency(i.amount)}` : '';
+          return `${check} ${i.category?.icon || '📌'} ${i.title}${cuando}${monto}`;
+        })
+        .join('\n');
+
+      const agendaLink = await createMagicLink(profile.accountId, '/agenda', appUrl);
+      await sendTelegramMessage(
+        chatId,
+        `🗓️ <b>Agenda de ${formatPeriod(aMonth, aYear)}</b>\n\n${lista}\n\n` +
+          `💰 Previsto: <b>$${formatCurrency(total)}</b>\n` +
+          `⏳ Falta: <b>$${formatCurrency(falta)}</b> (${pendientes.length} pendiente${pendientes.length === 1 ? '' : 's'})`,
+        { inline_keyboard: [[{ text: '🗓️ Abrir agenda', url: agendaLink }]] }
+      );
+      return NextResponse.json({ ok: true });
+    }
+
+    // ─── /prestamos command ───
+    if (text === '/prestamos') {
+      const { month: lMonth, year: lYear } = getCurrentFinancialMonth(getArgDate());
+      const misLoans = await prisma.loan.findMany({
+        where: { profile: { accountId: profile.accountId }, isActive: true },
+        include: { schedule: true, payments: true },
+      });
+
+      if (misLoans.length === 0) {
+        await sendTelegramMessage(chatId, '🏦 Todavía no cargaste ningún préstamo en la app.');
+        return NextResponse.json({ ok: true });
+      }
+
+      const lista = misLoans
+        .map((l) => {
+          const prog = loanProgress(l.schedule, l.payments);
+          const next = nextPendingInstallment(l.schedule, l.payments, lMonth, lYear);
+          const icono = l.kind === 'TOMADO' ? '🏦' : '🤝';
+          const detalle = next
+            ? `próxima: cuota ${next.number} de ${formatPeriod(next.month, next.year)} ($${formatCurrency(next.amount)})`
+            : 'sin cuotas pendientes';
+          return (
+            `${icono} <b>${l.name}</b>\n` +
+            `   ${prog.paidInstallments}/${prog.totalInstallments} cuotas · falta <b>$${formatCurrency(prog.remaining)}</b>\n` +
+            `   ${detalle}`
+          );
+        })
+        .join('\n\n');
+
+      const loansLink = await createMagicLink(profile.accountId, '/prestamos', appUrl);
+      await sendTelegramMessage(chatId, `🏦 <b>Tus préstamos</b>\n\n${lista}`, {
+        inline_keyboard: [[{ text: '🏦 Ver préstamos', url: loansLink }]],
+      });
+      return NextResponse.json({ ok: true });
+    }
+
+    let messageText = (message.text || message.caption || '').trim();
+
+    // ─── Process Photos (Draft logic) ───
+    if (message.photo) {
+      const photo = message.photo[message.photo.length - 1]; // highest res
+      const draft = await prisma.telegramDraft.findUnique({ where: { chatId } });
+      if (draft) {
+        await prisma.telegramDraft.update({
+          where: { chatId },
+          data: { fileIds: { push: photo.file_id } }
+        });
+      } else {
+        await prisma.telegramDraft.create({
+          data: { chatId, fileIds: [photo.file_id] }
+        });
+      }
+      
+      if (messageText.length === 0) {
+        await sendTelegramMessage(chatId, '📸 <i>Imagen guardada en borrador.</i>\n\nPodés mandarme <b>más fotos</b> si querés agruparlas, o escribí <b>"procesar"</b> para unirlas todas en un solo gasto.');
+        return NextResponse.json({ ok: true });
+      }
+    }
+
+    // De dónde salió el mensaje: si vino de un audio o de una foto, después se
+    // pide confirmación antes de guardar (transcribir o leer una imagen puede
+    // salir mal). El texto escrito a mano se carga directo.
+    let origenIA: 'audio' | 'imagen' | null = null;
+
+    if (message.voice) {
+      try {
+        await sendTelegramMessage(chatId, '🎙️ Procesando audio...');
+        const audioBuffer = await downloadTelegramFile(message.voice.file_id);
+        messageText = await transcribeAudio(audioBuffer);
+        origenIA = 'audio';
+      } catch {
+        await sendTelegramMessage(chatId, '❌ No pude procesar el audio.');
+        return NextResponse.json({ ok: true });
+      }
+    }
+
+    // ─── Process Draft ───
+    const isProcesar = messageText.toLowerCase().replace(/[^a-z]/g, '') === 'procesar';
+    let fileIdsToProcess: string[] = [];
+    let customInstruction = '';
+    
+    const draft = await prisma.telegramDraft.findUnique({ where: { chatId } });
+    if (draft && draft.fileIds.length > 0) {
+      // Si hay un draft, cualquier texto que llegue (o si dice procesar) gatilla el procesamiento.
+      if (isProcesar || messageText.length > 0) {
+        fileIdsToProcess = draft.fileIds;
+        customInstruction = isProcesar ? '' : messageText;
+        origenIA = 'imagen';
+        await prisma.telegramDraft.delete({ where: { chatId } });
+        await sendTelegramMessage(chatId, `🔍 Analizando ${fileIdsToProcess.length} imagen/es con IA Visual...`);
+      } else if (!message.photo) {
+        // No hay foto ni texto nuevo, no hacemos nada
+        return NextResponse.json({ ok: true });
+      }
+    } else if (messageText.length === 0 && !message.photo) {
+       return NextResponse.json({ ok: true });
+    }
+
+    const [categories, wallets, cards, loans] = await Promise.all([
+      prisma.category.findMany({ where: { accountId: profile.accountId } }),
+      prisma.wallet.findMany({ where: { accountId: profile.accountId } }),
+      prisma.creditCard.findMany({ where: { profile: { accountId: profile.accountId } } }),
+      prisma.loan.findMany({
+        where: { profile: { accountId: profile.accountId }, isActive: true },
+        include: { schedule: true, payments: true },
+      }),
+    ]);
+    const categoryNames = categories.map((c) => c.name);
+
+    const recentExpenses = await prisma.expense.findMany({ where: { profile: { accountId: profile.accountId } }, orderBy: { createdAt: 'desc' }, take: 10 });
+    const recentIncomes = await prisma.income.findMany({ where: { profile: { accountId: profile.accountId } }, orderBy: { createdAt: 'desc' }, take: 5 });
+    
+    const contextStr = [
+      ...recentExpenses.map(e => `[Gasto] ID: ${e.id}, Monto: ${e.amount}, Desc: ${e.description}`),
+      ...recentIncomes.map(i => `[Ingreso] ID: ${i.id}, Monto: ${i.amount}, Desc: ${i.description}`)
+    ].join('\n');
+
+    // ─── Parse with AI ───
+    let parsed: { acciones: ParsedAction[] };
+    try {
+      if (fileIdsToProcess.length > 0) {
+        parsed = await parseImagesWithAI(fileIdsToProcess, profile.name, categoryNames, wallets, contextStr, customInstruction, cards, loans);
+      } else {
+        parsed = await parseTransactionWithAI(messageText, profile.name, categoryNames, wallets, contextStr, cards, loans);
+      }
+    } catch (error: any) {
+      console.error('Parse Error:', error);
+      let detalle = 'No se pudo consultar el estado de los modelos.';
+      try {
+        const estado = await estadoModelos();
+        detalle = `Modelo en uso: ${estado.textoEnUso}\nModelos activos en Groq: ${estado.todos.join(', ')}`;
+      } catch (e) {
+        console.error('Error fetching models:', e);
+      }
+      await sendTelegramMessage(chatId, `❌ Falló la IA.\nError: ${error.message || 'Desconocido'}\n${detalle}`);
+      return NextResponse.json({ ok: true });
+    }
+
+    if (!parsed.acciones || !Array.isArray(parsed.acciones) || parsed.acciones.length === 0) {
+      await sendTelegramMessage(chatId, '❌ No encontré ninguna acción válida.');
+      return NextResponse.json({ ok: true });
+    }
+
+    const perfilBot: PerfilDeBot = {
+      id: profile.id,
+      name: profile.name,
+      accountId: profile.accountId,
+    };
+
+    // ─── Audio y fotos: se confirma antes de tocar la base ───
+    // Transcribir o leer una imagen puede salir mal, así que primero se muestra
+    // lo interpretado y recién con "Confirmar" se carga. El texto escrito a mano
+    // se carga directo: ya lo estás viendo, y queda el botón de deshacer.
+    if (origenIA) {
+      const pendiente = await prisma.telegramPending.create({
+        data: {
+          chatId,
+          profileId: profile.id,
+          actions: parsed.acciones as unknown as Prisma.InputJsonValue,
+          origen: origenIA,
+        },
+      });
+
+      await sendTelegramMessage(
+        chatId,
+        resumenDeAcciones(parsed.acciones, origenIA, categories),
+        {
+          inline_keyboard: [
+            [
+              { text: '✅ Confirmar', callback_data: `confirmar_${pendiente.id}` },
+              { text: '❌ Descartar', callback_data: `descartar_${pendiente.id}` },
+            ],
+          ],
+        }
+      );
+      return NextResponse.json({ ok: true });
+    }
+
+    await ejecutarAcciones(parsed.acciones, perfilBot, chatId, appUrl, messageText);
 
     return NextResponse.json({ ok: true });
   } catch (error) {

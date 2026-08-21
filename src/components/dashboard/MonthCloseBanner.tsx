@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { carryOverBalance, sendBalanceToSavings, ignoreBalance } from '@/actions/monthClose';
 import toast from 'react-hot-toast';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { SavingsGoal } from '@prisma/client';
 
 type MonthCloseBannerProps = {
@@ -12,6 +13,7 @@ type MonthCloseBannerProps = {
 };
 
 export default function MonthCloseBanner({ prevStatus, savingsGoals }: MonthCloseBannerProps) {
+  const confirmar = useConfirm();
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [selectedGoal, setSelectedGoal] = useState('');
@@ -30,7 +32,12 @@ export default function MonthCloseBanner({ prevStatus, savingsGoals }: MonthClos
   };
 
   const handleIgnore = async () => {
-    if (!confirm('¿Estás seguro de que quieres ignorar este saldo? No sumará al mes actual.')) return;
+    const ok = await confirmar({
+      titulo: '¿Ignorar este saldo?',
+      detalle: 'No se suma al mes actual ni va a ahorros, y el aviso no vuelve a aparecer.',
+      confirmar: 'Ignorar saldo',
+    });
+    if (!ok) return;
     setLoading(true);
     const res = await ignoreBalance(prevStatus.month, prevStatus.year);
     setLoading(false);

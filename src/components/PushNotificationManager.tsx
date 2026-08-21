@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useProfile } from '@/hooks/useProfile';
 
@@ -18,18 +18,22 @@ function urlBase64ToUint8Array(base64String: string) {
 export default function PushNotificationManager() {
   const { status } = useSession();
   const { activeProfile } = useProfile();
-  const [isSupported, setIsSupported] = useState(false);
+  // El soporte del navegador no cambia durante la sesión: se calcula una vez
+  // en el primer render en lugar de con un efecto que dispara otro render.
+  const [isSupported] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      'serviceWorker' in navigator &&
+      'PushManager' in window &&
+      'Notification' in window
+  );
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isHidden, setIsHidden] = useState(false);
-  const [registered, setRegistered] = useState(false);
-
-  // Check support
-  useEffect(() => {
-    if ('serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window) {
-      setIsSupported(true);
-    }
-  }, []);
+  // A qué perfil ya se le sincronizó esta suscripción. Es un ref y no un
+  // state porque no cambia nada de lo que se dibuja, y como state obligaba a
+  // un efecto que reseteaba el flag en cada cambio de perfil.
+  const perfilSincronizado = useRef<string | null>(null);
 
   // Register SW and check existing subscription
   useEffect(() => {
@@ -47,7 +51,7 @@ export default function PushNotificationManager() {
 
   // Whenever we have a subscription + activeProfile + authenticated, sync with backend
   const syncSubscription = useCallback(async (sub: PushSubscription) => {
-    if (!activeProfile?.id || registered) return;
+    if (!activeProfile?.id || perfilSincronizado.current === activeProfile.id) return;
     
     try {
       const subJson = sub.toJSON();
@@ -64,23 +68,18 @@ export default function PushNotificationManager() {
       const data = await res.json();
       console.log('[PushManager] Subscription synced:', data);
       if (data.success) {
-        setRegistered(true);
+        perfilSincronizado.current = activeProfile.id;
       }
     } catch (err) {
       console.error('[PushManager] Failed to sync subscription:', err);
     }
-  }, [activeProfile?.id, registered]);
+  }, [activeProfile?.id]);
 
   useEffect(() => {
     if (status === 'authenticated' && subscription && activeProfile?.id) {
       syncSubscription(subscription);
     }
   }, [status, subscription, activeProfile?.id, syncSubscription]);
-
-  // Re-sync when active profile changes
-  useEffect(() => {
-    setRegistered(false);
-  }, [activeProfile?.id]);
 
   async function subscribeToPush() {
     setIsLoading(true);
@@ -129,7 +128,7 @@ export default function PushNotificationManager() {
       const data = await res.json();
 
       if (data.success) {
-        setRegistered(true);
+        perfilSincronizado.current = activeProfile?.id ?? null;
         alert(`✅ Notificaciones activadas para ${data.profileName || activeProfile?.name || 'tu perfil'}`);
       } else {
         throw new Error(data.error || 'Error desconocido');

@@ -30,6 +30,7 @@ export const authOptions: NextAuthOptions = {
               id: account.id,
               name: account.label,
               email: account.username,
+              isAdmin: account.isAdmin,
             };
           } catch (error) {
             console.error('Magic link error:', error);
@@ -63,6 +64,7 @@ export const authOptions: NextAuthOptions = {
             id: account.id,
             name: account.label,
             email: account.username, // NextAuth requires email field, we use username
+            isAdmin: account.isAdmin,
           };
         } catch (error) {
           console.error('Auth error:', error);
@@ -75,12 +77,16 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, user }) {
       if (user) {
         token.accountId = user.id;
+        // Solo para decidir si se muestra el link al panel. El acceso real lo
+        // vuelve a chequear el servidor en cada carga de /admin.
+        token.isAdmin = (user as unknown as Record<string, unknown>).isAdmin === true;
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
         (session.user as Record<string, unknown>).accountId = token.accountId;
+        (session.user as Record<string, unknown>).isAdmin = token.isAdmin === true;
       }
       return session;
     },

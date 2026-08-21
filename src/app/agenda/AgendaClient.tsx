@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { useProfile } from '@/hooks/useProfile';
 import { CurrencyInput } from '@/components/CurrencyInput';
 import { formatCurrency } from '@/lib/formatUtils';
@@ -86,6 +87,7 @@ export default function AgendaClient({
   today,
 }: AgendaClientProps) {
   const { activeProfile } = useProfile();
+  const confirmar = useConfirm();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
@@ -452,16 +454,23 @@ export default function AgendaClient({
                                 {omitido ? 'Reactivar' : 'Este mes no'}
                               </button>
                               <button
-                                onClick={() => {
+                                onClick={async () => {
                                   const enSerie = !!item.seriesId && item.isRecurring;
+
+                                  // En una serie hay dos borrados posibles, así que
+                                  // cada opción es un botón con su propio texto.
                                   const soloEste = enSerie
-                                    ? window.confirm(
-                                        `"${item.title}" se repite todos los meses.\n\nAceptar = borrar solo el de ${formatPeriod(
-                                          month,
-                                          year
-                                        )}.\nCancelar = dejar de repetirlo (borra también los meses siguientes).`
-                                      )
-                                    : window.confirm(`¿Eliminar "${item.title}" de la agenda?`);
+                                    ? await confirmar({
+                                        titulo: `"${item.title}" se repite todos los meses`,
+                                        detalle: `¿Querés sacarlo solo de ${formatPeriod(month, year)} o dejar de repetirlo del todo?`,
+                                        confirmar: `Solo ${formatPeriod(month, year)}`,
+                                        cancelar: 'Dejar de repetirlo',
+                                      })
+                                    : await confirmar({
+                                        titulo: `¿Sacar "${item.title}" de la agenda?`,
+                                        tono: 'peligro',
+                                        confirmar: 'Sacar de la agenda',
+                                      });
 
                                   if (enSerie) {
                                     startTransition(async () => {

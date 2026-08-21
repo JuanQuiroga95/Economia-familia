@@ -403,6 +403,7 @@ export async function getLoansOverview(month: number, year: number) {
         dueDay: loan.dueDay,
         color: loan.color,
         notes: loan.notes,
+        isActive: loan.isActive,
         type: loan.type,
         profile: loan.profile,
         category: loan.category,
@@ -432,8 +433,20 @@ export async function getLoansOverview(month: number, year: number) {
   }
 }
 
+export interface LoansCurrencyTotals {
+  dueThisMonth: number;
+  pendingThisMonth: number;
+  totalRemaining: number;
+  totalLent: number;
+  toCollectThisMonth: number;
+}
+
 export interface LoansSummary {
   hasLoans: boolean;
+  /** Moneda de los totales planos (la que más peso tiene). */
+  currency: string;
+  /** Totales abiertos por moneda: sumar pesos con dólares no significaba nada. */
+  byCurrency: Record<string, LoansCurrencyTotals>;
   /** Cuotas de préstamos tomados que vencen este mes. */
   dueThisMonth: number;
   pendingThisMonth: number;
@@ -459,6 +472,8 @@ export interface LoansSummary {
 export async function getLoansSummary(month?: number, year?: number): Promise<LoansSummary> {
   const empty: LoansSummary = {
     hasLoans: false,
+    currency: 'ARS',
+    byCurrency: {},
     dueThisMonth: 0,
     pendingThisMonth: 0,
     totalRemaining: 0,
@@ -475,25 +490,36 @@ export async function getLoansSummary(month?: number, year?: number): Promise<Lo
     const m = month ?? current.month;
     const y = year ?? current.year;
 
+    // Igual que el bot: un préstamo dado de baja no cuenta más.
     const loans = await prisma.loan.findMany({
-      where: { profile: { accountId } },
+      where: { profile: { accountId }, isActive: true },
       include: { schedule: true, payments: true },
     });
     if (loans.length === 0) return empty;
 
-    const summary: LoansSummary = { ...empty, hasLoans: true, loans: [] };
+    const summary: LoansSummary = { ...empty, hasLoans: true, byCurrency: {}, loans: [] };
 
     for (const loan of loans) {
       const statement = buildStatement(loan.schedule, loan.payments, m, y);
       const progress = loanProgress(loan.schedule, loan.payments);
 
+      const acc =
+        summary.byCurrency[loan.currency] ??
+        (summary.byCurrency[loan.currency] = {
+          dueThisMonth: 0,
+          pendingThisMonth: 0,
+          totalRemaining: 0,
+          totalLent: 0,
+          toCollectThisMonth: 0,
+        });
+
       if (loan.kind === 'TOMADO') {
-        summary.dueThisMonth += statement.totalDue;
-        summary.pendingThisMonth += statement.pending;
-        summary.totalRemaining += progress.remaining;
+        acc.dueThisMonth += statement.totalDue;
+        acc.pendingThisMonth += statement.pending;
+        acc.totalRemaining += progress.remaining;
       } else {
-        summary.toCollectThisMonth += statement.pending;
-        summary.totalLent += progress.remaining;
+        acc.toCollectThisMonth += statement.pending;
+        acc.totalLent += progress.remaining;
       }
 
       summary.loans.push({
@@ -507,6 +533,18 @@ export async function getLoansSummary(month?: number, year?: number): Promise<Lo
         totalInstallments: progress.totalInstallments,
         currency: loan.currency,
       });
+    }
+
+    const principal = Object.entries(summary.byCurrency).sort(
+      (a, b) => b[1].dueThisMonth + b[1].totalRemaining - (a[1].dueThisMonth + a[1].totalRemaining)
+    )[0];
+    if (principal) {
+      summary.currency = principal[0];
+      summary.dueThisMonth = principal[1].dueThisMonth;
+      summary.pendingThisMonth = principal[1].pendingThisMonth;
+      summary.totalRemaining = principal[1].totalRemaining;
+      summary.totalLent = principal[1].totalLent;
+      summary.toCollectThisMonth = principal[1].toCollectThisMonth;
     }
 
     return summary;

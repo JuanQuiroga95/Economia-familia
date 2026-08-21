@@ -2,7 +2,8 @@
 import { formatCurrency } from '@/lib/formatUtils';
 import { useState, useTransition } from 'react';
 import { useProfile } from '@/hooks/useProfile';
-import { createSavingsGoal, addSavingsTransaction, deleteSavingsGoal, distributeSurplus, updateSavingsGoal, withdrawToBalanceFromSavings } from '@/actions/savings';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
+import { createSavingsGoal, addSavingsTransaction, deleteSavingsGoal, distributeSurplus, updateSavingsGoal } from '@/actions/savings';
 import toast from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -59,11 +60,12 @@ const currencyFlags: Record<string, string> = {
 
 export default function AhorrosClient({ initialGoals, patrimonio, rates, profiles = [], accountSplits }: AhorrosClientProps) {
   const { activeProfile } = useProfile();
+  const confirmar = useConfirm();
   const [showGoalForm, setShowGoalForm] = useState(false);
   const [showTransactionForm, setShowTransactionForm] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [activeTab, setActiveTab] = useState<'patrimonio' | 'metas'>('patrimonio');
-  
+
   const [expandedGoals, setExpandedGoals] = useState<Record<string, boolean>>({});
 
   const toggleGoal = (id: string) => {
@@ -73,7 +75,7 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
   const [distributeModal, setDistributeModal] = useState<{ currency: string; amount: number } | null>(null);
   const [distributeAmount, setDistributeAmount] = useState('');
   const [distributeGoalId, setDistributeGoalId] = useState('');
-  
+
   const router = useRouter();
 
   const handleDistributeSurplus = async (e: React.FormEvent) => {
@@ -110,11 +112,11 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
   const [initialAmount, setInitialAmount] = useState('');
   const [currency, setCurrency] = useState('ARS');
   const [monthsToAchieve, setMonthsToAchieve] = useState('');
-  
+
   // State for monthly splits: Record<profileId, amount>
   const [monthlySplits, setMonthlySplits] = useState<Record<string, number>>({});
   const [isFreeEditMode, setIsFreeEditMode] = useState(false);
-  
+
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
 
   const handleSplitChange = (profileId: string, val: string) => {
@@ -127,7 +129,7 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
           const tAmt = parseFloat(targetAmount) || 0;
           const mths = parseInt(monthsToAchieve) || 1;
           const monthlyTotal = tAmt > 0 && mths > 0 ? tAmt / mths : 0;
-          
+
           if (monthlyTotal > 0) {
             newSplits[otherProfileId] = Math.max(0, Number((monthlyTotal - newVal).toFixed(2)));
           }
@@ -146,7 +148,7 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
       const sortedProfiles = [...profiles].sort((a, b) => a.name.localeCompare(b.name));
       const splitA = (accountSplits.a / 100) * monthlyTotal;
       const splitB = (accountSplits.b / 100) * monthlyTotal;
-      
+
       setMonthlySplits({
         [sortedProfiles[0].id]: splitA,
         [sortedProfiles[1].id]: splitB,
@@ -175,7 +177,16 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
     if (!activeProfile) { toast.error('Seleccioná un perfil'); return; }
 
     if (editingGoalId) {
-      if (!window.confirm('¿Estás seguro que querés guardar estos cambios?')) return;
+      const ok = await confirmar({
+        titulo: '¿Guardar los cambios de la meta?',
+        confirmar: 'Guardar',
+        resumen: [
+          { etiqueta: 'Meta', valor: goalName },
+          { etiqueta: 'Moneda', valor: currency },
+          ...(targetAmount ? [{ etiqueta: 'Objetivo', valor: `$${formatCurrency(parseFloat(targetAmount))}` }] : []),
+        ],
+      });
+      if (!ok) return;
     }
 
     startTransition(async () => {
@@ -190,7 +201,7 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
         monthlySplits: isPiggyBank ? {} : monthlySplits
       };
 
-      const result = editingGoalId 
+      const result = editingGoalId
         ? await updateSavingsGoal(editingGoalId, payload)
         : await createSavingsGoal(payload);
 
@@ -244,31 +255,22 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
     });
   };
 
-  const handleWithdrawToBalance = (goalId: string, currentAmount: number) => {
-    if (!activeProfile) { toast.error('Seleccioná un perfil'); return; }
-    
-    const amountStr = prompt(`¿Cuánto querés transferir al Balance General? (Máximo: ${currentAmount})`);
-    if (!amountStr) return;
-    
-    const amount = parseFloat(amountStr);
-    if (isNaN(amount) || amount <= 0 || amount > currentAmount) {
-      toast.error('Monto inválido');
-      return;
-    }
-
-    startTransition(async () => {
-      const result = await withdrawToBalanceFromSavings(goalId, amount, activeProfile.id);
-      if (result.success) {
-        toast.success('Fondos transferidos al balance');
-        router.refresh();
-      } else {
-        toast.error(result.error || 'Error al transferir');
-      }
+  const handleDeleteGoal = async (id: string) => {
+    const meta = initialGoals.find((g) => g.id === id);
+    const ok = await confirmar({
+      titulo: '¿Eliminar esta meta de ahorro?',
+      detalle: 'Se borran también todos sus movimientos. Esto no se puede deshacer.',
+      tono: 'peligro',
+      confirmar: 'Eliminar meta',
+      resumen: meta
+        ? [
+            { etiqueta: 'Meta', valor: meta.name },
+            { etiqueta: 'Saldo actual', valor: `$${formatCurrency(meta.currentAmount)} ${meta.currency}` },
+          ]
+        : undefined,
     });
-  };
+    if (!ok) return;
 
-  const handleDeleteGoal = (id: string) => {
-    if (!window.confirm('¿Estás seguro que querés eliminar esta meta?')) return;
     startTransition(async () => {
       const result = await deleteSavingsGoal(id);
       if (result.success) {
@@ -351,8 +353,8 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
             />
           </div>
           <label className="flex items-center gap-2 cursor-pointer mb-4 text-sm text-text-primary">
-            <input 
-              type="checkbox" 
+            <input
+              type="checkbox"
               checked={isPiggyBank}
               onChange={(e) => setIsPiggyBank(e.target.checked)}
               className="rounded border-border text-accent focus:ring-accent/30 bg-bg-input"
@@ -415,8 +417,8 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
               <div className="flex items-center justify-between mb-3">
                 <h4 className="text-sm font-medium text-text-primary">Aporte Mensual por Persona</h4>
                 <label className="flex items-center gap-2 cursor-pointer text-xs text-text-secondary hover:text-text-primary transition-colors">
-                  <input 
-                    type="checkbox" 
+                  <input
+                    type="checkbox"
                     checked={isFreeEditMode}
                     onChange={(e) => setIsFreeEditMode(e.target.checked)}
                     className="rounded border-border text-accent focus:ring-accent/30 bg-bg-input"
@@ -592,7 +594,7 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
                   {goalsList.map(g => (
                     <div key={g.id} className="glass-card overflow-hidden border border-border rounded-xl transition-all duration-300">
                       {/* Accordion Header */}
-                      <button 
+                      <button
                         onClick={() => toggleGoal(g.id)}
                         className="w-full flex items-center justify-between p-4 bg-bg-card hover:bg-bg-input/50 transition-colors text-left"
                       >
@@ -618,7 +620,7 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
                             <button onClick={() => handleEditGoal(g)} className="text-accent bg-bg-input px-3 py-1.5 rounded-lg border border-border text-xs hover:bg-accent/10 transition-colors">✏️ Editar</button>
                             <button onClick={() => handleDeleteGoal(g.id)} className="text-danger bg-bg-input px-3 py-1.5 rounded-lg border border-border text-xs hover:bg-danger/10 transition-colors">🗑️ Borrar</button>
                           </div>
-                          
+
                           <div className="grid grid-cols-2 gap-4 text-sm">
                             <div className="bg-bg-input p-3 rounded-lg border border-border">
                               <span className="text-text-muted block text-xs mb-1 uppercase">Meses para lograrlo</span>
@@ -671,6 +673,11 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
                                 </div>
                                 <CurrencyInput value={txAmount} onChange={(e) => setTxAmount(e.target.value)} className="input-field" placeholder="Monto" />
                                 <input type="text" value={txDescription} onChange={(e) => setTxDescription(e.target.value)} className="input-field" placeholder="Detalle (opcional)" />
+                                <p className="text-[11px] text-text-muted">
+                                  {txType === 'DEPOSITO'
+                                    ? 'El depósito se descuenta del balance del mes.'
+                                    : 'El retiro vuelve como saldo disponible en el balance del mes.'}
+                                </p>
                                 <div className="flex gap-2 pt-2">
                                   <button onClick={() => setShowTransactionForm(null)} className="flex-1 py-2 text-sm text-text-muted hover:text-text-primary transition-colors">Cancelar</button>
                                   <button onClick={() => handleAddTransaction(g.id)} disabled={isPending || !txAmount} className="flex-1 gradient-btn py-2 text-sm disabled:opacity-50">Guardar</button>
@@ -702,19 +709,19 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
           <div className="bg-bg-card w-full max-w-md rounded-2xl shadow-xl border border-border overflow-hidden animate-slide-up">
             <div className="p-4 border-b border-border flex justify-between items-center">
               <h3 className="font-semibold text-text-primary">Distribuir Sobrante ({distributeModal.currency})</h3>
-              <button 
+              <button
                 onClick={() => setDistributeModal(null)}
                 className="text-text-muted hover:text-text-primary transition-colors"
               >
                 ✕
               </button>
             </div>
-            
+
             <form onSubmit={handleDistributeSurplus} className="p-4 space-y-4">
               <p className="text-sm text-text-secondary">
                 Tenés un sobrante de <strong className="text-accent">${formatCurrency(distributeModal.amount)}</strong> este mes. ¿Dónde querés guardarlo?
               </p>
-              
+
               <div>
                 <input
                   type="number"
@@ -753,9 +760,9 @@ export default function AhorrosClient({ initialGoals, patrimonio, rates, profile
                 </div>
               </div>
 
-              <button 
-                type="submit" 
-                disabled={isPending || !distributeAmount || !distributeGoalId} 
+              <button
+                type="submit"
+                disabled={isPending || !distributeAmount || !distributeGoalId}
                 className="w-full gradient-btn py-3 disabled:opacity-50 mt-4"
               >
                 {isPending ? 'Distribuyendo...' : 'Confirmar Distribución'}

@@ -125,7 +125,7 @@ export default function LandingPage() {
             </p>
             <ul className="space-y-2 text-sm text-text-secondary">
               <li className="flex items-start gap-2"><span>✓</span> <span>Divide gastos equitativamente (50/50) o por porcentajes (Ej: 70/30).</span></li>
-              <li className="flex items-start gap-2"><span>✓</span> <span>Botón <strong>"Pagué Yo"</strong>: el sistema calcula automáticamente quién debe a quién.</span></li>
+              <li className="flex items-start gap-2"><span>✓</span> <span>Botón <strong>&ldquo;Pagué Yo&rdquo;</strong>: el sistema calcula automáticamente quién debe a quién.</span></li>
               <li className="flex items-start gap-2"><span>✓</span> <span>Recibe <strong>Notificaciones Push</strong> cuando el otro registre un movimiento.</span></li>
             </ul>
           </motion.div>
@@ -145,7 +145,7 @@ export default function LandingPage() {
               <h3 className="text-2xl font-bold">Metas de Ahorro</h3>
             </div>
             <p className="text-text-muted leading-relaxed mb-4">
-              Crea objetivos financieros ("chanchitos" virtuales) para ese viaje, computadora nueva o fondo de emergencias.
+              Crea objetivos financieros (&ldquo;chanchitos&rdquo; virtuales) para ese viaje, computadora nueva o fondo de emergencias.
             </p>
             <ul className="space-y-2 text-sm text-text-secondary">
               <li className="flex items-start gap-2"><span>✓</span> <span>Separa dinero mes a mes para acercarte a tu objetivo.</span></li>

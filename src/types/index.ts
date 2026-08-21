@@ -55,6 +55,8 @@ export interface BudgetStatus {
   profileId: string;
   profileName: string;
   currentHalf: 1 | 2;
+  /** false cuando se está mirando un mes cerrado: ahí no hay "quincena en curso". */
+  esMesActual: boolean;
   budget: number;
   spent: number;
   remaining: number;
@@ -81,6 +83,7 @@ export interface IncomeFormData {
   date: string;
   description: string;
   profileId: string;
+  walletId?: string;
   paymentMethod?: 'EFECTIVO' | 'TRANSFERENCIA';
 }
 
@@ -96,6 +99,7 @@ export interface ExpenseFormData {
   receiptUrl?: string;
   fundingSource?: string;
   splitPercentage?: number;
+  walletId?: string;
   paymentMethod?: 'EFECTIVO' | 'TRANSFERENCIA';
 }
 

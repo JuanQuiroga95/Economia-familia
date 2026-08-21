@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import { useProfile } from '@/hooks/useProfile';
 import { createInvestment, deleteInvestment, updateInvestment, withdrawToBalanceFromInvestment } from '@/actions/investments';
 import toast from 'react-hot-toast';
+import { useConfirm, usePedirMonto } from '@/components/ui/ConfirmDialog';
 import { useRouter } from 'next/navigation';
 import { CurrencyInput } from '@/components/CurrencyInput';
 
@@ -36,6 +37,8 @@ interface InversionesClientProps {
 
 export default function InversionesClient({ initialInvestments, rates }: InversionesClientProps) {
   const { activeProfile } = useProfile();
+  const confirmar = useConfirm();
+  const pedirMonto = usePedirMonto();
   const [showForm, setShowForm] = useState(false);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
@@ -54,7 +57,7 @@ export default function InversionesClient({ initialInvestments, rates }: Inversi
   const [startDate, setStartDate] = useState(getLocalDateString());
   const [endDate, setEndDate] = useState('');
   const [notes, setNotes] = useState('');
-  
+
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const resetForm = () => {
@@ -68,7 +71,11 @@ export default function InversionesClient({ initialInvestments, rates }: Inversi
     if (!activeProfile) { toast.error('Seleccioná un perfil'); return; }
 
     if (editingId) {
-      if (!window.confirm('¿Estás seguro que querés guardar estos cambios?')) return;
+      const ok = await confirmar({
+        titulo: '¿Guardar los cambios de la inversión?',
+        confirmar: 'Guardar',
+      });
+      if (!ok) return;
     }
 
     startTransition(async () => {
@@ -84,7 +91,7 @@ export default function InversionesClient({ initialInvestments, rates }: Inversi
         profileId: activeProfile.id,
       };
 
-      const result = editingId 
+      const result = editingId
         ? await updateInvestment(editingId, payload)
         : await createInvestment(payload);
 
@@ -114,8 +121,14 @@ export default function InversionesClient({ initialInvestments, rates }: Inversi
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleDelete = (id: string) => {
-    if (!window.confirm('¿Estás seguro que querés eliminar esta inversión?')) return;
+  const handleDelete = async (id: string) => {
+    const ok = await confirmar({
+      titulo: '¿Eliminar esta inversión?',
+      detalle: 'Se borran también sus movimientos. Esto no se puede deshacer.',
+      tono: 'peligro',
+      confirmar: 'Eliminar',
+    });
+    if (!ok) return;
     startTransition(async () => {
       const result = await deleteInvestment(id);
       if (result.success) { toast.success('Inversión eliminada'); router.refresh(); }
@@ -123,17 +136,16 @@ export default function InversionesClient({ initialInvestments, rates }: Inversi
     });
   };
 
-  const handleWithdrawToBalance = (invId: string, currentAmount: number) => {
+  const handleWithdrawToBalance = async (invId: string, currentAmount: number) => {
     if (!activeProfile) { toast.error('Seleccioná un perfil'); return; }
-    
-    const amountStr = prompt(`¿Cuánto querés rescatar al Balance General? (Máximo: ${currentAmount})`);
-    if (!amountStr) return;
-    
-    const amount = parseFloat(amountStr);
-    if (isNaN(amount) || amount <= 0 || amount > currentAmount) {
-      toast.error('Monto inválido');
-      return;
-    }
+
+    const amount = await pedirMonto({
+      titulo: '¿Cuánto querés rescatar?',
+      detalle: 'La plata vuelve como saldo disponible en el balance del mes.',
+      confirmar: 'Rescatar',
+      pedirMonto: { etiqueta: 'Monto a rescatar', maximo: currentAmount },
+    });
+    if (amount === null) return;
 
     startTransition(async () => {
       const result = await withdrawToBalanceFromInvestment(invId, amount, activeProfile.id);

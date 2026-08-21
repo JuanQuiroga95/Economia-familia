@@ -1,5 +1,4 @@
 'use client';
-import { formatCurrency } from '@/lib/formatUtils';
 
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 
