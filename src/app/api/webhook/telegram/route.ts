@@ -12,15 +12,19 @@ import {
 } from '@/lib/cardUtils';
 import { getLoanCategory } from '@/lib/loanCategory';
 import { loanProgress, nextPendingInstallment } from '@/lib/loanUtils';
-import { sendTelegramMessage } from '@/lib/telegramSend';
+import { escaparHtml, sendTelegramMessage } from '@/lib/telegramSend';
 import { getArgDate, getCurrentFinancialMonth, parseArgDate } from '@/lib/dateUtils';
 import Groq from 'groq-sdk';
 import { candidatosAudio, candidatosTexto, conModelo, esFalloDeJson, estadoModelos } from '@/lib/groqModels';
+import { ErrorDeVision, leerImagenes, type ParteDeImagen } from '@/lib/geminiVision';
 import crypto from 'crypto';
+
+// El bot habla con dos IAs y a veces hay que reintentar. Sin esto Vercel corta
+// la función antes de tiempo y Telegram reenvía el mismo mensaje.
+export const maxDuration = 60;
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
 const GROQ_API_KEY = process.env.GROQ_API_KEY!;
-const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY!;
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
 
 // ============================================
@@ -347,7 +351,7 @@ async function parseImagesWithAI(
   loans: { name: string }[] = []
 ): Promise<{ acciones: ParsedAction[] }> {
   // Paso 1: Usar Google Gemini para analizar las imágenes (Groq ya no tiene modelos de visión)
-  const imageParts: any[] = [];
+  const imageParts: ParteDeImagen[] = [];
   for (const id of fileIds) {
     const buffer = await downloadTelegramFile(id);
     const base64 = buffer.toString('base64');
@@ -365,35 +369,57 @@ Para CADA movimiento, indica claramente:
 
 NO OMITAS NINGÚN MOVIMIENTO. Debes enumerar cada uno por separado.${customInstruction ? `\n\nInstrucción especial del usuario: "${customInstruction}"` : ''}`;
 
-  const geminiRes = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${GOOGLE_API_KEY}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{
-          parts: [
-            { text: visionPrompt },
-            ...imageParts
-          ]
-        }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 800 }
-      })
-    }
-  );
-
-  const geminiData = await geminiRes.json();
-  const rawVisionText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-
-  if (!rawVisionText) {
-    throw new Error(`Gemini no devolvió texto. Respuesta: ${JSON.stringify(geminiData).slice(0, 200)}`);
-  }
+  // leerImagenes reintenta sola y cambia de modelo si Google está saturado.
+  const rawVisionText = await leerImagenes(visionPrompt, imageParts);
 
   // Paso 2: Forzar JSON con Groq (modelo de texto)
   return groqJsonCompletion([
     { role: 'system', content: SYSTEM_PROMPT_BASE(profileName, categories, context) + buildResourcesBlock(wallets, cards, loans) },
     { role: 'user', content: `Basado en esta extracción de imagen, armá el JSON final:\n\n${rawVisionText}\n\nInstrucción del usuario original: "${customInstruction}"` },
   ]);
+}
+
+/**
+ * Qué contestarle a la familia cuando la IA no responde.
+ *
+ * Antes se mandaba el JSON crudo del error más la lista entera de modelos de
+ * Groq: ilegible, y encima daba la sensación de que el bot estaba roto cuando
+ * en realidad el proveedor estaba saturado un minuto. Ahora se separa lo
+ * pasajero (se reintenta y listo) de lo que hay que ir a mirar.
+ */
+async function mensajeDeFalloDeIA(error: any, habiaFotos: boolean): Promise<string> {
+  const comoReintentar = habiaFotos
+    ? '\n\n📸 Tus fotos quedaron guardadas: escribí <b>"procesar"</b> para reintentar.'
+    : '\n\nMandame el mensaje de nuevo en un ratito.';
+
+  const status = error?.status ?? error?.error?.status ?? null;
+  const saturado =
+    (error instanceof ErrorDeVision && error.saturado) ||
+    status === 429 ||
+    (typeof status === 'number' && status >= 500);
+
+  if (saturado) {
+    return (
+      '⏳ La IA está saturada en este momento (probé con varios modelos y ninguno contestó).' +
+      comoReintentar
+    );
+  }
+
+  // No es pasajero: puede ser un modelo dado de baja o la key vencida. Va el
+  // detalle técnico corto, con el modelo que quedó en el camino.
+  let detalle = '';
+  if (error instanceof ErrorDeVision) {
+    detalle = `\n\n<i>Leyendo la foto con ${escaparHtml(error.modelo ?? 'Gemini')}.</i>`;
+  } else {
+    try {
+      const estado = await estadoModelos();
+      detalle = `\n\n<i>Texto: ${estado.textoEnUso ?? 'ninguno'}${estado.degradado ? ' (degradado)' : ''}</i>`;
+    } catch {
+      detalle = '\n\n<i>Tampoco pude consultar el estado de los modelos.</i>';
+    }
+  }
+
+  return `❌ No pude interpretar el mensaje.\n<i>${escaparHtml(error?.message || 'Error desconocido')}</i>${detalle}${comoReintentar}`;
 }
 
 // ============================================
@@ -1057,6 +1083,10 @@ async function ejecutarAcciones(
 // ============================================
 
 export async function POST(request: NextRequest) {
+  // Se guarda afuera del try para poder avisar si algo explota a mitad de camino:
+  // quedarse callado es lo que hace parecer que el bot está caído.
+  let chatDelMensaje: string | null = null;
+
   try {
     // Solo Telegram puede hablar con este endpoint. Sin esto, un POST armado a
     // mano podía borrar cualquier gasto pasando su id en `callback_query`.
@@ -1190,6 +1220,7 @@ export async function POST(request: NextRequest) {
     if (!message) return NextResponse.json({ ok: true });
 
     const chatId = message.chat.id.toString();
+    chatDelMensaje = chatId;
     const fromId = message.from.id.toString();
     const text = message.text || '';
 
@@ -1413,14 +1444,23 @@ export async function POST(request: NextRequest) {
       }
     } catch (error: any) {
       console.error('Parse Error:', error);
-      let detalle = 'No se pudo consultar el estado de los modelos.';
-      try {
-        const estado = await estadoModelos();
-        detalle = `Modelo en uso: ${estado.textoEnUso}\nModelos activos en Groq: ${estado.todos.join(', ')}`;
-      } catch (e) {
-        console.error('Error fetching models:', e);
+
+      // Las fotos ya se habían borrado del borrador para procesarlas. Si la IA
+      // falló, se devuelven: así alcanza con escribir "procesar" de nuevo en
+      // vez de tener que sacar y mandar todas las fotos otra vez.
+      if (fileIdsToProcess.length > 0) {
+        try {
+          await prisma.telegramDraft.upsert({
+            where: { chatId },
+            create: { chatId, fileIds: fileIdsToProcess },
+            update: { fileIds: fileIdsToProcess },
+          });
+        } catch (e) {
+          console.error('No se pudo devolver el borrador:', e);
+        }
       }
-      await sendTelegramMessage(chatId, `❌ Falló la IA.\nError: ${error.message || 'Desconocido'}\n${detalle}`);
+
+      await sendTelegramMessage(chatId, await mensajeDeFalloDeIA(error, fileIdsToProcess.length > 0));
       return NextResponse.json({ ok: true });
     }
 
@@ -1469,7 +1509,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error('Telegram webhook error:', error);
-    return NextResponse.json({ ok: true }); 
+
+    if (chatDelMensaje) {
+      // Si el aviso también falla, no importa: lo que no puede pasar es que
+      // Telegram reciba un error y reenvíe el mismo mensaje en loop.
+      await sendTelegramMessage(
+        chatDelMensaje,
+        '⚠️ Se me trabó algo procesando eso. Probá de nuevo en un ratito.'
+      ).catch(() => {});
+    }
+
+    return NextResponse.json({ ok: true });
   }
 }
 

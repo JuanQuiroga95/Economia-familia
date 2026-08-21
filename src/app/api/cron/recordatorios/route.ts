@@ -8,6 +8,7 @@ import { formatCurrency } from '@/lib/formatUtils';
 import { sendTelegramMessage } from '@/lib/telegramSend';
 import { sendPushNotification } from '@/lib/push';
 import { estadoModelos } from '@/lib/groqModels';
+import { estadoVision } from '@/lib/geminiVision';
 
 /**
  * Recordatorio diario: avisa lo que vence hoy y mañana (agenda, cuotas de
@@ -38,17 +39,17 @@ function autorizado(request: NextRequest) {
 }
 
 /**
- * Chequeo diario de los modelos de Groq. El bot se banca solo que le den de
- * baja un modelo (elige otro), pero avisa para poder actualizar la lista de
- * preferidos antes de que se quede sin respaldo.
+ * Chequeo diario de los modelos de IA (Groq para texto, Gemini para fotos). El
+ * bot se banca solo que le den de baja uno (elige otro), pero avisa para poder
+ * actualizar la lista de preferidos antes de que se quede sin respaldo.
  *
  * Va al chat de ADMIN_TELEGRAM_CHAT_ID; si no está seteado, al primer perfil
  * vinculado, así no se le avisa a toda la familia de algo que no les sirve.
  */
-async function avisarSiGroqCambio() {
+async function avisarSiCambiaronLosModelos() {
   try {
-    const estado = await estadoModelos();
-    if (!estado.degradado) return;
+    const [estado, vision] = await Promise.all([estadoModelos(), estadoVision()]);
+    if (!estado.degradado && !vision.degradado) return;
 
     const destino =
       process.env.ADMIN_TELEGRAM_CHAT_ID ||
@@ -62,13 +63,25 @@ async function avisarSiGroqCambio() {
 
     if (!destino) return;
 
-    await sendTelegramMessage(
-      destino,
-      '🤖 <b>Groq cambió los modelos</b>\n\n' +
-        `Se dieron de baja: ${estado.preferidosCaidos.join(', ')}\n` +
-        `El bot está usando <b>${estado.textoEnUso}</b> como reemplazo automático.\n\n` +
-        '<i>Anda igual, pero conviene actualizar TEXTO_PREFERIDOS en src/lib/groqModels.ts.</i>'
-    );
+    const partes = ['🤖 <b>Cambiaron los modelos de IA</b>\n'];
+
+    if (estado.degradado) {
+      partes.push(
+        `<b>Texto (Groq)</b> — se dieron de baja: ${estado.preferidosCaidos.join(', ')}\n` +
+          `Está usando <b>${estado.textoEnUso}</b> como reemplazo automático.\n` +
+          '<i>Conviene actualizar TEXTO_PREFERIDOS en src/lib/groqModels.ts.</i>\n'
+      );
+    }
+
+    if (vision.degradado) {
+      partes.push(
+        `<b>Fotos (Gemini)</b> — se dieron de baja: ${vision.preferidosCaidos.join(', ')}\n` +
+          `Está usando <b>${vision.visionEnUso}</b> como reemplazo automático.\n` +
+          '<i>Conviene actualizar VISION_PREFERIDOS en src/lib/geminiVision.ts.</i>\n'
+      );
+    }
+
+    await sendTelegramMessage(destino, partes.join('\n'));
   } catch (error) {
     console.error('[CRON] No se pudo chequear los modelos de Groq:', error);
   }
@@ -84,7 +97,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   }
 
-  await avisarSiGroqCambio();
+  await avisarSiCambiaronLosModelos();
 
   const hoy = getArgDate();
   const { month, year } = getCurrentFinancialMonth(hoy);

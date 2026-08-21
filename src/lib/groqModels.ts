@@ -53,6 +53,28 @@ export function convieneProbarOtroModelo(error: any): boolean {
   return esModeloInexistente(error) || esFalloDeJson(error);
 }
 
+/**
+ * ¿Es un problema pasajero de Groq? Saturación (503), cuota momentánea (429),
+ * cortes de red. No hay nada que arreglar: alcanza con volver a intentar.
+ */
+export function esPasajero(error: any): boolean {
+  const status = error?.status ?? error?.error?.status ?? null;
+  if (status === 429 || (typeof status === 'number' && status >= 500)) return true;
+  return /ECONNRESET|ETIMEDOUT|fetch failed|socket hang up|aborted/i.test(error?.message || '');
+}
+
+const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Espera creciente con algo de ruido, para no golpear siempre en el mismo momento. */
+function espera(intento: number): number {
+  return Math.min(600 * 2 ** intento, 3000) + Math.floor(Math.random() * 300);
+}
+
+/** Reintentos por modelo cuando Groq contesta que está saturado. */
+const INTENTOS_POR_MODELO = 3;
+/** Tope de la tarea entera: el webhook de Telegram tiene que contestar rápido. */
+const LIMITE_TOTAL_MS = 20_000;
+
 /** Modelos vivos en la cuenta, cacheados en memoria del lambda. */
 export async function modelosVivos(forzarRefresco = false): Promise<string[]> {
   if (!forzarRefresco && cache && Date.now() - cache.at < TTL_MS) return cache.ids;
@@ -101,8 +123,11 @@ export async function candidatosAudio(forzarRefresco = false): Promise<string[]>
 }
 
 /**
- * Corre `fn` con el primer modelo que ande. Si Groq responde "no existe",
- * pasa al siguiente; si se acabaron, refresca la lista y prueba de nuevo.
+ * Corre `fn` con el primer modelo que ande.
+ *
+ * Si Groq está saturado, reintenta con el mismo modelo esperando cada vez un
+ * poco más. Si el modelo ya no existe o no sabe devolver el JSON, pasa al
+ * siguiente; si se acabaron, refresca la lista y prueba de nuevo.
  */
 export async function conModelo<T>(
   candidatos: (forzarRefresco: boolean) => Promise<string[]>,
@@ -110,19 +135,36 @@ export async function conModelo<T>(
 ): Promise<T> {
   let ultimoError: any;
   const yaProbados = new Set<string>();
+  const limite = Date.now() + LIMITE_TOTAL_MS;
 
   for (const forzarRefresco of [false, true]) {
     for (const modelo of await candidatos(forzarRefresco)) {
       if (yaProbados.has(modelo)) continue;
+      if (Date.now() > limite) break;
       yaProbados.add(modelo);
-      try {
-        return await fn(modelo);
-      } catch (error: any) {
-        if (!convieneProbarOtroModelo(error)) throw error;
-        console.warn(
-          `[GROQ] ${modelo} no sirvió (${esModeloInexistente(error) ? 'ya no existe' : 'JSON inválido'}), pruebo el siguiente.`
-        );
-        ultimoError = error;
+
+      for (let intento = 0; intento < INTENTOS_POR_MODELO; intento++) {
+        try {
+          return await fn(modelo);
+        } catch (error: any) {
+          ultimoError = error;
+
+          if (esPasajero(error)) {
+            console.warn(`[GROQ] ${modelo} está saturado, intento ${intento + 1}.`);
+            const proxima = espera(intento);
+            if (intento + 1 < INTENTOS_POR_MODELO && Date.now() + proxima <= limite) {
+              await dormir(proxima);
+              continue;
+            }
+            break;
+          }
+
+          if (!convieneProbarOtroModelo(error)) throw error;
+          console.warn(
+            `[GROQ] ${modelo} no sirvió (${esModeloInexistente(error) ? 'ya no existe' : 'JSON inválido'}), pruebo el siguiente.`
+          );
+          break;
+        }
       }
     }
   }
