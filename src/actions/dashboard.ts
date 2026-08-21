@@ -401,7 +401,8 @@ export async function getBudgetStatus(
       }
     }
 
-    budget += config.extraBudget || 0;
+    const extraBudget = config.extraBudget || 0;
+    budget += extraBudget;
 
     const ownExpenses = await prisma.expense.findMany({
       where: {
@@ -442,6 +443,8 @@ export async function getBudgetStatus(
       profileName: config.profile.name,
       currentHalf,
       esMesActual,
+      budgetType,
+      extraBudget,
       budget,
       spent,
       remaining: budget - spent,

@@ -57,6 +57,10 @@ export interface BudgetStatus {
   currentHalf: 1 | 2;
   /** false cuando se está mirando un mes cerrado: ahí no hay "quincena en curso". */
   esMesActual: boolean;
+  /** QUINCENAL o MENSUAL. En mensual no corresponde hablar de quincenas. */
+  budgetType: string;
+  /** Cuánto de `budget` viene del campo "Saldo Mes Anterior o Extra". */
+  extraBudget: number;
   budget: number;
   spent: number;
   remaining: number;

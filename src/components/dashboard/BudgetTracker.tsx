@@ -29,11 +29,13 @@ export default function BudgetTracker({ status }: { status: BudgetStatus | null 
           💳 Presupuesto de {status.profileName}
         </h3>
         <span className={`text-xs font-medium px-2 py-1 rounded-full ${colors.light} ${colors.text}`}>
-          {!status.esMesActual
-            ? 'Mes completo'
-            : status.currentHalf === 1
-              ? '1ra Quincena'
-              : '2da Quincena'}
+          {status.budgetType === 'MENSUAL'
+            ? 'Mensual'
+            : !status.esMesActual
+              ? 'Mes completo'
+              : status.currentHalf === 1
+                ? '1ra Quincena'
+                : '2da Quincena'}
         </span>
       </div>
 
@@ -74,6 +76,18 @@ export default function BudgetTracker({ status }: { status: BudgetStatus | null 
           </p>
         </div>
       </div>
+
+      {/* De dónde sale el presupuesto, si hay un extra sumado. Ese campo se
+          suma a TODAS las quincenas hasta que alguien lo borre, así que
+          conviene que se vea y no quede escondido en Configuración. */}
+      {status.extraBudget > 0 && (
+        <p className="mt-3 text-xs text-text-muted text-center">
+          Incluye ${formatCurrency(status.extraBudget)} de{' '}
+          <span className="text-warning">saldo extra</span> cargado en Configuración
+          {' · '}
+          <span>base: ${formatCurrency(status.budget - status.extraBudget)}</span>
+        </p>
+      )}
 
       {status.percentage >= 90 && (
         <div className="mt-3 p-2 rounded-lg bg-danger/10 border border-danger/20 text-danger text-xs text-center animate-fade-in">

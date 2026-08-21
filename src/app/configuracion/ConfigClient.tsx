@@ -632,8 +632,12 @@ function BudgetConfigForm({
               </div>
             )}
             <div className="col-span-2">
-              <label className="block text-xs text-text-muted mb-1">Saldo Mes Anterior o Extra (ARS)</label>
+              <label className="block text-xs text-text-muted mb-1">Saldo extra fijo (ARS)</label>
               <CurrencyInput value={extra} onChange={(e) => setExtra(e.target.value)} className="input-field" placeholder="0" />
+              <p className="text-[11px] text-text-muted mt-1">
+                Se suma a <b>todas</b> las quincenas hasta que lo vuelvas a poner en 0. No se
+                limpia solo al terminar el mes.
+              </p>
             </div>
           </div>
           <button
