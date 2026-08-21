@@ -179,9 +179,29 @@ el usuario y la contraseña de cualquier familia.
 Las contraseñas **no se pueden ver**: la base guarda un hash bcrypt, que es de
 una sola vía. Lo único posible es asignar una nueva.
 
-Para designar al primer admin, definir `ADMIN_USERNAME` con el usuario de esa
-cuenta; la primera vez que entre al panel se le marca `isAdmin` en la base y ya
-no depende más de la variable.
+#### La cuenta `master`
+
+Es una cuenta de administración pura: **no es una familia**, no tiene perfiles
+ni movimientos, y al entrar va derecho a `/admin`. Existe aparte justamente
+para poder renombrarle el usuario o cambiarle la clave a cualquier familia sin
+que el seed la vuelva a crear en el próximo deploy.
+
+El seed la crea (y le restaura clave y permiso de admin en cada deploy, que es
+la forma de recuperar el acceso si alguien se lo saca desde el panel) **solo si
+está definida `MASTER_ADMIN_PASSWORD_HASH`**. Si no está, no se crea nada.
+
+```bash
+# Generar el hash para ponerlo en la variable de entorno
+node -e "console.log(require('bcryptjs').hashSync('TU_CONTRASEÑA', 12))"
+```
+
+| Variable | Para qué |
+|----------|----------|
+| `MASTER_ADMIN_PASSWORD_HASH` | Hash bcrypt de la clave de `master`. Sin esto la cuenta no se crea. |
+| `ADMIN_USERNAME` | Qué usuario arranca con acceso al panel (normalmente `master`). |
+
+`ADMIN_USERNAME` es solo el arranque: la primera vez que esa cuenta entra a
+`/admin` se le marca `isAdmin` en la base y ya no depende más de la variable.
 
 ### Monedas
 Los movimientos se pueden cargar en ARS, USD y EUR, pero **los totales

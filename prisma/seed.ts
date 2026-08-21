@@ -3,6 +3,34 @@ import bcrypt from 'bcryptjs';
 
 async function main() {
   // ==========================================
+  // Cuenta master: administración, no es una familia
+  // ==========================================
+  // No tiene perfiles ni movimientos: solo entra a /admin. Va aparte de las
+  // cuentas de familia justamente para poder renombrar o cambiarle la clave a
+  // cualquiera de ellas sin que el seed la vuelva a crear en el próximo deploy.
+  //
+  // El hash vive en la variable de entorno, nunca en el repo. Si no está
+  // definida, la cuenta no se crea y no pasa nada.
+  const masterHash = process.env.MASTER_ADMIN_PASSWORD_HASH;
+  if (masterHash) {
+    await prisma.account.upsert({
+      where: { username: 'master' },
+      // Se actualizan clave y permiso en cada deploy: es la forma de recuperar
+      // el acceso si alguien se lo saca desde el panel.
+      update: { password: masterHash, isAdmin: true },
+      create: {
+        username: 'master',
+        password: masterHash,
+        label: 'Administración',
+        isAdmin: true,
+      },
+    });
+    console.log('Cuenta master lista');
+  } else {
+    console.log('Sin MASTER_ADMIN_PASSWORD_HASH: no se crea la cuenta master');
+  }
+
+  // ==========================================
   // Cuenta 1: Juan & Tania (contraseña actual)
   // ==========================================
   // Use existing password hash from env if available (preserves current credentials)

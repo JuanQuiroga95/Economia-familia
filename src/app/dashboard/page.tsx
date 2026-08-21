@@ -10,6 +10,7 @@ import { getLoansSummary } from '@/actions/loans';
 import { getAgendaSummary } from '@/actions/agenda';
 import { prisma } from '@/lib/prisma';
 import { getAccountId } from '@/lib/session';
+import { esAdmin } from '@/lib/admin';
 
 import { redirect } from 'next/navigation';
 
@@ -30,6 +31,12 @@ export default async function DashboardPage(props: { searchParams: Promise<{ mon
     where: { accountId },
     orderBy: { name: 'asc' },
   });
+
+  // La cuenta master no es una familia: no tiene perfiles ni movimientos, así
+  // que el dashboard le mostraría todo en cero. Va derecho al panel.
+  if (profiles.length === 0 && (await esAdmin())) {
+    redirect('/admin');
+  }
 
   const [stats, categoryData, monthlyData, sharedFundStats, userExpenseBreakdown, categoryBudgets, walletBalances, cardsSummary, loansSummary, agendaSummary] = await Promise.all([
     getDashboardStats(month, year),
