@@ -250,9 +250,15 @@ curl "https://TU-APP.vercel.app/api/cron/recordatorios?secret=$CRON_SECRET"
 
 ## 🤖 Bot de Telegram
 
-**Seguridad:** definir `TELEGRAM_WEBHOOK_SECRET` y pasarlo como `secret_token`
-al registrar el webhook. Sin eso, cualquiera que conozca la URL puede mandarle
-comandos al bot:
+**Seguridad:** definir `TELEGRAM_WEBHOOK_SECRET` y registrar el webhook con ese
+secreto. Sin eso, cualquiera que conozca la URL puede mandarle comandos al bot.
+
+La forma fácil: entrar a **`/admin`** y apretar *Registrar webhook* en la
+tarjeta del bot. La app ya tiene el token y el secreto, así que se configura
+sola y de paso muestra si Telegram está teniendo errores de entrega (un 401 ahí
+significa que el secreto no coincide).
+
+A mano, si hace falta:
 
 ```bash
 curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook"   -d "url=https://TU-APP.vercel.app/api/webhook/telegram"   -d "secret_token=$TELEGRAM_WEBHOOK_SECRET"

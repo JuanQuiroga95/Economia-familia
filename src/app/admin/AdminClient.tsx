@@ -6,6 +6,8 @@ import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { formatCurrency } from '@/lib/formatUtils';
+import WebhookCard from './WebhookCard';
+import type { EstadoWebhook } from '@/actions/telegramWebhook';
 import {
   cambiarPasswordDeFamilia,
   cambiarUsuarioDeFamilia,
@@ -35,7 +37,13 @@ function diasDesde(iso: string | null) {
   return Math.floor(ms / 86_400_000);
 }
 
-export default function AdminClient({ resumen }: { resumen: ResumenAdmin }) {
+export default function AdminClient({
+  resumen,
+  webhook,
+}: {
+  resumen: ResumenAdmin;
+  webhook: EstadoWebhook | null;
+}) {
   const router = useRouter();
   const confirmar = useConfirm();
   const [isPending, startTransition] = useTransition();
@@ -172,6 +180,9 @@ export default function AdminClient({ resumen }: { resumen: ResumenAdmin }) {
           </div>
         ))}
       </div>
+
+      {/* Estado del bot */}
+      {webhook && <WebhookCard estado={webhook} />}
 
       {/* Aviso sobre las contraseñas */}
       <div className="glass-card p-4 border-l-2 border-l-warning">
