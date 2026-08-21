@@ -3,12 +3,13 @@
 import { SessionProvider } from 'next-auth/react';
 import { ProfileProvider } from '@/hooks/useProfile';
 import { Toaster } from 'react-hot-toast';
+import { ConfirmProvider } from '@/components/ui/ConfirmDialog';
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   return (
     <SessionProvider>
       <ProfileProvider>
-        {children}
+        <ConfirmProvider>{children}</ConfirmProvider>
         <Toaster
           position="top-center"
           toastOptions={{

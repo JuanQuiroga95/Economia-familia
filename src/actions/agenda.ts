@@ -1,5 +1,6 @@
 'use server';
 
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { getAccountId } from '@/lib/session';
 import { parseArgDate, getArgDate, getCurrentFinancialMonth } from '@/lib/dateUtils';
@@ -35,47 +36,61 @@ async function getFallbackCategory(accountId: string) {
 async function ensureRecurringItems(accountId: string, month: number, year: number) {
   const target = periodIndex(month, year);
 
+  // No se clonan fijos hacia meses muy lejanos: mirar diciembre no tiene que
+  // llenar la base de ítems de todo el año.
+  const actual = getCurrentFinancialMonth(getArgDate());
+  if (target > periodIndex(actual.month, actual.year) + 1) return;
+
   const series = await prisma.plannedExpense.findMany({
     where: { accountId, seriesId: { not: null } },
     orderBy: [{ year: 'desc' }, { month: 'desc' }],
   });
 
   const latestBySeries = new Map<string, (typeof series)[number]>();
-  const existsInTarget = new Set<string>();
+  const ocupados = new Map<string, Set<number>>();
 
   for (const item of series) {
     const key = item.seriesId!;
-    if (periodIndex(item.month, item.year) === target) existsInTarget.add(key);
     if (!latestBySeries.has(key)) latestBySeries.set(key, item);
+    if (!ocupados.has(key)) ocupados.set(key, new Set());
+    ocupados.get(key)!.add(periodIndex(item.month, item.year));
   }
 
-  const toCreate = [...latestBySeries.values()].filter(
-    (item) =>
-      item.isRecurring &&
-      !existsInTarget.has(item.seriesId!) &&
-      periodIndex(item.month, item.year) < target
-  );
+  // Se rellenan TODOS los meses entre la última aparición y el mes pedido.
+  // Antes solo se creaba el mes consultado, así que saltar de agosto a octubre
+  // dejaba septiembre vacío para siempre.
+  const data: Prisma.PlannedExpenseCreateManyInput[] = [];
 
-  if (toCreate.length === 0) return;
+  for (const item of latestBySeries.values()) {
+    if (!item.isRecurring) continue;
+    const desde = periodIndex(item.month, item.year);
+    if (desde >= target) continue;
 
-  await prisma.plannedExpense.createMany({
-    data: toCreate.map((item) => ({
-      title: item.title,
-      amount: item.amount,
-      currency: item.currency,
-      day: item.day,
-      month,
-      year,
-      kind: item.kind,
-      status: 'PENDIENTE' as const,
-      notes: item.notes,
-      isRecurring: true,
-      seriesId: item.seriesId,
-      categoryId: item.categoryId,
-      accountId,
-      profileId: item.profileId,
-    })),
-  });
+    const ya = ocupados.get(item.seriesId!)!;
+    for (let idx = desde + 1; idx <= target; idx++) {
+      if (ya.has(idx)) continue;
+      const periodo = addMonths(item.month, item.year, idx - desde);
+      data.push({
+        title: item.title,
+        amount: item.amount,
+        currency: item.currency,
+        day: item.day,
+        month: periodo.month,
+        year: periodo.year,
+        kind: item.kind,
+        status: 'PENDIENTE' as const,
+        notes: item.notes,
+        isRecurring: true,
+        seriesId: item.seriesId,
+        categoryId: item.categoryId,
+        accountId,
+        profileId: item.profileId,
+      });
+    }
+  }
+
+  if (data.length === 0) return;
+  await prisma.plannedExpense.createMany({ data });
 }
 
 // ============================================
@@ -308,9 +323,11 @@ export async function registerPlannedAsExpense(data: RegisterPlannedData) {
       },
     });
 
+    // Se guarda lo que se pagó de verdad, no la estimación: si no, el total
+    // previsto del mes nunca terminaba de coincidir con lo gastado.
     await prisma.plannedExpense.update({
       where: { id: item.id },
-      data: { status: 'HECHO', expenseId: expense.id, amount: item.amount ?? data.amount },
+      data: { status: 'HECHO', expenseId: expense.id, amount: data.amount },
     });
 
     revalidateAgenda();

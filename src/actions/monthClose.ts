@@ -4,42 +4,42 @@ import { prisma } from '@/lib/prisma';
 import { getAccountId } from '@/lib/session';
 import { getDashboardStats } from './dashboard';
 import { revalidatePath } from 'next/cache';
-import { getArgDate } from '@/lib/dateUtils';
+import { addMonths, periodIndex } from '@/lib/periodUtils';
 
-// Verifica si el mes pasado tiene saldo y no fue cerrado
+/** Hasta cuántos meses para atrás se ofrece cerrar un mes olvidado. */
+const MESES_HACIA_ATRAS = 12;
+
+/**
+ * Busca el mes más viejo que quedó sin cerrar y todavía tiene saldo a favor.
+ *
+ * Antes miraba solo el mes anterior: si pasabas 30 días sin entrar, ese mes
+ * quedaba colgado para siempre y el sobrante no se arrastraba ni iba a ahorros.
+ */
 export async function checkPreviousMonthStatus(currentMonth: number, currentYear: number) {
   try {
     const accountId = await getAccountId();
     if (!accountId) return null;
 
-    let prevMonth = currentMonth - 1;
-    let prevYear = currentYear;
-    if (prevMonth === 0) {
-      prevMonth = 12;
-      prevYear--;
-    }
-
-    // Buscar si ya está cerrado
-    const closed = await prisma.monthClose.findUnique({
-      where: {
-        accountId_month_year: {
-          accountId,
-          month: prevMonth,
-          year: prevYear
-        }
-      }
+    const cierres = await prisma.monthClose.findMany({
+      where: { accountId },
+      select: { month: true, year: true },
     });
+    const cerrados = new Set(cierres.map((c) => periodIndex(c.month, c.year)));
 
-    if (closed) return null; // Ya fue cerrado o ignorado
+    // Del más viejo al más nuevo, arrancando por el mes anterior al consultado.
+    for (let i = MESES_HACIA_ATRAS; i >= 1; i--) {
+      const { month, year } = addMonths(currentMonth, currentYear, -i);
+      if (cerrados.has(periodIndex(month, year))) continue;
 
-    // Obtener stats del mes pasado
-    const stats = await getDashboardStats(prevMonth, prevYear);
-    if (stats.balance > 0) {
-      return {
-        month: prevMonth,
-        year: prevYear,
-        balance: stats.balance,
-      };
+      const stats = await getDashboardStats(month, year);
+      if (stats.balance > 0) {
+        return { month, year, balance: stats.balance };
+      }
+
+      // Un mes sin sobrante se marca como visto para no volver a calcularlo.
+      await prisma.monthClose
+        .create({ data: { month, year, accountId, action: 'IGNORE' } })
+        .catch(() => {});
     }
 
     return null;
@@ -63,14 +63,9 @@ export async function carryOverBalance(prevMonth: number, prevYear: number, amou
 
     const profileId = account.profiles[0].id; // Asignar a cualquier perfil, es ingreso común
 
-    // Determinar la fecha para el ingreso (día 1 del mes siguiente)
-    let currentMonth = prevMonth + 1;
-    let currentYear = prevYear;
-    if (currentMonth > 12) {
-      currentMonth = 1;
-      currentYear++;
-    }
-    const date = new Date(currentYear, currentMonth - 1, 1, 12, 0, 0);
+    // El ingreso entra el día 1 del mes siguiente al que sobró.
+    const siguiente = addMonths(prevMonth, prevYear, 1);
+    const date = new Date(siguiente.year, siguiente.month - 1, 1, 12, 0, 0);
 
     // 1. Crear el ingreso en el mes actual
     await prisma.income.create({

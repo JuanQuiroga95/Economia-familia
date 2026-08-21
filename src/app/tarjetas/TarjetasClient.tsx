@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { useProfile } from '@/hooks/useProfile';
 import { CurrencyInput } from '@/components/CurrencyInput';
 import { formatCurrency } from '@/lib/formatUtils';
@@ -122,6 +123,7 @@ export default function TarjetasClient({
   year,
 }: TarjetasClientProps) {
   const { activeProfile } = useProfile();
+  const confirmar = useConfirm();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
@@ -240,13 +242,15 @@ export default function TarjetasClient({
                     </div>
                   </div>
                   <button
-                    onClick={() => {
-                      if (
-                        !window.confirm(
-                          `¿Eliminar la tarjeta "${card.name}"? Se borran sus consumos y cuotas. Los gastos ya registrados en Gastos se mantienen.`
-                        )
-                      )
-                        return;
+                    onClick={async () => {
+                      const ok = await confirmar({
+                        titulo: `¿Eliminar la tarjeta "${card.name}"?`,
+                        detalle:
+                          'Se borran sus consumos y todas sus cuotas. Los gastos ya registrados en Gastos se mantienen.',
+                        tono: 'peligro',
+                        confirmar: 'Eliminar tarjeta',
+                      });
+                      if (!ok) return;
                       startTransition(async () => {
                         const res = await deleteCreditCard(card.id);
                         if (res.success) {
@@ -465,8 +469,14 @@ export default function TarjetasClient({
                             ${formatCurrency(p.totalAmount)}
                           </span>
                           <button
-                            onClick={() => {
-                              if (!window.confirm('¿Eliminar este consumo y sus cuotas?')) return;
+                            onClick={async () => {
+                              const ok = await confirmar({
+                                titulo: '¿Eliminar este consumo?',
+                                detalle: 'Se borran también todas sus cuotas futuras.',
+                                tono: 'peligro',
+                                confirmar: 'Eliminar consumo',
+                              });
+                              if (!ok) return;
                               startTransition(async () => {
                                 const res = await deleteCardPurchase(p.id);
                                 if (res.success) {
@@ -511,13 +521,18 @@ export default function TarjetasClient({
                             ${formatCurrency(p.amount)}
                           </span>
                           <button
-                            onClick={() => {
-                              if (
-                                !window.confirm(
-                                  '¿Eliminar este pago? También se borra el gasto que generó y la deuda vuelve a figurar.'
-                                )
-                              )
-                                return;
+                            onClick={async () => {
+                              const ok = await confirmar({
+                                titulo: '¿Eliminar este pago?',
+                                detalle:
+                                  'También se borra el gasto que generó, y la deuda del resumen vuelve a figurar.',
+                                tono: 'peligro',
+                                confirmar: 'Eliminar pago',
+                                resumen: [
+                                  { etiqueta: 'Monto', valor: `$${formatCurrency(p.amount)}` },
+                                ],
+                              });
+                              if (!ok) return;
                               startTransition(async () => {
                                 const res = await deleteCardPayment(p.id);
                                 if (res.success) {

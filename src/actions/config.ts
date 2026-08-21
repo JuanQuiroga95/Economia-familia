@@ -82,8 +82,11 @@ export async function getCurrentExchangeRate() {
     const todayStr = now.toISOString().split('T')[0];
     const rateUpdatedStr = rate ? rate.updatedAt.toISOString().split('T')[0] : null;
 
-    // Si no hay cotización para el mes, no se actualizó hoy, o es la de prueba (1200) traemos de la API
-    if (!rate || rateUpdatedStr !== todayStr || rate.usdToArs === 1200) {
+    // Se refresca si no hay cotización del mes o si la guardada no es de hoy.
+    // (Antes también refrescaba cuando el dólar valía exactamente 1200, que era
+    // el valor de prueba: el día que el blue llegue a ese número pegaría a la
+    // API en cada request.)
+    if (!rate || rateUpdatedStr !== todayStr) {
       const liveRates = await fetchLiveExchangeRates();
       if (liveRates) {
         return await prisma.exchangeRate.upsert({
@@ -110,6 +113,7 @@ export async function createCategory(data: { name: string; icon: string; color: 
   try {
     const accountId = await getAccountId();
     if (!accountId) return { success: false, error: 'No autenticado' };
+    if (!data.name?.trim()) return { success: false, error: 'Poné un nombre' };
 
     const category = await prisma.category.create({
       data: { ...data, accountId },
@@ -125,8 +129,15 @@ export async function createCategory(data: { name: string; icon: string; color: 
 
 export async function deleteCategory(id: string) {
   try {
+    const accountId = await getAccountId();
+    if (!accountId) return { success: false, error: 'No autenticado' };
+
+    const categoria = await prisma.category.findFirst({ where: { id, accountId } });
+    if (!categoria) return { success: false, error: 'Categoría no encontrada' };
+
     await prisma.category.delete({ where: { id } });
     revalidatePath('/configuracion');
+    revalidatePath('/gastos');
     return { success: true };
   } catch (error) {
     console.error('Error deleting category:', error);
@@ -145,6 +156,14 @@ export async function updateBudgetConfig(data: {
   isActive?: boolean;
 }) {
   try {
+    const accountId = await getAccountId();
+    if (!accountId) return { success: false, error: 'No autenticado' };
+
+    const perfil = await prisma.profile.findFirst({
+      where: { id: data.profileId, accountId },
+    });
+    if (!perfil) return { success: false, error: 'Perfil no encontrado' };
+
     const config = await prisma.budgetConfig.upsert({
       where: { profileId: data.profileId },
       update: {

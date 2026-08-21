@@ -7,8 +7,10 @@ export default function ProfileSelector() {
 
   if (!profiles.length) return null;
 
+  // Esto NO filtra lo que se ve: elige a nombre de quién se cargan los
+  // movimientos nuevos. El título lo deja claro al pasar el mouse.
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2" title="Cargando movimientos como…">
       {profiles.map((profile) => {
         const isActive = activeProfile?.id === profile.id;
         return (
@@ -21,7 +23,11 @@ export default function ProfileSelector() {
                 : 'bg-bg-card text-text-secondary hover:bg-bg-card-hover border border-border'
             }`}
           >
-            <span className="text-lg">{profile.avatar}</span>
+            {/* Las cuentas nuevas se crean sin avatar: sin este fallback el
+                botón salía sin ícono. */}
+            <span className="text-lg">
+              {profile.avatar || profile.name.charAt(0).toUpperCase()}
+            </span>
             <span>{profile.name}</span>
           </button>
         );

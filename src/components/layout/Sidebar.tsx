@@ -1,23 +1,20 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-
-const navItems = [
-  { href: '/dashboard', label: 'Inicio', icon: '🏠' },
-  { href: '/ingresos', label: 'Ingresos', icon: '💰' },
-  { href: '/gastos', label: 'Gastos', icon: '💸' },
-  { href: '/agenda', label: 'Agenda', icon: '🗓️' },
-  { href: '/tarjetas', label: 'Tarjetas', icon: '💳' },
-  { href: '/prestamos', label: 'Préstamos', icon: '🏦' },
-  { href: '/ahorros', label: 'Ahorros', icon: '🐷' },
-];
+import { seccionesVisibles, hrefConMes } from '@/lib/navSections';
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { data: session } = useSession();
   const accountLabel = session?.user?.name || 'EconoApp';
+  const esAdmin = (session?.user as Record<string, unknown> | undefined)?.isAdmin === true;
+
+  const month = searchParams.get('month');
+  const year = searchParams.get('year');
+  const secciones = seccionesVisibles(esAdmin);
 
   return (
     <aside className="hidden lg:flex flex-col w-64 h-screen fixed left-0 top-0 bg-bg-secondary border-r border-border z-40">
@@ -28,13 +25,13 @@ export default function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-1">
-        {navItems.map((item) => {
+      <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+        {secciones.map((item) => {
           const isActive = pathname === item.href || pathname?.startsWith(item.href + '/');
           return (
             <Link
               key={item.href}
-              href={item.href}
+              href={hrefConMes(item, month, year)}
               className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${
                 isActive
                   ? 'bg-gradient-to-r from-accent/20 to-transparent text-accent border border-accent/20'
@@ -46,31 +43,6 @@ export default function Sidebar() {
             </Link>
           );
         })}
-
-        {/* Extra items for desktop sidebar */}
-        <Link
-          href="/inversiones"
-          className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${
-            pathname === '/inversiones'
-              ? 'bg-gradient-to-r from-accent/20 to-transparent text-accent border border-accent/20'
-              : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'
-          }`}
-        >
-          <span className="text-lg">📈</span>
-          <span>Inversiones</span>
-        </Link>
-
-        <Link
-          href="/configuracion"
-          className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${
-            pathname === '/configuracion'
-              ? 'bg-gradient-to-r from-accent/20 to-transparent text-accent border border-accent/20'
-              : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'
-          }`}
-        >
-          <span className="text-lg">⚙️</span>
-          <span>Configuración</span>
-        </Link>
       </nav>
 
       {/* Footer */}
@@ -82,4 +54,3 @@ export default function Sidebar() {
     </aside>
   );
 }
-

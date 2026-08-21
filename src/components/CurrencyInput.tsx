@@ -5,8 +5,22 @@ interface CurrencyInputProps extends Omit<React.InputHTMLAttributes<HTMLInputEle
   onChange: (e: any) => void;
 }
 
+/** Formatea "1234.5" como "1.234,5" para mostrarlo. */
+function aFormatoLocal(raw: string) {
+  if (raw === '') return '';
+  const [entera = '0', decimal] = raw.split('.');
+  const soloDigitos = entera.replace(/\D/g, '');
+  if (!soloDigitos) return raw.replace('.', ',');
+  return (
+    soloDigitos.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + (decimal !== undefined ? ',' + decimal : '')
+  );
+}
+
 export function CurrencyInput({ value, onChange, className, ...props }: CurrencyInputProps) {
-  const [displayValue, setDisplayValue] = useState('');
+  // Lo que se muestra se deriva del valor que llega por props. Se guarda en
+  // state solo mientras se tipea, para no pisar comas intermedias; el efecto
+  // sincroniza cuando el valor cambia desde afuera.
+  const [displayValue, setDisplayValue] = useState(() => aFormatoLocal(value?.toString() || ''));
 
   useEffect(() => {
     const strVal = value?.toString() || '';

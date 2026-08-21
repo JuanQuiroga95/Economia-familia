@@ -54,10 +54,16 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
 
     if (status === 'authenticated') {
       fetchProfiles();
-    } else if (status === 'unauthenticated') {
-      setProfiles([]);
-      setActiveProfileState(null);
-      setLoading(false);
+      return;
+    }
+    if (status === 'unauthenticated') {
+      // En un microtask: llamar a setState en el cuerpo del efecto encadena
+      // un render extra en cada cambio de estado de la sesión.
+      queueMicrotask(() => {
+        setProfiles([]);
+        setActiveProfileState(null);
+        setLoading(false);
+      });
     }
   }, [status]);
 

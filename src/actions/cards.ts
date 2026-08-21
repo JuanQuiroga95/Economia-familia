@@ -399,6 +399,7 @@ export async function getCardsOverview(month: number, year: number) {
         closingDay: card.closingDay,
         dueDay: card.dueDay,
         color: card.color,
+        isActive: card.isActive,
         profile: card.profile,
         statement,
         debt,
@@ -438,10 +439,21 @@ export async function getCardsOverview(month: number, year: number) {
 
 export interface CardsSummary {
   hasCards: boolean;
+  /** Totales de la moneda principal (la de la mayoría de las tarjetas). */
   dueThisMonth: number;
   pendingThisMonth: number;
   totalDebt: number;
   futureInstallments: number;
+  /** Moneda a la que corresponden los totales de arriba. */
+  currency: string;
+  /**
+   * Lo mismo pero abierto por moneda. Sumar tarjetas en pesos con tarjetas en
+   * dólares daba un número sin sentido, así que los totales viven por moneda.
+   */
+  byCurrency: Record<
+    string,
+    { dueThisMonth: number; pendingThisMonth: number; totalDebt: number; futureInstallments: number }
+  >;
   cards: { id: string; name: string; color: string; pending: number; currency: string }[];
 }
 
@@ -453,6 +465,8 @@ export async function getCardsSummary(month?: number, year?: number): Promise<Ca
     pendingThisMonth: 0,
     totalDebt: 0,
     futureInstallments: 0,
+    currency: 'ARS',
+    byCurrency: {},
     cards: [],
   };
 
@@ -464,8 +478,9 @@ export async function getCardsSummary(month?: number, year?: number): Promise<Ca
     const m = month ?? current.month;
     const y = year ?? current.year;
 
+    // Solo las tarjetas activas: una dada de baja seguía sumando al mes.
     const cards = await prisma.creditCard.findMany({
-      where: { profile: { accountId } },
+      where: { profile: { accountId }, isActive: true },
       include: {
         purchases: { include: { schedule: true } },
         payments: true,
@@ -474,16 +489,27 @@ export async function getCardsSummary(month?: number, year?: number): Promise<Ca
 
     if (cards.length === 0) return empty;
 
-    const summary = { ...empty, hasCards: true, cards: [] as CardsSummary['cards'] };
+    const summary: CardsSummary = { ...empty, hasCards: true, byCurrency: {}, cards: [] };
 
     for (const card of cards) {
       const installments = card.purchases.flatMap((p) => p.schedule);
       const statement = buildStatement(installments, card.payments, m, y);
+      const deuda = totalDebt(installments, card.payments, m, y);
+      const futuro = futureInstallments(installments, m, y);
 
-      summary.dueThisMonth += statement.totalDue;
-      summary.pendingThisMonth += statement.pending;
-      summary.totalDebt += totalDebt(installments, card.payments, m, y);
-      summary.futureInstallments += futureInstallments(installments, m, y);
+      const acc =
+        summary.byCurrency[card.currency] ??
+        (summary.byCurrency[card.currency] = {
+          dueThisMonth: 0,
+          pendingThisMonth: 0,
+          totalDebt: 0,
+          futureInstallments: 0,
+        });
+      acc.dueThisMonth += statement.totalDue;
+      acc.pendingThisMonth += statement.pending;
+      acc.totalDebt += deuda;
+      acc.futureInstallments += futuro;
+
       summary.cards.push({
         id: card.id,
         name: card.name,
@@ -491,6 +517,18 @@ export async function getCardsSummary(month?: number, year?: number): Promise<Ca
         pending: statement.pending,
         currency: card.currency,
       });
+    }
+
+    // Los campos planos siguen existiendo para no romper nada, pero ahora
+    // apuntan a una sola moneda: la que más deuda concentra.
+    const principal =
+      Object.entries(summary.byCurrency).sort((a, b) => b[1].dueThisMonth - a[1].dueThisMonth)[0];
+    if (principal) {
+      summary.currency = principal[0];
+      summary.dueThisMonth = principal[1].dueThisMonth;
+      summary.pendingThisMonth = principal[1].pendingThisMonth;
+      summary.totalDebt = principal[1].totalDebt;
+      summary.futureInstallments = principal[1].futureInstallments;
     }
 
     return summary;

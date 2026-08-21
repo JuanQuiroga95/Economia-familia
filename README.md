@@ -4,7 +4,7 @@ Aplicación web de gestión financiera para Juan y Tania. Controla ingresos, gas
 
 ## 🚀 Stack Tecnológico
 
-- **Framework**: Next.js 15+ (App Router)
+- **Framework**: Next.js 16 (App Router)
 - **Frontend**: React 19, Tailwind CSS 4
 - **Base de Datos**: Neon (PostgreSQL) + Prisma ORM
 - **Autenticación**: NextAuth.js v4
@@ -171,6 +171,23 @@ npm run db:seed
 - Gestión de categorías
 - Presupuesto quincenal configurable
 
+### Administración (`/admin`)
+Solo para cuentas marcadas como admin. Lista todas las familias con sus
+integrantes, la actividad de cada una y el balance del mes, y permite cambiar
+el usuario y la contraseña de cualquier familia.
+
+Las contraseñas **no se pueden ver**: la base guarda un hash bcrypt, que es de
+una sola vía. Lo único posible es asignar una nueva.
+
+Para designar al primer admin, definir `ADMIN_USERNAME` con el usuario de esa
+cuenta; la primera vez que entre al panel se le marca `isAdmin` en la base y ya
+no depende más de la variable.
+
+### Monedas
+Los movimientos se pueden cargar en ARS, USD y EUR, pero **los totales
+consolidados del dashboard son solo en ARS** (ver `src/lib/reportFilters.ts`).
+Los saldos en otras monedas se ven por separado en Ahorros e Inversiones.
+
 ## 🗃️ Estructura de la Base de Datos
 
 ```
@@ -191,6 +208,8 @@ Loan           → Préstamos tomados u otorgados
 LoanInstallment→ Plan de cuotas del préstamo
 LoanPayment    → Pagos/cobros de cuota (generan Expense o Income)
 PlannedExpense → Ítems de la agenda de gastos previstos
+InvestmentTransaction → Aportes y rescates de una inversión
+TelegramPending → Lo que el bot interpretó y espera confirmación
 ```
 
 ## 🔔 Recordatorios automáticos
@@ -210,6 +229,19 @@ curl "https://TU-APP.vercel.app/api/cron/recordatorios?secret=$CRON_SECRET"
 ```
 
 ## 🤖 Bot de Telegram
+
+**Seguridad:** definir `TELEGRAM_WEBHOOK_SECRET` y pasarlo como `secret_token`
+al registrar el webhook. Sin eso, cualquiera que conozca la URL puede mandarle
+comandos al bot:
+
+```bash
+curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook"   -d "url=https://TU-APP.vercel.app/api/webhook/telegram"   -d "secret_token=$TELEGRAM_WEBHOOK_SECRET"
+```
+
+**Confirmación:** lo que llega por **audio o foto** no se guarda directo. El bot
+muestra lo que entendió y espera que toques *Confirmar*, porque una
+transcripción o la lectura de una imagen pueden salir mal. El texto escrito a
+mano sí se carga en el momento, con su botón de deshacer.
 
 Además de gastos e ingresos por texto, foto o audio, el bot entiende:
 

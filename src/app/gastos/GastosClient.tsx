@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CurrencyInput } from '@/components/CurrencyInput';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
 
 interface Category {
   id: string;
@@ -25,8 +26,28 @@ interface Expense {
   paidFromPersonalBudget: boolean;
   splitPercentage?: number;
   receiptUrl: string | null;
+  walletId?: string | null;
+  paymentMethod?: string;
   profile: { id: string; name: string; avatar: string | null };
   category: { id: string; name: string; icon: string; color: string };
+  // De dónde nació el gasto. Si viene de otra sección, allá se edita.
+  cardPayment?: { id: string; card: { name: string } } | null;
+  loanPayment?: { id: string; loan: { name: string } } | null;
+  plannedExpense?: { id: string } | null;
+}
+
+/** Etiqueta de origen para los gastos que nacieron en otra sección. */
+function origenDelGasto(e: Expense) {
+  if (e.cardPayment) {
+    return { icono: '💳', texto: `Tarjeta ${e.cardPayment.card.name}`, seccion: 'Tarjetas' };
+  }
+  if (e.loanPayment) {
+    return { icono: '🏦', texto: `Cuota ${e.loanPayment.loan.name}`, seccion: 'Préstamos' };
+  }
+  if (e.plannedExpense) {
+    return { icono: '🗓️', texto: 'Desde la agenda', seccion: null };
+  }
+  return null;
 }
 
 interface GastosClientProps {
@@ -40,11 +61,14 @@ interface GastosClientProps {
 
 export default function GastosClient({ initialExpenses, categories, savings = [], investments = [], wallets = [], accountInfo }: GastosClientProps) {
   const { activeProfile } = useProfile();
+  const confirmar = useConfirm();
+  const [creandoCategoria, setCreandoCategoria] = useState(false);
+  const [nuevaCategoria, setNuevaCategoria] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [filterType, setFilterType] = useState<string>('');
   const router = useRouter();
-  
+
   // Animation state
   const [animatingExpense, setAnimatingExpense] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
@@ -71,9 +95,17 @@ export default function GastosClient({ initialExpenses, categories, savings = []
   const [paymentMethod, setPaymentMethod] = useState<'EFECTIVO' | 'TRANSFERENCIA'>('TRANSFERENCIA');
 
   const handleCreateCategory = () => {
-    const name = window.prompt('Nombre de la nueva categoría (ej: Alimento perro):');
-    if (!name || !name.trim()) return;
-    
+    setNuevaCategoria('');
+    setCreandoCategoria(true);
+  };
+
+  const guardarCategoria = () => {
+    const name = nuevaCategoria.trim();
+    if (!name) {
+      toast.error('Poné un nombre para la categoría');
+      return;
+    }
+
     startTransition(async () => {
       const { createCategory } = await import('@/actions/config');
       const res = await createCategory({
@@ -84,6 +116,8 @@ export default function GastosClient({ initialExpenses, categories, savings = []
       if (res.success && res.data) {
         toast.success('Categoría creada');
         setCategoryId(res.data.id);
+        setCreandoCategoria(false);
+        setNuevaCategoria('');
         router.refresh();
       } else {
         toast.error(res.error || 'Error al crear categoría');
@@ -144,9 +178,34 @@ export default function GastosClient({ initialExpenses, categories, savings = []
       return;
     }
 
-    if (editingExpenseId) {
-      if (!window.confirm('¿Estás seguro que querés guardar estos cambios?')) return;
+    const montoNumero = parseFloat(amount);
+    if (!montoNumero || montoNumero <= 0) {
+      toast.error('Poné un monto mayor a cero');
+      return;
     }
+
+    const categoria = categories.find((c) => c.id === categoryId);
+    const ok = await confirmar({
+      titulo: editingExpenseId ? '¿Guardar los cambios?' : '¿Registrar este gasto?',
+      confirmar: editingExpenseId ? 'Guardar cambios' : 'Registrar gasto',
+      resumen: [
+        { etiqueta: 'Monto', valor: `$${formatCurrency(montoNumero)} ${currency}` },
+        { etiqueta: 'Concepto', valor: description || '(sin descripción)' },
+        {
+          etiqueta: 'Categoría',
+          valor: categoria ? `${categoria.icon} ${categoria.name}` : '—',
+        },
+        { etiqueta: 'Fecha', valor: date },
+        {
+          etiqueta: 'Tipo',
+          valor: type === 'COMPARTIDO' ? 'Compartido' : `Propio de ${activeProfile.name}`,
+        },
+        ...(fundingSource !== 'balance'
+          ? [{ etiqueta: 'Sale de', valor: fundingSource.startsWith('ahorro') ? 'Un ahorro' : 'Una inversión' }]
+          : []),
+      ],
+    });
+    if (!ok) return;
 
     startTransition(async () => {
       const expenseData = {
@@ -165,13 +224,13 @@ export default function GastosClient({ initialExpenses, categories, savings = []
         paymentMethod,
       };
 
-      const result = editingExpenseId 
+      const result = editingExpenseId
         ? await updateExpense(editingExpenseId, expenseData)
         : await createExpense(expenseData);
 
       if (result.success) {
         toast.success(editingExpenseId ? 'Gasto actualizado' : 'Gasto registrado');
-        
+
         // Trigger subtle animation
         if (!editingExpenseId) {
           setAnimatingExpense(true);
@@ -197,6 +256,11 @@ export default function GastosClient({ initialExpenses, categories, savings = []
   };
 
   const handleEdit = (expense: Expense) => {
+    const origen = origenDelGasto(expense);
+    if (origen?.seccion) {
+      toast.error(`Este gasto se edita desde ${origen.seccion}, así no se desincronizan los números.`);
+      return;
+    }
     setEditingExpenseId(expense.id);
     setAmount(expense.amount.toString());
     setCurrency(expense.currency);
@@ -208,8 +272,8 @@ export default function GastosClient({ initialExpenses, categories, savings = []
     setSplitPercentage(expense.splitPercentage?.toString() || '');
     setReceiptUrl(expense.receiptUrl || '');
     setFundingSource('balance');
-    setWalletId((expense as any).walletId || '');
-    setPaymentMethod((expense as any).paymentMethod || 'TRANSFERENCIA');
+    setWalletId(expense.walletId || '');
+    setPaymentMethod((expense.paymentMethod as 'EFECTIVO' | 'TRANSFERENCIA') || 'TRANSFERENCIA');
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -228,8 +292,29 @@ export default function GastosClient({ initialExpenses, categories, savings = []
     setPaymentMethod('TRANSFERENCIA');
   };
 
-  const handleDelete = (id: string) => {
-    if (!window.confirm('¿Estás seguro que querés eliminar este gasto?')) return;
+  const handleDelete = async (expense: Expense) => {
+    const origen = origenDelGasto(expense);
+    const ok = await confirmar({
+      titulo: '¿Eliminar este gasto?',
+      tono: 'peligro',
+      confirmar: 'Eliminar',
+      detalle: origen?.seccion
+        ? `Este gasto es el pago registrado en ${origen.seccion}. Al borrarlo, esa deuda vuelve a figurar como impaga.`
+        : undefined,
+      resumen: [
+        { etiqueta: 'Concepto', valor: expense.description },
+        { etiqueta: 'Monto', valor: `$${formatCurrency(expense.amount)} ${expense.currency}` },
+        {
+          etiqueta: 'Fecha',
+          valor: new Date(expense.date).toLocaleDateString('es-AR', {
+            timeZone: 'America/Argentina/Buenos_Aires',
+          }),
+        },
+      ],
+    });
+    if (!ok) return;
+
+    const id = expense.id;
     startTransition(async () => {
       const result = await deleteExpense(id);
       if (result.success) {
@@ -308,7 +393,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
             <label className="block text-sm text-text-secondary mb-1">Origen de los fondos</label>
             <select value={fundingSource} onChange={(e) => setFundingSource(e.target.value)} className="input-field">
               <option value="balance">🏦 Balance General (Cuenta corriente)</option>
-              
+
               {savings.filter(s => s.currency === currency && s.currentAmount > 0).length > 0 && (
                 <optgroup label="Mis Ahorros">
                   {savings.filter(s => s.currency === currency && s.currentAmount > 0).map(s => (
@@ -318,7 +403,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
                   ))}
                 </optgroup>
               )}
-              
+
               {investments.filter(i => i.currency === currency && i.amount > 0).length > 0 && (
                 <optgroup label="Mis Inversiones">
                   {investments.filter(i => i.currency === currency && i.amount > 0).map(i => (
@@ -377,6 +462,46 @@ export default function GastosClient({ initialExpenses, categories, savings = []
                 <span className="truncate">Nueva</span>
               </button>
             </div>
+
+            {creandoCategoria && (
+              <div className="mt-3 p-3 rounded-xl bg-bg-input border border-border space-y-2 animate-fade-in">
+                <label className="block text-xs text-text-secondary">
+                  Nombre de la categoría nueva
+                </label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={nuevaCategoria}
+                  onChange={(e) => setNuevaCategoria(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      guardarCategoria();
+                    }
+                    if (e.key === 'Escape') setCreandoCategoria(false);
+                  }}
+                  className="input-field"
+                  placeholder="Ej: Alimento perro"
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCreandoCategoria(false)}
+                    className="flex-1 py-2 rounded-lg text-sm bg-bg-card border border-border text-text-secondary hover:bg-bg-card-hover"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isPending || !nuevaCategoria.trim()}
+                    onClick={guardarCategoria}
+                    className="flex-1 py-2 rounded-lg text-sm font-semibold text-white bg-accent hover:opacity-90 disabled:opacity-50"
+                  >
+                    Crear
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Wallet / Billetera */}
@@ -475,7 +600,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
                   </div>
                 </div>
               </div>
-              
+
               {accountInfo?.splitMode === 'PORCENTAJE' && (
                 <div className="mt-4 p-4 rounded-xl border border-border bg-bg-card">
                   <label className="block text-sm text-text-secondary mb-2">Porcentaje que me corresponde pagar (%)</label>
@@ -490,7 +615,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
                     placeholder="Ej: 50"
                   />
                   <p className="text-xs text-text-muted mt-2">
-                    Dejar vacío para usar tu {splitPercentage}% configurado por defecto.
+                    Dejalo vacío para usar el porcentaje configurado en Configuración.
                   </p>
                 </div>
               )}
@@ -570,8 +695,23 @@ export default function GastosClient({ initialExpenses, categories, savings = []
                     <span className="text-xs text-text-muted">{expense.profile.name}</span>
                     <span className="text-xs text-text-muted">•</span>
                     <span className="text-xs text-text-muted">
-                      {(expense as any).paymentMethod === 'EFECTIVO' ? '💵 Efectivo' : '💳 Transferencia'}
+                      {expense.paymentMethod === 'EFECTIVO' ? '💵 Efectivo' : '💳 Transferencia'}
                     </span>
+                    {(() => {
+                      const origen = origenDelGasto(expense);
+                      return origen ? (
+                        <span
+                          className="text-xs px-1.5 py-0.5 rounded-full bg-info/20 text-info"
+                          title={
+                            origen.seccion
+                              ? `Se edita desde ${origen.seccion}`
+                              : 'Nació de un ítem de la agenda'
+                          }
+                        >
+                          {origen.icono} {origen.texto}
+                        </span>
+                      ) : null;
+                    })()}
                     {expense.type === 'COMPARTIDO' && (
                       <span className="text-xs px-1.5 py-0.5 rounded-full bg-accent/20 text-accent">
                         👥 Compartido
@@ -611,7 +751,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
                     ✏️
                   </button>
                   <button
-                    onClick={() => handleDelete(expense.id)}
+                    onClick={() => handleDelete(expense)}
                     className="p-2 rounded-lg text-text-muted hover:text-danger hover:bg-danger/10 transition-all"
                     title="Eliminar"
                   >

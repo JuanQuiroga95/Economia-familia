@@ -2,27 +2,25 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-
-// Las 4 secciones del día a día quedan a mano; el resto vive en el menú "Más".
-const navItems = [
-  { href: '/dashboard', label: 'Inicio', icon: '🏠' },
-  { href: '/gastos', label: 'Gastos', icon: '💸' },
-  { href: '/ingresos', label: 'Ingresos', icon: '💰' },
-  { href: '/ahorros', label: 'Ahorros', icon: '🐷' },
-];
-
-const moreItems = [
-  { href: '/agenda', label: 'Agenda', icon: '🗓️' },
-  { href: '/tarjetas', label: 'Tarjetas', icon: '💳' },
-  { href: '/prestamos', label: 'Préstamos', icon: '🏦' },
-  { href: '/inversiones', label: 'Inversiones', icon: '📈' },
-  { href: '/configuracion', label: 'Configuración', icon: '⚙️' },
-];
+import { usePathname, useSearchParams } from 'next/navigation';
+import { useSession } from 'next-auth/react';
+import { seccionesVisibles, hrefConMes } from '@/lib/navSections';
 
 export default function BottomNav() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const { data: session } = useSession();
   const [showMore, setShowMore] = useState(false);
+
+  const esAdmin = (session?.user as Record<string, unknown> | undefined)?.isAdmin === true;
+  const month = searchParams.get('month');
+  const year = searchParams.get('year');
+
+  // Misma lista que el sidebar: las 4 del día a día quedan a mano y el resto
+  // vive en el menú "Más".
+  const secciones = seccionesVisibles(esAdmin);
+  const navItems = secciones.filter((s) => s.principal);
+  const moreItems = secciones.filter((s) => !s.principal);
 
   const isActive = (href: string) => pathname === href || pathname?.startsWith(href + '/');
   const moreIsActive = moreItems.some((item) => isActive(item.href));
@@ -48,7 +46,7 @@ export default function BottomNav() {
               {moreItems.map((item) => (
                 <Link
                   key={item.href}
-                  href={item.href}
+                  href={hrefConMes(item, month, year)}
                   onClick={() => setShowMore(false)}
                   className={`flex flex-col items-center gap-1.5 p-3 rounded-xl transition-all ${
                     isActive(item.href)
@@ -72,7 +70,7 @@ export default function BottomNav() {
             return (
               <Link
                 key={item.href}
-                href={item.href}
+                href={hrefConMes(item, month, year)}
                 onClick={() => setShowMore(false)}
                 className={`relative flex flex-col items-center gap-0.5 py-2 px-2 min-w-[3.25rem] transition-all duration-200 ${
                   active ? 'text-accent' : 'text-text-muted'

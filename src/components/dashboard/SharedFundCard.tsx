@@ -2,25 +2,28 @@
 import { formatCurrency } from '@/lib/formatUtils';
 
 import type { SharedFundStats } from '@/types';
-import { useState, useTransition } from 'react';
+import { useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { createFundPayment, deleteFundPayment } from '@/actions/sharedFund';
 import { toast } from 'react-hot-toast';
+import { useConfirm, usePedirMonto } from '@/components/ui/ConfirmDialog';
 
 export default function SharedFundCard({ stats }: { stats: SharedFundStats }) {
   const router = useRouter();
+  const confirmar = useConfirm();
+  const pedirMonto = usePedirMonto();
   const [isPending, startTransition] = useTransition();
   const hasDebts = stats.debts.length > 0;
   const hasExpenses = stats.totalSharedExpenses > 0;
 
-  const handleReimburse = (profileId: string, maxAmount: number) => {
-    const amountStr = prompt(`¿Cuánto se le devolvió a este perfil? (Máximo: $${maxAmount})`);
-    if (!amountStr) return;
-    const amount = parseFloat(amountStr);
-    if (isNaN(amount) || amount <= 0 || amount > maxAmount) {
-      toast.error('Monto inválido');
-      return;
-    }
+  const handleReimburse = async (profileId: string, maxAmount: number) => {
+    const amount = await pedirMonto({
+      titulo: '¿Cuánto se le devolvió?',
+      detalle: 'Se descuenta de lo que el fondo común le debe a esta persona.',
+      confirmar: 'Registrar devolución',
+      pedirMonto: { etiqueta: 'Monto devuelto', maximo: maxAmount },
+    });
+    if (amount === null) return;
 
     startTransition(async () => {
       const result = await createFundPayment({
@@ -36,9 +39,15 @@ export default function SharedFundCard({ stats }: { stats: SharedFundStats }) {
     });
   };
 
-  const handleDeleteReimbursement = (id: string) => {
-    if (!confirm('¿Estás seguro de que quieres revertir esta devolución?')) return;
-    
+  const handleDeleteReimbursement = async (id: string) => {
+    const ok = await confirmar({
+      titulo: '¿Revertir esta devolución?',
+      detalle: 'La deuda con el fondo común vuelve a figurar por ese monto.',
+      tono: 'peligro',
+      confirmar: 'Revertir',
+    });
+    if (!ok) return;
+
     startTransition(async () => {
       const result = await deleteFundPayment(id);
       if (result.success) {

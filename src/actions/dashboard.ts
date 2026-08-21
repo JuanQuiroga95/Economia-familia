@@ -3,6 +3,7 @@
 import { prisma } from '@/lib/prisma';
 import type { BudgetStatus, CategoryBreakdown, SharedFundStats } from '@/types';
 import { getFinancialMonthRange, getArgDate, getCurrentFinancialMonth } from '@/lib/dateUtils';
+import { categoriaDeConsumo, MONEDA_BASE } from '@/lib/reportFilters';
 
 import { getAccountId } from '@/lib/session';
 
@@ -26,7 +27,7 @@ export async function getDashboardStats(month: number, year: number, profileId?:
 
     // Total ingresos
     const incomes = await prisma.income.aggregate({
-      where: { ...whereBase, currency: 'ARS' },
+      where: { ...whereBase, currency: MONEDA_BASE },
       _sum: { amount: true },
     });
 
@@ -34,8 +35,8 @@ export async function getDashboardStats(month: number, year: number, profileId?:
 
     const expenseWhereBase = {
       ...whereBase,
-      currency: 'ARS',
-      category: { name: { notIn: ['Ahorro / Inversión', 'Ahorros'] } },
+      currency: MONEDA_BASE,
+      category: categoriaDeConsumo,
     };
 
     if (profileId) {
@@ -65,24 +66,43 @@ export async function getDashboardStats(month: number, year: number, profileId?:
     let savingsDeposits = 0;
     let savingsWithdrawals = 0;
     savingsTxs.forEach(tx => {
-      if (tx.savingsGoal.currency === 'ARS') {
+      if (tx.savingsGoal.currency === MONEDA_BASE) {
         if (tx.type === 'DEPOSITO') savingsDeposits += tx.amount;
         if (tx.type === 'RETIRO') savingsWithdrawals += tx.amount;
       }
     });
 
-    // Investments created this month
+    // Plata que se fue a inversiones este mes. El alta de una inversión no deja
+    // movimiento, así que el monto original se reconstruye sumándole los
+    // retiros: si no, rescatar plata de una inversión nueva la hacía desaparecer.
     const newInvestments = await prisma.investment.findMany({
       where: {
         startDate: { gte: startDate, lte: endDate },
         profile: { accountId },
-        currency: 'ARS',
+        currency: MONEDA_BASE,
         ...(profileId ? { profileId } : {}),
       },
+      include: { transactions: true },
     });
     let investmentDeposits = 0;
     newInvestments.forEach(inv => {
-      investmentDeposits += inv.amount;
+      const retirado = inv.transactions
+        .filter(t => t.type === 'RETIRO')
+        .reduce((acc, t) => acc + t.amount, 0);
+      investmentDeposits += inv.amount + retirado;
+    });
+
+    // Retiros de inversiones hechos este mes (de cualquier inversión, nueva o
+    // vieja): esa plata vuelve al balance del mes.
+    const investmentTxs = await prisma.investmentTransaction.findMany({
+      where: whereBase,
+      include: { investment: { select: { currency: true } } },
+    });
+    let investmentWithdrawals = 0;
+    investmentTxs.forEach(tx => {
+      if (tx.investment.currency !== MONEDA_BASE) return;
+      if (tx.type === 'RETIRO') investmentWithdrawals += tx.amount;
+      if (tx.type === 'DEPOSITO') investmentDeposits += tx.amount;
     });
 
     let splitDetails = undefined;
@@ -135,8 +155,14 @@ export async function getDashboardStats(month: number, year: number, profileId?:
     return {
       totalIncome,
       totalExpenses,
-      balance: totalIncome - totalExpenses - savingsDeposits + savingsWithdrawals - investmentDeposits,
-      currency: 'ARS',
+      balance:
+        totalIncome -
+        totalExpenses -
+        savingsDeposits +
+        savingsWithdrawals -
+        investmentDeposits +
+        investmentWithdrawals,
+      currency: MONEDA_BASE,
       splitBalanceEnabled: account.showSplitBalance,
       splitDetails,
     };
@@ -157,12 +183,14 @@ export async function getWalletBalances() {
 
     const balances = await Promise.all(
       wallets.map(async (wallet) => {
+        // Solo los movimientos en la moneda de la billetera: si no, un gasto en
+        // dólares le restaba pesos a una billetera en pesos.
         const incomes = await prisma.income.aggregate({
-          where: { walletId: wallet.id },
+          where: { walletId: wallet.id, currency: wallet.currency },
           _sum: { amount: true },
         });
         const expenses = await prisma.expense.aggregate({
-          where: { walletId: wallet.id },
+          where: { walletId: wallet.id, currency: wallet.currency },
           _sum: { amount: true },
         });
         
@@ -194,7 +222,8 @@ export async function getCategoryBreakdown(
       where: {
         date: { gte: startDate, lte: endDate },
         profile: { accountId },
-        category: { name: { notIn: ['Ahorro / Inversión', 'Ahorros'] } },
+        currency: MONEDA_BASE,
+        category: categoriaDeConsumo,
         ...(profileId ? { profileId, type: 'PROPIO' } : {}),
       },
       include: { category: true },
@@ -233,16 +262,20 @@ export async function getCategoryBreakdown(
   }
 }
 
-export async function getMonthlyComparison(profileId?: string) {
+/**
+ * Los 6 meses que terminan en el mes consultado. Antes contaba siempre desde
+ * hoy, así que al mirar un mes viejo el gráfico mostraba otro período que el
+ * resto del dashboard.
+ */
+export async function getMonthlyComparison(month?: number, year?: number, profileId?: string) {
   try {
     const current = getCurrentFinancialMonth(getArgDate());
     const months = [];
     const accountId = await getAccountId();
     if (!accountId) throw new Error('No account id');
 
-    
-    const currentMonth = current.month;
-    const currentYear = current.year;
+    const currentMonth = month ?? current.month;
+    const currentYear = year ?? current.year;
 
     for (let i = 5; i >= 0; i--) {
       let m = currentMonth - i;
@@ -258,6 +291,7 @@ export async function getMonthlyComparison(profileId?: string) {
         where: {
           date: { gte: startDate, lte: endDate },
           profile: { accountId },
+          currency: MONEDA_BASE,
           ...(profileId ? { profileId } : {}),
         },
         _sum: { amount: true },
@@ -267,7 +301,8 @@ export async function getMonthlyComparison(profileId?: string) {
         where: {
           date: { gte: startDate, lte: endDate },
           profile: { accountId },
-          category: { name: { notIn: ['Ahorro / Inversión', 'Ahorros'] } },
+          currency: MONEDA_BASE,
+          category: categoriaDeConsumo,
           ...(profileId ? { profileId, type: 'PROPIO' } : {}),
         },
         _sum: { amount: true },
@@ -289,7 +324,18 @@ export async function getMonthlyComparison(profileId?: string) {
   }
 }
 
-export async function getBudgetStatus(profileId: string): Promise<BudgetStatus | null> {
+/**
+ * Estado del presupuesto de un perfil.
+ *
+ * Si se pide el mes en curso muestra la quincena actual (que es lo útil día a
+ * día). Para un mes pasado eso no tiene sentido: se muestra el mes cerrado
+ * completo, con el presupuesto de las dos quincenas sumadas.
+ */
+export async function getBudgetStatus(
+  profileId: string,
+  month?: number,
+  year?: number
+): Promise<BudgetStatus | null> {
   try {
     const config = await prisma.budgetConfig.findUnique({
       where: { profileId },
@@ -299,44 +345,63 @@ export async function getBudgetStatus(profileId: string): Promise<BudgetStatus |
     if (!config || !config.isActive) return null;
 
     const now = getArgDate();
-    const day = now.getDate();
-    const year = now.getFullYear();
-    const month = now.getMonth();
+    const actual = getCurrentFinancialMonth(now);
+    const mes = month ?? actual.month;
+    const anio = year ?? actual.year;
+    const esMesActual = mes === actual.month && anio === actual.year;
 
-    const lastDayOfMonth = new Date(year, month + 1, 0).getDate();
-    const isFirstHalf = day >= lastDayOfMonth || day <= 15;
-    const currentHalf: 1 | 2 = isFirstHalf ? 1 : 2;
-    
     const budgetType = config.budgetType || 'QUINCENAL';
     const monthlyBudget = config.monthlyBudget || 0;
 
-    const baseBudget = budgetType === 'MENSUAL' 
-      ? monthlyBudget 
-      : (currentHalf === 1 ? config.firstHalfBudget : config.secondHalfBudget);
-      
-    const budget = baseBudget + (config.extraBudget || 0);
-
     let startDate: Date;
     let endDate: Date;
+    let budget: number;
+    let currentHalf: 1 | 2 = 1;
 
-    if (budgetType === 'MENSUAL') {
-      startDate = new Date(year, month, 1);
-      endDate = new Date(year, month, lastDayOfMonth, 23, 59, 59);
+    if (!esMesActual) {
+      // Mes cerrado: el mes entero de punta a punta.
+      const rango = getFinancialMonthRange(mes, anio);
+      startDate = rango.startDate;
+      endDate = rango.endDate;
+      budget =
+        budgetType === 'MENSUAL'
+          ? monthlyBudget
+          : config.firstHalfBudget + config.secondHalfBudget;
     } else {
-      if (isFirstHalf) {
+      const day = now.getDate();
+      const yearNow = now.getFullYear();
+      const monthNow = now.getMonth();
+
+      const lastDayOfMonth = new Date(yearNow, monthNow + 1, 0).getDate();
+      const isFirstHalf = day >= lastDayOfMonth || day <= 15;
+      currentHalf = isFirstHalf ? 1 : 2;
+
+      budget =
+        budgetType === 'MENSUAL'
+          ? monthlyBudget
+          : isFirstHalf
+            ? config.firstHalfBudget
+            : config.secondHalfBudget;
+
+      if (budgetType === 'MENSUAL') {
+        startDate = new Date(yearNow, monthNow, 1);
+        endDate = new Date(yearNow, monthNow, lastDayOfMonth, 23, 59, 59);
+      } else if (isFirstHalf) {
         if (day >= lastDayOfMonth) {
-          startDate = new Date(year, month, lastDayOfMonth);
-          endDate = new Date(year, month + 1, 15, 23, 59, 59);
+          startDate = new Date(yearNow, monthNow, lastDayOfMonth);
+          endDate = new Date(yearNow, monthNow + 1, 15, 23, 59, 59);
         } else {
-          const prevMonthLastDay = new Date(year, month, 0).getDate();
-          startDate = new Date(year, month - 1, prevMonthLastDay);
-          endDate = new Date(year, month, 15, 23, 59, 59);
+          const prevMonthLastDay = new Date(yearNow, monthNow, 0).getDate();
+          startDate = new Date(yearNow, monthNow - 1, prevMonthLastDay);
+          endDate = new Date(yearNow, monthNow, 15, 23, 59, 59);
         }
       } else {
-        startDate = new Date(year, month, 16);
-        endDate = new Date(year, month, lastDayOfMonth - 1, 23, 59, 59);
+        startDate = new Date(yearNow, monthNow, 16);
+        endDate = new Date(yearNow, monthNow, lastDayOfMonth - 1, 23, 59, 59);
       }
     }
+
+    budget += config.extraBudget || 0;
 
     const ownExpenses = await prisma.expense.findMany({
       where: {
@@ -344,7 +409,7 @@ export async function getBudgetStatus(profileId: string): Promise<BudgetStatus |
         date: { gte: startDate, lte: endDate },
         currency: config.currency,
         type: 'PROPIO',
-        category: { name: { notIn: ['Ahorro / Inversión', 'Ahorros'] } },
+        category: categoriaDeConsumo,
       },
     });
 
@@ -357,7 +422,7 @@ export async function getBudgetStatus(profileId: string): Promise<BudgetStatus |
         currency: config.currency,
         type: 'COMPARTIDO',
         paidFromPersonalBudget: true,
-        category: { name: { notIn: ['Ahorro / Inversión', 'Ahorros'] } },
+        category: categoriaDeConsumo,
       },
     });
 
@@ -367,9 +432,8 @@ export async function getBudgetStatus(profileId: string): Promise<BudgetStatus |
         date: { gte: startDate, lte: endDate },
       },
     });
-    
-    const totalReimbursed = fundPaymentsReceived.reduce((sum, p) => sum + p.amount, 0);
 
+    const totalReimbursed = fundPaymentsReceived.reduce((sum, p) => sum + p.amount, 0);
     const spentSharedPersonal = sharedPaidPersonal.reduce((sum, exp) => sum + exp.amount, 0);
     const spent = Math.max(0, spentOwn + spentSharedPersonal - totalReimbursed);
 
@@ -377,6 +441,7 @@ export async function getBudgetStatus(profileId: string): Promise<BudgetStatus |
       profileId,
       profileName: config.profile.name,
       currentHalf,
+      esMesActual,
       budget,
       spent,
       remaining: budget - spent,
@@ -411,6 +476,7 @@ export async function getSharedFundStats(month: number, year: number): Promise<S
         type: 'COMPARTIDO',
         date: { gte: startDate, lte: endDate },
         profile: { accountId },
+        currency: MONEDA_BASE,
       },
       include: { profile: true },
     });
@@ -523,7 +589,8 @@ export async function getUserExpenseBreakdown(month: number, year: number): Prom
       where: {
         date: { gte: startDate, lte: endDate },
         profile: { accountId },
-        category: { name: { notIn: ['Ahorro / Inversión', 'Ahorros'] } },
+        currency: MONEDA_BASE,
+        category: categoriaDeConsumo,
       },
       include: { profile: true },
     });
@@ -577,6 +644,7 @@ export async function getCategoryBudgetStatuses(month: number, year: number): Pr
       where: {
         date: { gte: startDate, lte: endDate },
         profile: { accountId },
+        currency: MONEDA_BASE,
       },
       _sum: { amount: true },
     });

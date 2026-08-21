@@ -93,13 +93,15 @@ export function nextPendingInstallment<T extends PeriodAmount>(
   let covered = payments.reduce((acc, r) => acc + r.amount, 0);
   const target = periodIndex(month, year);
 
+  // La primera cuota que los pagos no llegan a cubrir es la próxima a pagar,
+  // esté atrasada o no. `target` queda como referencia del mes consultado.
+  void target;
   for (const inst of ordered) {
     if (covered + 0.01 >= inst.amount) {
       covered -= inst.amount;
       continue;
     }
-    if (periodIndex(inst.month, inst.year) >= target) return inst;
-    return inst; // cuota atrasada
+    return inst;
   }
   return null;
 }
