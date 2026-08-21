@@ -61,6 +61,8 @@ export interface BudgetStatus {
   budgetType: string;
   /** Cuánto de `budget` viene del campo "Saldo Mes Anterior o Extra". */
   extraBudget: number;
+  /** Qué días cubre el presupuesto, ej "16 al 30 de agosto". */
+  periodo: string;
   budget: number;
   spent: number;
   remaining: number;

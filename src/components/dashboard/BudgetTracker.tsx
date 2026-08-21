@@ -24,10 +24,17 @@ export default function BudgetTracker({ status }: { status: BudgetStatus | null 
 
   return (
     <div className={`glass-card p-4 lg:p-6 ${pulseClass}`}>
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-lg font-semibold text-text-primary">
-          💳 Presupuesto de {status.profileName}
-        </h3>
+      <div className="flex items-start justify-between mb-3 gap-3">
+        <div className="min-w-0">
+          <h3 className="text-lg font-semibold text-text-primary">
+            💳 Presupuesto de {status.profileName}
+          </h3>
+          {/* Solo cuenta los gastos de este rango. Un gasto de otra quincena
+              del mismo mes no aparece acá, y sin decirlo parece un bug. */}
+          <p className="text-xs text-text-muted mt-0.5">
+            Cuenta gastos propios del {status.periodo}
+          </p>
+        </div>
         <span className={`text-xs font-medium px-2 py-1 rounded-full ${colors.light} ${colors.text}`}>
           {status.budgetType === 'MENSUAL'
             ? 'Mensual'

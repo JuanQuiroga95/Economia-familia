@@ -404,6 +404,20 @@ export async function getBudgetStatus(
     const extraBudget = config.extraBudget || 0;
     budget += extraBudget;
 
+    // El rango real que se está contando. La quincena no coincide con el mes
+    // calendario, así que sin esto es imposible entender por qué un gasto del
+    // día 10 no aparece en el presupuesto del día 21.
+    const MESES_CORTOS = [
+      'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+      'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+    ];
+    const dia = (d: Date) => d.getDate();
+    const mesDe = (d: Date) => MESES_CORTOS[d.getMonth()];
+    const periodo =
+      mesDe(startDate) === mesDe(endDate)
+        ? `${dia(startDate)} al ${dia(endDate)} de ${mesDe(endDate)}`
+        : `${dia(startDate)} de ${mesDe(startDate)} al ${dia(endDate)} de ${mesDe(endDate)}`;
+
     const ownExpenses = await prisma.expense.findMany({
       where: {
         profileId,
@@ -445,6 +459,7 @@ export async function getBudgetStatus(
       esMesActual,
       budgetType,
       extraBudget,
+      periodo,
       budget,
       spent,
       remaining: budget - spent,
