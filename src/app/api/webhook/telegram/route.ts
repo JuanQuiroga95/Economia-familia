@@ -398,6 +398,14 @@ async function mensajeDeFalloDeIA(error: any, habiaFotos: boolean): Promise<stri
     status === 429 ||
     (typeof status === 'number' && status >= 500);
 
+  if (error instanceof ErrorDeVision && error.sinCuota) {
+    return (
+      '🚫 Google cortó la cuota de la IA para leer fotos (el plan gratis tiene un tope diario).' +
+      '\n\nSe repone sola más tarde. Mientras tanto podés escribir el gasto a mano: eso usa otra IA y anda igual.' +
+      (habiaFotos ? '\n\n📸 Tus fotos quedaron guardadas por si querés reintentar con <b>"procesar"</b>.' : '')
+    );
+  }
+
   if (saturado) {
     return (
       '⏳ La IA está saturada en este momento (probé con varios modelos y ninguno contestó).' +

@@ -16,13 +16,19 @@
 
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 
-/** Orden de preferencia. El primero que ande es el que se usa. */
+/**
+ * Orden de preferencia. El primero que ande es el que se usa.
+ *
+ * Los `lite` van primero a propósito: en el plan gratis de Google, el
+ * `flash-latest` se queda sin cuota enseguida y encima tarda ~45 segundos en
+ * contestar que no puede. Los `lite` leen un ticket igual de bien y responden
+ * en 2-7 segundos. Si algún día se habilita facturación en la key, conviene
+ * poner `gemini-flash-latest` arriba de todo.
+ */
 export const VISION_PREFERIDOS = [
-  'gemini-flash-latest',
-  'gemini-2.5-flash',
   'gemini-flash-lite-latest',
   'gemini-2.5-flash-lite',
-  'gemini-2.0-flash',
+  'gemini-flash-latest',
 ];
 
 /** Modelos que la API lista pero que no sirven para leer una foto. */
@@ -30,11 +36,16 @@ const NO_SIRVE_PARA_VISION =
   /embedding|aqa|imagen|veo|tts|audio|live|learnlm|gemma|image-generation|robotics/i;
 
 const TTL_MS = 6 * 60 * 60 * 1000;
-const INTENTOS_POR_MODELO = 3;
+/** Vueltas a la lista entera de modelos. */
+const RONDAS = 2;
 /** Tope de la tarea entera: el webhook de Telegram tiene que contestar rápido. */
-const LIMITE_TOTAL_MS = 25_000;
-/** Tope de una sola llamada: si Google se cuelga, cortamos y probamos de nuevo. */
-const LIMITE_POR_LLAMADA_MS = 15_000;
+const LIMITE_TOTAL_MS = 40_000;
+/**
+ * Tope de una sola llamada. Una lectura buena tarda 2-7 segundos; cuando un
+ * modelo está tapado se queda colgado 45 y termina en 503, así que se corta
+ * antes y se prueba con el siguiente en vez de esperarlo.
+ */
+const LIMITE_POR_LLAMADA_MS = 20_000;
 
 let cache: { ids: string[]; at: number } | null = null;
 
@@ -42,29 +53,25 @@ export type ParteDeImagen = { inline_data: { mime_type: string; data: string } }
 
 /** Error de visión con la causa ya interpretada, para poder avisar en criollo. */
 export class ErrorDeVision extends Error {
-  /** true cuando Google está saturado o sin cuota: reintentar más tarde sirve. */
+  /** true cuando Google está tapado: reintentar en un rato sirve. */
   saturado: boolean;
+  /** true cuando se acabó la cuota de la key (429): esperar no alcanza. */
+  sinCuota: boolean;
   modelo?: string;
 
-  constructor(message: string, opciones: { saturado?: boolean; modelo?: string } = {}) {
+  constructor(
+    message: string,
+    opciones: { saturado?: boolean; sinCuota?: boolean; modelo?: string } = {}
+  ) {
     super(message);
     this.name = 'ErrorDeVision';
     this.saturado = opciones.saturado ?? false;
+    this.sinCuota = opciones.sinCuota ?? false;
     this.modelo = opciones.modelo;
   }
 }
 
-/** ¿Conviene reintentar? Saturación, cuota, cortes de red y timeouts. */
-function esPasajero(status: number | null): boolean {
-  return status === null || status === 429 || (status >= 500 && status <= 599);
-}
-
 const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-/** Espera creciente con algo de ruido, para no golpear siempre en el mismo momento. */
-function espera(intento: number): number {
-  return Math.min(700 * 2 ** intento, 4000) + Math.floor(Math.random() * 300);
-}
 
 /** Modelos de la cuenta que aceptan `generateContent`, cacheados en memoria. */
 export async function modelosVisionVivos(forzarRefresco = false): Promise<string[]> {
@@ -113,7 +120,9 @@ async function llamar(modelo: string, prompt: string, imagenes: ParteDeImagen[])
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }, ...imagenes] }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 800 },
+        // 1500 y no 800: los modelos nuevos gastan tokens "pensando" antes de
+        // escribir, y con el tope justo devolvían la lista cortada o vacía.
+        generationConfig: { temperature: 0.1, maxOutputTokens: 1500 },
       }),
       signal: AbortSignal.timeout(LIMITE_POR_LLAMADA_MS),
     });
@@ -151,52 +160,66 @@ async function llamar(modelo: string, prompt: string, imagenes: ParteDeImagen[])
 }
 
 /**
- * Lee las imágenes reintentando y cambiando de modelo hasta que salga.
- * Si se acaban las chances, tira un `ErrorDeVision` que ya sabe si fue
- * saturación (reintentar más tarde sirve) o un problema real.
+ * Lee las imágenes cambiando de modelo apenas uno no contesta.
+ *
+ * La clave es no insistir con el mismo: cuando un modelo está tapado tarda
+ * ~45 segundos en decir 503, y mientras tanto el de al lado contesta en 3. Por
+ * eso se recorre la lista entera antes de volver a probar con el primero, y
+ * los que fallaron por algo definitivo (no existe, sin cuota) quedan afuera.
  */
 export async function leerImagenes(prompt: string, imagenes: ParteDeImagen[]): Promise<string> {
   const limite = Date.now() + LIMITE_TOTAL_MS;
-  const yaProbados = new Set<string>();
+  /** Modelos que ya no vale la pena volver a probar en esta lectura. */
+  const descartados = new Map<string, string>();
   let ultimo: { error: any; modelo: string } | null = null;
+  let sinCuota = false;
 
-  for (const forzarRefresco of [false, true]) {
-    for (const modelo of await candidatosVision(forzarRefresco)) {
-      if (yaProbados.has(modelo)) continue;
-      yaProbados.add(modelo);
+  for (let ronda = 0; ronda < RONDAS; ronda++) {
+    let probeAlguno = false;
 
-      for (let intento = 0; intento < INTENTOS_POR_MODELO; intento++) {
-        try {
-          return await llamar(modelo, prompt, imagenes);
-        } catch (error: any) {
-          ultimo = { error, modelo };
-          const status = error?.status ?? null;
+    for (const modelo of await candidatosVision(ronda > 0)) {
+      if (descartados.has(modelo)) continue;
+      // No arrancar una llamada que no llega a terminar dentro del tiempo.
+      if (Date.now() + 3000 > limite) break;
+      probeAlguno = true;
 
-          // 404: el modelo ya no existe, probamos el siguiente. 400/403: el
-          // pedido o la key están mal, reintentar no cambia nada.
-          if (!esPasajero(status)) {
-            if (status === 404) break;
-            throw new ErrorDeVision(error.message || 'Gemini rechazó el pedido', { modelo });
-          }
+      try {
+        const texto = await llamar(modelo, prompt, imagenes);
+        if (ronda > 0 || descartados.size > 0) console.log(`[GEMINI] leyó con ${modelo}.`);
+        return texto;
+      } catch (error: any) {
+        ultimo = { error, modelo };
+        const status = error?.status ?? null;
 
-          console.warn(`[GEMINI] ${modelo} falló (${status ?? 'red'}), intento ${intento + 1}.`);
-          const proxima = espera(intento);
-          if (intento + 1 >= INTENTOS_POR_MODELO || Date.now() + proxima > limite) break;
-          await dormir(proxima);
+        if (status === 429) {
+          // Cuota agotada: esperar no arregla nada, este modelo queda afuera.
+          descartados.set(modelo, 'sin cuota');
+          sinCuota = true;
+          console.warn(`[GEMINI] ${modelo} sin cuota, lo descarto.`);
+          continue;
         }
-      }
 
-      if (Date.now() > limite) {
-        throw new ErrorDeVision(ultimo?.error?.message || 'Gemini tardó demasiado', {
-          saturado: true,
-          modelo: ultimo?.modelo,
-        });
+        if (status !== null && status < 500) {
+          // 404 (ya no existe), 400/403 (no le sirve el pedido o la key).
+          descartados.set(modelo, `HTTP ${status}`);
+          console.warn(`[GEMINI] ${modelo} no sirve (${status}), lo descarto.`);
+          continue;
+        }
+
+        // 503 o timeout: es de este momento, pruebo el siguiente sin esperar.
+        console.warn(`[GEMINI] ${modelo} no contestó (${status ?? 'timeout'}), voy al siguiente.`);
       }
     }
+
+    if (!probeAlguno) break;
+    // Antes de repetir la vuelta, un respiro corto por si fue un pico.
+    if (ronda + 1 < RONDAS && Date.now() + 4000 < limite) await dormir(1000);
   }
 
+  const status = ultimo?.error?.status ?? null;
   throw new ErrorDeVision(ultimo?.error?.message || 'Ningún modelo de Gemini respondió', {
-    saturado: esPasajero(ultimo?.error?.status ?? null),
+    saturado: status === null || status >= 500,
+    sinCuota,
     modelo: ultimo?.modelo,
   });
 }

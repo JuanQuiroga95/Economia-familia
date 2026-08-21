@@ -73,7 +73,7 @@ function espera(intento: number): number {
 /** Reintentos por modelo cuando Groq contesta que está saturado. */
 const INTENTOS_POR_MODELO = 3;
 /** Tope de la tarea entera: el webhook de Telegram tiene que contestar rápido. */
-const LIMITE_TOTAL_MS = 20_000;
+const LIMITE_TOTAL_MS = 15_000;
 
 /** Modelos vivos en la cuenta, cacheados en memoria del lambda. */
 export async function modelosVivos(forzarRefresco = false): Promise<string[]> {
