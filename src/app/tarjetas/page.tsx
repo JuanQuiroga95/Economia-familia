@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import AppLayout from '@/components/layout/AppLayout';
 import { parseMonthYear } from '@/lib/monthParams';
+import { getPaydayDeLaCuenta } from '@/lib/accountPeriod';
 import MonthYearPicker from '@/components/ui/MonthYearPicker';
 import TarjetasClient from './TarjetasClient';
 import { getCardsOverview } from '@/actions/cards';
@@ -14,7 +15,9 @@ export default async function TarjetasPage(props: {
   searchParams: Promise<{ month?: string; year?: string }>;
 }) {
   const searchParams = await props.searchParams;
-  const { month, year } = parseMonthYear(searchParams);
+  // El mes de la app arranca el día de cobro de la familia, no el 1.
+  const payday = await getPaydayDeLaCuenta();
+  const { month, year } = parseMonthYear(searchParams, payday);
 
   const accountId = await getAccountId();
   const account = accountId
@@ -32,7 +35,7 @@ export default async function TarjetasPage(props: {
 
   return (
     <AppLayout>
-      <MonthYearPicker month={month} year={year} />
+      <MonthYearPicker month={month} year={year} payday={payday} />
       <TarjetasClient
         cards={JSON.parse(JSON.stringify(cards))}
         categories={JSON.parse(JSON.stringify(categories))}

@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { signIn } from 'next-auth/react';
 import { registerAccount } from '@/actions/register';
+import DiaDeCobroPicker from '@/components/DiaDeCobroPicker';
+import { COBRO_ULTIMO_DIA } from '@/lib/budgetPeriod';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -21,6 +23,9 @@ export default function RegisterPage() {
   const [splitMode, setSplitMode] = useState<'FONDO_COMUN' | 'PORCENTAJE'>('FONDO_COMUN');
   const [splitPercentA, setSplitPercentA] = useState('50');
   const [splitPercentB, setSplitPercentB] = useState('50');
+
+  // Día de cobro: define de qué día a qué día va el mes en toda la app.
+  const [payday, setPayday] = useState<number>(COBRO_ULTIMO_DIA);
 
   // Presupuestos
   const [budgets, setBudgets] = useState<{budgetType: string; firstHalf: string; secondHalf: string; monthly: string}[]>([
@@ -108,6 +113,7 @@ export default function RegisterPage() {
         splitMode: numPeople === 2 ? splitMode : undefined,
         splitPercentA: numPeople === 2 ? parseFloat(splitPercentA) || 50 : undefined,
         splitPercentB: numPeople === 2 ? parseFloat(splitPercentB) || 50 : undefined,
+        payday,
       });
 
       if (!res.success) {
@@ -310,7 +316,15 @@ export default function RegisterPage() {
 
           {step === 4 && (
             <div className="space-y-4 animate-fade-in">
-              <h2 className="text-xl font-semibold text-text-primary">¿Presupuesto?</h2>
+              <h2 className="text-xl font-semibold text-text-primary">¿Qué día cobran?</h2>
+              <p className="text-sm text-text-muted">
+                El mes de la app arranca ahí, no el día 1. Si cobrás el último día del mes, esa
+                plata es la del mes que viene y así se va a contar. Después lo podés cambiar, y
+                si alguien cobra otro día se le puede poner el suyo.
+              </p>
+              <DiaDeCobroPicker value={payday} onChange={(v) => setPayday(v ?? COBRO_ULTIMO_DIA)} />
+
+              <h2 className="text-xl font-semibold text-text-primary pt-2">¿Presupuesto?</h2>
               <p className="text-sm text-text-muted">Si tienen un límite fijo para gastar, indicalo (opcional). Podés elegir Quincenal o Mensual.</p>
               
               <div className="space-y-4 max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar">

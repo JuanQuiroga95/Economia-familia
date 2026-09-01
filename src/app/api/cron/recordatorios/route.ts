@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getArgDate, getCurrentFinancialMonth } from '@/lib/dateUtils';
+import { paydayDeCuenta } from '@/lib/accountPeriod';
 import { buildStatement } from '@/lib/periodUtils';
 import { formatCurrency } from '@/lib/formatUtils';
 import { sendTelegramMessage } from '@/lib/telegramSend';
@@ -100,7 +101,6 @@ export async function GET(request: NextRequest) {
   await avisarSiCambiaronLosModelos();
 
   const hoy = getArgDate();
-  const { month, year } = getCurrentFinancialMonth(hoy);
   const diaHoy = hoy.getDate();
   // Ojo: acá interesa el mes del calendario, porque la pregunta es si mañana
   // cae en otro mes de calendario, no en otro mes de presupuesto.
@@ -115,6 +115,10 @@ export async function GET(request: NextRequest) {
   let enviados = 0;
 
   for (const account of accounts) {
+    // Cada familia puede cobrar un día distinto, así que su mes arranca cuando
+    // le corresponde a ella.
+    const { month, year } = getCurrentFinancialMonth(hoy, await paydayDeCuenta(account.id));
+
     const hoyAvisos: Aviso[] = [];
     const mananaAvisos: Aviso[] = [];
     const atrasados: Aviso[] = [];

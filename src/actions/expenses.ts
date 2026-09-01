@@ -6,6 +6,7 @@ import type { ExpenseFormData, TransactionFilters } from '@/types';
 import { sendPushNotification } from '@/lib/push';
 import { getAccountId } from '@/lib/session';
 import { parseArgDate, getFinancialMonthRange } from '@/lib/dateUtils';
+import { getPaydayDeLaCuenta } from '@/lib/accountPeriod';
 
 /** El perfil tiene que ser de la cuenta con la sesión abierta. */
 async function perfilPropio(profileId: string, accountId: string) {
@@ -171,7 +172,11 @@ export async function getExpenses(filters?: TransactionFilters) {
     if (filters?.type) where.type = filters.type;
 
     if (filters?.month && filters?.year) {
-      const { startDate, endDate } = getFinancialMonthRange(filters.month, filters.year);
+      const { startDate, endDate } = getFinancialMonthRange(
+        filters.month,
+        filters.year,
+        await getPaydayDeLaCuenta()
+      );
       where.date = { gte: startDate, lte: endDate };
     }
 

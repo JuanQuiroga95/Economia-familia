@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import AppLayout from '@/components/layout/AppLayout';
 import { parseMonthYear } from '@/lib/monthParams';
+import { getPaydayDeLaCuenta } from '@/lib/accountPeriod';
 import MonthYearPicker from '@/components/ui/MonthYearPicker';
 import AgendaClient from './AgendaClient';
 import { getAgenda } from '@/actions/agenda';
@@ -15,7 +16,9 @@ export default async function AgendaPage(props: {
   searchParams: Promise<{ month?: string; year?: string }>;
 }) {
   const searchParams = await props.searchParams;
-  const { month, year, esMesActual } = parseMonthYear(searchParams);
+  // El mes de la app arranca el día de cobro de la familia, no el 1.
+  const payday = await getPaydayDeLaCuenta();
+  const { month, year, esMesActual } = parseMonthYear(searchParams, payday);
 
   const accountId = await getAccountId();
   const account = accountId
@@ -33,7 +36,7 @@ export default async function AgendaPage(props: {
 
   return (
     <AppLayout>
-      <MonthYearPicker month={month} year={year} />
+      <MonthYearPicker month={month} year={year} payday={payday} />
       <AgendaClient
         items={JSON.parse(JSON.stringify(items))}
         categories={JSON.parse(JSON.stringify(categories))}

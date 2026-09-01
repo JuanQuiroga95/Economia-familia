@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { getAccountId } from '@/lib/session';
 import { parseArgDate, getArgDate, getCurrentFinancialMonth } from '@/lib/dateUtils';
+import { getPaydayDeLaCuenta, paydayDeCuenta } from '@/lib/accountPeriod';
 import { addMonths, periodIndex } from '@/lib/periodUtils';
 import { revalidatePath } from 'next/cache';
 
@@ -38,7 +39,7 @@ async function ensureRecurringItems(accountId: string, month: number, year: numb
 
   // No se clonan fijos hacia meses muy lejanos: mirar diciembre no tiene que
   // llenar la base de ítems de todo el año.
-  const actual = getCurrentFinancialMonth(getArgDate());
+  const actual = getCurrentFinancialMonth(getArgDate(), await paydayDeCuenta(accountId));
   if (target > periodIndex(actual.month, actual.year) + 1) return;
 
   const series = await prisma.plannedExpense.findMany({
@@ -466,7 +467,7 @@ export async function getAgendaSummary(month?: number, year?: number): Promise<A
     if (!accountId) return empty;
 
     const today = getArgDate();
-    const current = getCurrentFinancialMonth(today);
+    const current = getCurrentFinancialMonth(today, await getPaydayDeLaCuenta());
     const m = month ?? current.month;
     const y = year ?? current.year;
 

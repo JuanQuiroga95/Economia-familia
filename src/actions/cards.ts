@@ -3,6 +3,7 @@
 import { prisma } from '@/lib/prisma';
 import { getAccountId } from '@/lib/session';
 import { parseArgDate, getArgDate, getCurrentFinancialMonth } from '@/lib/dateUtils';
+import { getPaydayDeLaCuenta } from '@/lib/accountPeriod';
 import {
   buildInstallments,
   buildStatement,
@@ -474,7 +475,7 @@ export async function getCardsSummary(month?: number, year?: number): Promise<Ca
     const accountId = await getAccountId();
     if (!accountId) return empty;
 
-    const current = getCurrentFinancialMonth(getArgDate());
+    const current = getCurrentFinancialMonth(getArgDate(), await getPaydayDeLaCuenta());
     const m = month ?? current.month;
     const y = year ?? current.year;
 

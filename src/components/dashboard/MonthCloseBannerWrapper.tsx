@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import MonthCloseBanner from './MonthCloseBanner';
 import { getAccountId } from '@/lib/session';
 import { getArgDate, getCurrentFinancialMonth } from '@/lib/dateUtils';
+import { getPaydayDeLaCuenta } from '@/lib/accountPeriod';
 
 export default async function MonthCloseBannerWrapper({ currentMonth, currentYear }: { currentMonth: number, currentYear: number }) {
   const accountId = await getAccountId();
@@ -11,7 +12,10 @@ export default async function MonthCloseBannerWrapper({ currentMonth, currentYea
   // Solo mostrar banner si estamos viendo el mes actual real, no en meses
   // históricos. Va en hora argentina: con la del servidor (UTC), después de
   // las 21 del último día del mes el cartel no aparecía.
-  const { month: realCurrentMonth, year: realCurrentYear } = getCurrentFinancialMonth(getArgDate());
+  const { month: realCurrentMonth, year: realCurrentYear } = getCurrentFinancialMonth(
+    getArgDate(),
+    await getPaydayDeLaCuenta()
+  );
 
   if (currentMonth !== realCurrentMonth || currentYear !== realCurrentYear) {
     return null;

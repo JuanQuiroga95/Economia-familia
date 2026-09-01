@@ -7,6 +7,8 @@ import { textoDelPeriodo } from '@/lib/budgetPeriod';
 interface MonthYearPickerProps {
   month: number;
   year: number;
+  /** Día de cobro de la cuenta: define qué días abarca cada mes. */
+  payday?: number;
 }
 
 const monthNames = [
@@ -14,7 +16,7 @@ const monthNames = [
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
 ];
 
-export default function MonthYearPicker({ month, year }: MonthYearPickerProps) {
+export default function MonthYearPicker({ month, year, payday = 0 }: MonthYearPickerProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -49,7 +51,7 @@ export default function MonthYearPicker({ month, year }: MonthYearPickerProps) {
   // El mes de la app va de día de cobro a día de cobro, así que "Septiembre"
   // son del 31 de agosto al 29 de septiembre. Sin decirlo, un gasto del 31 que
   // aparece en el mes siguiente parece un error.
-  const { startDate, endDate } = getFinancialMonthRange(month, year);
+  const { startDate, endDate } = getFinancialMonthRange(month, year, payday);
 
   return (
     <div className="glass-card p-2 px-4 rounded-xl mb-6">

@@ -3,6 +3,7 @@
 import { prisma } from '@/lib/prisma';
 import { getAccountId } from '@/lib/session';
 import { parseArgDate, getArgDate, getCurrentFinancialMonth } from '@/lib/dateUtils';
+import { getPaydayDeLaCuenta } from '@/lib/accountPeriod';
 import {
   buildLoanSchedule,
   buildStatement,
@@ -486,7 +487,7 @@ export async function getLoansSummary(month?: number, year?: number): Promise<Lo
     const accountId = await getAccountId();
     if (!accountId) return empty;
 
-    const current = getCurrentFinancialMonth(getArgDate());
+    const current = getCurrentFinancialMonth(getArgDate(), await getPaydayDeLaCuenta());
     const m = month ?? current.month;
     const y = year ?? current.year;
 

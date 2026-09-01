@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma';
 import { getAdminAccount } from '@/lib/admin';
 import { revalidatePath } from 'next/cache';
 import { getArgDate, getCurrentFinancialMonth, getFinancialMonthRange } from '@/lib/dateUtils';
+import { COBRO_ULTIMO_DIA } from '@/lib/budgetPeriod';
 import { MONEDA_BASE, categoriaDeConsumo } from '@/lib/reportFilters';
 
 export interface IntegranteAdmin {
@@ -58,8 +59,10 @@ export async function getAdminOverview(): Promise<ResumenAdmin | null> {
   const admin = await getAdminAccount();
   if (!admin) return null;
 
-  const { month, year } = getCurrentFinancialMonth(getArgDate());
-  const { startDate, endDate } = getFinancialMonthRange(month, year);
+  // El panel mira todas las cuentas juntas y cada una puede cobrar un día
+  // distinto, así que este resumen usa el corte por defecto.
+  const { month, year } = getCurrentFinancialMonth(getArgDate(), COBRO_ULTIMO_DIA);
+  const { startDate, endDate } = getFinancialMonthRange(month, year, COBRO_ULTIMO_DIA);
 
   const accounts = await prisma.account.findMany({
     orderBy: { createdAt: 'asc' },

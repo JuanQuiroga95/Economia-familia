@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 import type { IncomeFormData } from '@/types';
 import { sendPushNotification } from '@/lib/push';
 import { parseArgDate, getFinancialMonthRange } from '@/lib/dateUtils';
+import { getPaydayDeLaCuenta } from '@/lib/accountPeriod';
 import { getAccountId } from '@/lib/session';
 
 /** El ingreso tiene que pertenecer a un perfil de esta cuenta. */
@@ -82,7 +83,11 @@ export async function getIncomes(filters?: {
     if (filters?.profileId) where.profileId = filters.profileId;
 
     if (filters?.month && filters?.year) {
-      const { startDate, endDate } = getFinancialMonthRange(filters.month, filters.year);
+      const { startDate, endDate } = getFinancialMonthRange(
+        filters.month,
+        filters.year,
+        await getPaydayDeLaCuenta()
+      );
       where.date = { gte: startDate, lte: endDate };
     }
 

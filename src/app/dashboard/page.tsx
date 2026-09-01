@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import AppLayout from '@/components/layout/AppLayout';
 import { parseMonthYear } from '@/lib/monthParams';
+import { getPaydayDeLaCuenta } from '@/lib/accountPeriod';
 import DashboardClient from './DashboardClient';
 import MonthYearPicker from '@/components/ui/MonthYearPicker';
 import { getDashboardStats, getCategoryBreakdown, getMonthlyComparison, getBudgetStatus, getSharedFundStats, getUserExpenseBreakdown, getCategoryBudgetStatuses, getWalletBalances } from '@/actions/dashboard';
@@ -19,7 +20,9 @@ import { getBudgetCloseStatus } from '@/actions/budgetClose';
 
 export default async function DashboardPage(props: { searchParams: Promise<{ month?: string; year?: string }> }) {
   const searchParams = await props.searchParams;
-  const { month, year } = parseMonthYear(searchParams);
+  // El mes de la app arranca el día de cobro de la familia, no el 1.
+  const payday = await getPaydayDeLaCuenta();
+  const { month, year } = parseMonthYear(searchParams, payday);
 
   const accountId = await getAccountId();
 
@@ -67,7 +70,7 @@ export default async function DashboardPage(props: { searchParams: Promise<{ mon
   return (
     <AppLayout>
       <MonthCloseBannerWrapper currentMonth={month} currentYear={year} />
-      <MonthYearPicker month={month} year={year} />
+      <MonthYearPicker month={month} year={year} payday={payday} />
       <DashboardClient
         stats={stats}
         categoryData={categoryData}

@@ -6,6 +6,7 @@ import AhorrosClient from './AhorrosClient';
 import { getSavingsGoals, getPatrimonioStats } from '@/actions/savings';
 import { getCurrentExchangeRate } from '@/actions/config';
 import { parseMonthYear } from '@/lib/monthParams';
+import { getPaydayDeLaCuenta } from '@/lib/accountPeriod';
 import { getAccountId } from '@/lib/session';
 import { prisma } from '@/lib/prisma';
 
@@ -16,7 +17,9 @@ export default async function AhorrosPage(props: {
   // El sobrante que se ofrece distribuir depende del mes, así que Ahorros
   // también necesita el selector: antes calculaba siempre el mes en curso sin
   // decirlo en ninguna parte.
-  const { month, year } = parseMonthYear(searchParams);
+  // El mes de la app arranca el día de cobro de la familia, no el 1.
+  const payday = await getPaydayDeLaCuenta();
+  const { month, year } = parseMonthYear(searchParams, payday);
 
   const accountId = await getAccountId();
   const [goals, patrimonio, rates, profiles, account] = await Promise.all([
@@ -31,7 +34,7 @@ export default async function AhorrosPage(props: {
 
   return (
     <AppLayout>
-      <MonthYearPicker month={month} year={year} />
+      <MonthYearPicker month={month} year={year} payday={payday} />
       <AhorrosClient
         initialGoals={JSON.parse(JSON.stringify(goals))}
         patrimonio={patrimonio}

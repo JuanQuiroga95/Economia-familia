@@ -48,6 +48,7 @@ export default async function ConfiguracionPage() {
         splitPercentA={account?.splitPercentA || 50}
         splitPercentB={account?.splitPercentB || 50}
         showSplitBalance={account?.showSplitBalance || false}
+        payday={account?.payday ?? 0}
       />
     </AppLayout>
   );

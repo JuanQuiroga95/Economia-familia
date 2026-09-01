@@ -24,6 +24,9 @@ model Account {
 
   // Configuración de gastos compartidos
   splitMode     SplitMode @default(FONDO_COMUN)
+  /// Día del mes en que entra la plata, y con el que arranca el mes de la app.
+  /// 0 = el último día del mes, que es como venía funcionando.
+  payday        Int       @default(0)
   splitPercentA Float     @default(50) // % del primer perfil (orden alfabético)
   splitPercentB Float     @default(50) // % del segundo perfil
   showSplitBalance Boolean @default(false)
@@ -521,6 +524,8 @@ model BudgetConfig {
   budgetType      String  @default("QUINCENAL") // QUINCENAL o MENSUAL
   monthlyBudget   Float   @default(100000) // Presupuesto mensual ARS
   extraBudget     Float   @default(0)     // Saldo del mes pasado o extra
+  /// Día de cobro propio de esta persona. null = usa el de la cuenta.
+  payday          Int?
   currency        String  @default("ARS")
   isActive        Boolean @default(true)
 

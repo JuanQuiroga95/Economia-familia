@@ -12,11 +12,13 @@ export interface RegisterData {
   splitMode?: 'FONDO_COMUN' | 'PORCENTAJE';
   splitPercentA?: number;
   splitPercentB?: number;
+  /** Día de cobro: 0 = el último del mes. Define el mes de toda la app. */
+  payday?: number;
 }
 
 export async function registerAccount(data: RegisterData) {
   try {
-    const { label, username, password, profileNames, budgets, splitMode, splitPercentA, splitPercentB } = data;
+    const { label, username, password, profileNames, budgets, splitMode, splitPercentA, splitPercentB, payday } = data;
 
     if (!label || !username || !password || !profileNames || profileNames.length === 0) {
       return { success: false, error: 'Todos los campos son obligatorios' };
@@ -42,6 +44,7 @@ export async function registerAccount(data: RegisterData) {
           splitMode: profileNames.length === 2 && splitMode ? splitMode : (profileNames.length > 1 ? 'FONDO_COMUN' : 'PORCENTAJE'),
           splitPercentA: splitPercentA ?? 50,
           splitPercentB: splitPercentB ?? 50,
+          payday: Number.isInteger(payday) && payday! >= 0 && payday! <= 31 ? payday! : 0,
         },
       });
 

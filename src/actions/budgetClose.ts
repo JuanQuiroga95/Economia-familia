@@ -5,6 +5,7 @@ import { getAccountId } from '@/lib/session';
 import { getArgDate } from '@/lib/dateUtils';
 import { addMonths } from '@/lib/periodUtils';
 import { mesDePresupuesto } from '@/lib/budgetPeriod';
+import { getPaydayDeLaCuenta } from '@/lib/accountPeriod';
 import { getBudgetStatus } from './dashboard';
 import { revalidatePath } from 'next/cache';
 import type { BudgetCloseStatus } from '@/types';
@@ -28,7 +29,11 @@ export async function getBudgetCloseStatus(
   try {
     if (!(await perfilDeLaCuenta(profileId))) return null;
 
-    const enCurso = mesDePresupuesto(getArgDate());
+    // El mes de presupuesto de esta persona: si eligió su propio día de cobro,
+    // su mes termina otro día que el de la cuenta.
+    const config = await prisma.budgetConfig.findUnique({ where: { profileId } });
+    const payday = config?.payday ?? (await getPaydayDeLaCuenta());
+    const enCurso = mesDePresupuesto(getArgDate(), payday);
     const cerrado = addMonths(enCurso.month, enCurso.year, -1);
 
     const yaCerrado = await prisma.budgetClose.findUnique({

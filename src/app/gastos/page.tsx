@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import AppLayout from '@/components/layout/AppLayout';
 import { parseMonthYear } from '@/lib/monthParams';
+import { getPaydayDeLaCuenta } from '@/lib/accountPeriod';
 import GastosClient from './GastosClient';
 import MonthYearPicker from '@/components/ui/MonthYearPicker';
 import { getExpenses, getCategories } from '@/actions/expenses';
@@ -14,7 +15,9 @@ import { getWallets } from '@/actions/wallets';
 
 export default async function GastosPage(props: { searchParams: Promise<{ month?: string; year?: string }> }) {
   const searchParams = await props.searchParams;
-  const { month, year } = parseMonthYear(searchParams);
+  // El mes de la app arranca el día de cobro de la familia, no el 1.
+  const payday = await getPaydayDeLaCuenta();
+  const { month, year } = parseMonthYear(searchParams, payday);
 
   const accountId = await getAccountId();
   const account = accountId ? await prisma.account.findUnique({
@@ -32,7 +35,7 @@ export default async function GastosPage(props: { searchParams: Promise<{ month?
 
   return (
     <AppLayout>
-      <MonthYearPicker month={month} year={year} />
+      <MonthYearPicker month={month} year={year} payday={payday} />
       <GastosClient
         initialExpenses={JSON.parse(JSON.stringify(expenses))}
         categories={JSON.parse(JSON.stringify(categories))}

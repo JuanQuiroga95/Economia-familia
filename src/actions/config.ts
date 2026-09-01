@@ -154,6 +154,8 @@ export async function updateBudgetConfig(data: {
   secondHalfBudget: number;
   extraBudget?: number;
   isActive?: boolean;
+  /** Día de cobro propio. null vuelve a usar el de la cuenta. */
+  payday?: number | null;
 }) {
   try {
     const accountId = await getAccountId();
@@ -173,6 +175,7 @@ export async function updateBudgetConfig(data: {
         secondHalfBudget: data.secondHalfBudget,
         ...(data.extraBudget !== undefined && { extraBudget: data.extraBudget }),
         ...(data.isActive !== undefined && { isActive: data.isActive }),
+        ...(data.payday !== undefined && { payday: data.payday }),
       },
       create: {
         profileId: data.profileId,
@@ -182,6 +185,7 @@ export async function updateBudgetConfig(data: {
         secondHalfBudget: data.secondHalfBudget,
         extraBudget: data.extraBudget ?? 0,
         isActive: data.isActive ?? true,
+        payday: data.payday ?? null,
       },
     });
     revalidatePath('/configuracion');
@@ -219,5 +223,37 @@ export async function updateSplitMode(data: {
   } catch (error) {
     console.error('Error updating split mode:', error);
     return { success: false, error: 'Error al actualizar modo de división' };
+  }
+}
+
+/**
+ * Día de cobro de la familia: es el que define de qué día a qué día va el mes
+ * en toda la app. 0 significa "el último día del mes", que es como venía.
+ */
+export async function updatePayday(payday: number) {
+  try {
+    const accountId = await getAccountId();
+    if (!accountId) return { success: false, error: 'No autenticado' };
+
+    const dia = Math.trunc(payday);
+    if (!Number.isFinite(dia) || dia < 0 || dia > 31) {
+      return { success: false, error: 'El día de cobro tiene que ser del 1 al 31' };
+    }
+
+    await prisma.account.update({ where: { id: accountId }, data: { payday: dia } });
+
+    // Cambia el corte de todos los meses, así que se recalcula todo.
+    revalidatePath('/configuracion');
+    revalidatePath('/dashboard');
+    revalidatePath('/gastos');
+    revalidatePath('/ingresos');
+    revalidatePath('/ahorros');
+    revalidatePath('/agenda');
+    revalidatePath('/tarjetas');
+    revalidatePath('/prestamos');
+    return { success: true };
+  } catch (error) {
+    console.error('Error updating payday:', error);
+    return { success: false, error: 'Error al guardar el día de cobro' };
   }
 }

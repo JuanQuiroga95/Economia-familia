@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { upsertExchangeRate, createCategory, deleteCategory, updateBudgetConfig, updateSplitMode } from '@/actions/config';
+import { upsertExchangeRate, createCategory, deleteCategory, updateBudgetConfig, updateSplitMode, updatePayday } from '@/actions/config';
+import DiaDeCobroPicker from '@/components/DiaDeCobroPicker';
+import { COBRO_ULTIMO_DIA } from '@/lib/budgetPeriod';
 import { generateTelegramLinkCode, unlinkTelegram } from '@/actions/telegram';
 import toast from 'react-hot-toast';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
@@ -40,6 +42,7 @@ interface BudgetConfig {
   monthlyBudget: number;
   extraBudget: number;
   isActive: boolean;
+  payday: number | null;
   profile: { id: string; name: string };
 }
 
@@ -61,17 +64,33 @@ interface ConfigClientProps {
   splitPercentA: number;
   splitPercentB: number;
   showSplitBalance: boolean;
+  payday: number;
 }
 
 const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
 import { createWallet, deleteWallet } from '@/actions/wallets';
 
-export default function ConfigClient({ exchangeRates, categories, wallets, budgetConfigs, profiles, splitMode: initialSplitMode, splitPercentA: initialPercentA, splitPercentB: initialPercentB, showSplitBalance: initialShowSplitBalance }: ConfigClientProps) {
+export default function ConfigClient({ exchangeRates, categories, wallets, budgetConfigs, profiles, splitMode: initialSplitMode, splitPercentA: initialPercentA, splitPercentB: initialPercentB, showSplitBalance: initialShowSplitBalance, payday: initialPayday }: ConfigClientProps) {
   const confirmar = useConfirm();
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
   const now = new Date();
+
+  // Día de cobro de la familia
+  const [payday, setPayday] = useState<number>(initialPayday);
+
+  const guardarPayday = () => {
+    startTransition(async () => {
+      const res = await updatePayday(payday);
+      if (res.success) {
+        toast.success('Día de cobro guardado');
+        router.refresh();
+      } else {
+        toast.error(res.error || 'Error al guardar el día de cobro');
+      }
+    });
+  };
 
   // Exchange rate form
   const [erMonth, setErMonth] = useState(now.getMonth() + 1);
@@ -169,7 +188,7 @@ export default function ConfigClient({ exchangeRates, categories, wallets, budge
     });
   };
 
-  const handleBudgetUpdate = (profileId: string, budgetType: string, monthly: string, first: string, second: string, extra: string, isActive: boolean) => {
+  const handleBudgetUpdate = (profileId: string, budgetType: string, monthly: string, first: string, second: string, extra: string, isActive: boolean, paydayPropio: number | null) => {
     startTransition(async () => {
       const result = await updateBudgetConfig({
         profileId,
@@ -178,6 +197,7 @@ export default function ConfigClient({ exchangeRates, categories, wallets, budge
         firstHalfBudget: parseFloat(first) || 0,
         secondHalfBudget: parseFloat(second) || 0,
         extraBudget: parseFloat(extra) || 0,
+        payday: paydayPropio,
         isActive,
       });
       if (result.success) { toast.success('Presupuesto actualizado'); router.refresh(); }
@@ -448,6 +468,31 @@ export default function ConfigClient({ exchangeRates, categories, wallets, budge
         </div>
       </section>
 
+      {/* Día de cobro: define de qué día a qué día va el mes en toda la app */}
+      <section className="glass-card p-4 lg:p-6 space-y-4">
+        <h2 className="text-lg font-semibold text-text-primary">📅 Día de cobro</h2>
+        <p className="text-xs text-text-muted">
+          El mes de la app no arranca el 1: arranca cuando entra la plata. Elegí qué día cobran
+          y todo —gastos, presupuestos, fondo compartido, cierre de mes— se corta ahí.
+        </p>
+        {/* La familia siempre tiene un día concreto: acá no hay nada que heredar. */}
+        <DiaDeCobroPicker value={payday} onChange={(v) => setPayday(v ?? COBRO_ULTIMO_DIA)} />
+        {payday !== initialPayday && (
+          <button
+            onClick={guardarPayday}
+            disabled={isPending}
+            className="w-full py-2 bg-accent/10 text-accent hover:bg-accent/20 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+          >
+            Guardar día de cobro
+          </button>
+        )}
+        {profiles.length > 1 && (
+          <p className="text-xs text-text-muted">
+            Si alguien cobra otro día, se lo podés poner aparte en su presupuesto, acá abajo.
+          </p>
+        )}
+      </section>
+
       {/* Budget Config - for all profiles */}
       <section className="glass-card p-4 lg:p-6 space-y-4">
         <h2 className="text-lg font-semibold text-text-primary">💳 Presupuestos</h2>
@@ -459,6 +504,7 @@ export default function ConfigClient({ exchangeRates, categories, wallets, budge
               key={profile.id}
               profile={profile}
               config={config || null}
+              paydayDeLaCuenta={initialPayday}
               onSave={handleBudgetUpdate}
               isPending={isPending}
             />
@@ -565,12 +611,14 @@ export default function ConfigClient({ exchangeRates, categories, wallets, budge
 function BudgetConfigForm({
   profile,
   config,
+  paydayDeLaCuenta,
   onSave,
   isPending,
 }: {
   profile: ProfileData;
   config: BudgetConfig | null;
-  onSave: (profileId: string, budgetType: string, monthly: string, first: string, second: string, extra: string, isActive: boolean) => void;
+  paydayDeLaCuenta: number;
+  onSave: (profileId: string, budgetType: string, monthly: string, first: string, second: string, extra: string, isActive: boolean, paydayPropio: number | null) => void;
   isPending: boolean;
 }) {
   const [budgetType, setBudgetType] = useState(config?.budgetType || 'QUINCENAL');
@@ -579,6 +627,7 @@ function BudgetConfigForm({
   const [second, setSecond] = useState(config?.secondHalfBudget.toString() || '');
   const [extra, setExtra] = useState(config?.extraBudget?.toString() || '');
   const [isActive, setIsActive] = useState(config?.isActive ?? false);
+  const [paydayPropio, setPaydayPropio] = useState<number | null>(config?.payday ?? null);
 
   return (
     <div className="p-3 bg-bg-input rounded-xl space-y-3">
@@ -640,8 +689,18 @@ function BudgetConfigForm({
               </p>
             </div>
           </div>
+          <div className="mt-3">
+            <label className="block text-xs text-text-secondary mb-1">
+              ¿Qué día cobra {profile.name}?
+            </label>
+            <DiaDeCobroPicker
+              value={paydayPropio}
+              onChange={setPaydayPropio}
+              heredaDe={paydayDeLaCuenta}
+            />
+          </div>
           <button
-            onClick={() => onSave(profile.id, budgetType, monthly, first, second, extra, isActive)}
+            onClick={() => onSave(profile.id, budgetType, monthly, first, second, extra, isActive, paydayPropio)}
             disabled={isPending}
             className="w-full mt-3 py-2 bg-accent/10 text-accent hover:bg-accent/20 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
           >

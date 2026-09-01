@@ -14,6 +14,7 @@ import { getLoanCategory } from '@/lib/loanCategory';
 import { loanProgress, nextPendingInstallment } from '@/lib/loanUtils';
 import { escaparHtml, sendTelegramMessage } from '@/lib/telegramSend';
 import { getArgDate, getCurrentFinancialMonth, parseArgDate } from '@/lib/dateUtils';
+import { paydayDeCuenta } from '@/lib/accountPeriod';
 import Groq from 'groq-sdk';
 import { candidatosAudio, candidatosTexto, conModelo, esFalloDeJson, estadoModelos } from '@/lib/groqModels';
 import { ErrorDeVision, leerImagenes, type ParteDeImagen } from '@/lib/geminiVision';
@@ -779,7 +780,7 @@ async function ejecutarAcciones(
 
       // ─── Agenda: ayuda memoria, NO toca el balance ───
       if (action.tipo === 'agenda') {
-        const actual = getCurrentFinancialMonth(getArgDate());
+        const actual = getCurrentFinancialMonth(getArgDate(), await paydayDeCuenta(profile.accountId));
         const fecha = action.fecha ? parseArgDate(action.fecha) : null;
         const mes = fecha ? fecha.getMonth() + 1 : actual.month;
         const anio = fecha ? fecha.getFullYear() : actual.year;
@@ -849,7 +850,10 @@ async function ejecutarAcciones(
           continue;
         }
 
-        const { month: payMonth, year: payYear } = getCurrentFinancialMonth(getArgDate());
+        const { month: payMonth, year: payYear } = getCurrentFinancialMonth(
+          getArgDate(),
+          await paydayDeCuenta(profile.accountId)
+        );
         const paymentDate = parseArgDate(dateStr);
         const period = formatPeriod(payMonth, payYear);
         const monto = action.monto && action.monto > 0 ? action.monto : loan.installmentAmount;
@@ -1000,7 +1004,10 @@ async function ejecutarAcciones(
         }
 
         // ─── Pago del resumen: esto sí genera un gasto real ───
-        const { month: payMonth, year: payYear } = getCurrentFinancialMonth(getArgDate());
+        const { month: payMonth, year: payYear } = getCurrentFinancialMonth(
+          getArgDate(),
+          await paydayDeCuenta(profile.accountId)
+        );
         const cardCategory = await getCardCategory(profile.accountId);
         const paymentDate = parseArgDate(dateStr);
 
@@ -1286,7 +1293,10 @@ export async function POST(request: NextRequest) {
 
     // ─── /agenda command ───
     if (text === '/agenda') {
-      const { month: aMonth, year: aYear } = getCurrentFinancialMonth(getArgDate());
+      const { month: aMonth, year: aYear } = getCurrentFinancialMonth(
+        getArgDate(),
+        await paydayDeCuenta(profile.accountId)
+      );
       const items = await prisma.plannedExpense.findMany({
         where: { accountId: profile.accountId, month: aMonth, year: aYear, status: { not: 'OMITIDO' } },
         include: { category: { select: { icon: true } } },
@@ -1327,7 +1337,10 @@ export async function POST(request: NextRequest) {
 
     // ─── /prestamos command ───
     if (text === '/prestamos') {
-      const { month: lMonth, year: lYear } = getCurrentFinancialMonth(getArgDate());
+      const { month: lMonth, year: lYear } = getCurrentFinancialMonth(
+        getArgDate(),
+        await paydayDeCuenta(profile.accountId)
+      );
       const misLoans = await prisma.loan.findMany({
         where: { profile: { accountId: profile.accountId }, isActive: true },
         include: { schedule: true, payments: true },

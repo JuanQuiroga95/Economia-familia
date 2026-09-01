@@ -29,10 +29,10 @@ export function parseArgDate(dateStr: string) {
  * un gasto del 31 se descontaba del presupuesto nuevo pero figuraba en el mes
  * viejo, y no había forma de hacer coincidir los números.
  */
-export function getCurrentFinancialMonth(date = getArgDate()) {
-  return mesDePresupuesto(date);
+export function getCurrentFinancialMonth(date: Date, payday: number) {
+  return mesDePresupuesto(date, payday);
 }
 
-export function getFinancialMonthRange(month: number, year: number) {
-  return rangoMesDePresupuesto(month, year);
+export function getFinancialMonthRange(month: number, year: number, payday: number) {
+  return rangoMesDePresupuesto(month, year, payday);
 }

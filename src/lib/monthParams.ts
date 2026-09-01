@@ -1,4 +1,5 @@
 import { getArgDate, getCurrentFinancialMonth } from '@/lib/dateUtils';
+import { COBRO_ULTIMO_DIA } from '@/lib/budgetPeriod';
 
 /**
  * Lee ?month & ?year de la URL con validación.
@@ -7,8 +8,11 @@ import { getArgDate, getCurrentFinancialMonth } from '@/lib/dateUtils';
  * `?month=abc` quedaba NaN, las fechas salían inválidas y la consulta fallaba
  * en silencio dejando la pantalla vacía sin ninguna explicación.
  */
-export function parseMonthYear(searchParams?: { month?: string; year?: string }) {
-  const actual = getCurrentFinancialMonth(getArgDate());
+export function parseMonthYear(
+  searchParams?: { month?: string; year?: string },
+  payday: number = COBRO_ULTIMO_DIA
+) {
+  const actual = getCurrentFinancialMonth(getArgDate(), payday);
 
   const mesCrudo = Number.parseInt(searchParams?.month ?? '', 10);
   const anioCrudo = Number.parseInt(searchParams?.year ?? '', 10);

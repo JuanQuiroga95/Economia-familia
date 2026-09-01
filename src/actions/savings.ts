@@ -6,6 +6,8 @@ import type { SavingsGoalFormData } from '@/types';
 import { getAccountId } from '@/lib/session';
 import { categoriaDeConsumo } from '@/lib/reportFilters';
 import { getCurrentFinancialMonth, getFinancialMonthRange, getArgDate } from '@/lib/dateUtils';
+import { getPaydayDeLaCuenta } from '@/lib/accountPeriod';
+import { COBRO_ULTIMO_DIA } from '@/lib/budgetPeriod';
 
 /** La meta tiene que ser de la cuenta con la sesion abierta. */
 async function metaPropia(id: string, accountId: string) {
@@ -336,10 +338,11 @@ export async function getPatrimonioStats(month?: number, year?: number) {
     // 3. Sobrante del mes consultado. Usa exactamente la misma cuenta que el
     //    balance del dashboard (incluida la exclusión de las categorías de
     //    ahorro): si no, las dos pantallas mostraban números distintos.
-    const current = getCurrentFinancialMonth(getArgDate());
+    const payday = await getPaydayDeLaCuenta();
+    const current = getCurrentFinancialMonth(getArgDate(), payday);
     const mes = month ?? current.month;
     const anio = year ?? current.year;
-    const { startDate, endDate } = getFinancialMonthRange(mes, anio);
+    const { startDate, endDate } = getFinancialMonthRange(mes, anio, payday);
 
     const incomes = await prisma.income.findMany({
       where: { date: { gte: startDate, lte: endDate }, profile: { accountId } },
@@ -452,7 +455,8 @@ export async function getPatrimonioStats(month?: number, year?: number) {
     };
   } catch (error) {
     console.error('Error fetching patrimonio stats:', error);
-    const current = getCurrentFinancialMonth(getArgDate());
+    // Sólo para no devolver un mes vacío cuando ya falló todo lo demás.
+    const current = getCurrentFinancialMonth(getArgDate(), COBRO_ULTIMO_DIA);
     return {
       savingsByCurrency: {},
       investmentsByCurrency: {},

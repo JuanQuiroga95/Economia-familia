@@ -14,10 +14,11 @@ import {
 } from '@/lib/budgetPeriod';
 
 import { getAccountId } from '@/lib/session';
+import { getPaydayDeLaCuenta } from '@/lib/accountPeriod';
 
 export async function getDashboardStats(month: number, year: number, profileId?: string) {
   try {
-    const { startDate, endDate } = getFinancialMonthRange(month, year);
+    const { startDate, endDate } = getFinancialMonthRange(month, year, await getPaydayDeLaCuenta());
     const accountId = await getAccountId();
     if (!accountId) throw new Error('No account id');
 
@@ -222,7 +223,7 @@ export async function getCategoryBreakdown(
   profileId?: string
 ): Promise<CategoryBreakdown[]> {
   try {
-    const { startDate, endDate } = getFinancialMonthRange(month, year);
+    const { startDate, endDate } = getFinancialMonthRange(month, year, await getPaydayDeLaCuenta());
     const accountId = await getAccountId();
     if (!accountId) throw new Error('No account id');
 
@@ -277,7 +278,8 @@ export async function getCategoryBreakdown(
  */
 export async function getMonthlyComparison(month?: number, year?: number, profileId?: string) {
   try {
-    const current = getCurrentFinancialMonth(getArgDate());
+    const payday = await getPaydayDeLaCuenta();
+    const current = getCurrentFinancialMonth(getArgDate(), payday);
     const months = [];
     const accountId = await getAccountId();
     if (!accountId) throw new Error('No account id');
@@ -293,7 +295,7 @@ export async function getMonthlyComparison(month?: number, year?: number, profil
         y -= 1;
       }
 
-      const { startDate, endDate } = getFinancialMonthRange(m, y);
+      const { startDate, endDate } = getFinancialMonthRange(m, y, payday);
 
       const incomeAgg = await prisma.income.aggregate({
         where: {
@@ -353,9 +355,10 @@ export async function getBudgetStatus(
     if (!config || !config.isActive) return null;
 
     const now = getArgDate();
-    // El mes de presupuesto no es el calendario: desde el día de cobro (el
-    // último del mes) ya se está gastando el presupuesto del mes que viene.
-    const actual = mesDePresupuesto(now);
+    // Cada persona puede tener su propio día de cobro; si no eligió uno, va con
+    // el de la cuenta. El mes de presupuesto arranca ahí, no el día 1.
+    const payday = config.payday ?? (await getPaydayDeLaCuenta());
+    const actual = mesDePresupuesto(now, payday);
     const mes = month ?? actual.month;
     const anio = year ?? actual.year;
     const esMesActual = mes === actual.month && anio === actual.year;
@@ -369,17 +372,17 @@ export async function getBudgetStatus(
     let currentHalf: 1 | 2 = 1;
 
     if (budgetType === 'MENSUAL') {
-      ({ startDate, endDate } = rangoMesDePresupuesto(mes, anio));
+      ({ startDate, endDate } = rangoMesDePresupuesto(mes, anio, payday));
       budget = monthlyBudget;
     } else if (!esMesActual) {
       // Mes ya cerrado: las dos quincenas juntas, con el mismo corte que tuvo
       // en vivo. Antes acá se usaba el mes calendario, así que lo gastado el
       // último día del mes se contaba dos veces.
-      ({ startDate, endDate } = rangoMesDePresupuesto(mes, anio));
+      ({ startDate, endDate } = rangoMesDePresupuesto(mes, anio, payday));
       budget = config.firstHalfBudget + config.secondHalfBudget;
     } else {
-      currentHalf = quincenaDe(now);
-      ({ startDate, endDate } = rangoQuincena(mes, anio, currentHalf));
+      currentHalf = quincenaDe(now, payday);
+      ({ startDate, endDate } = rangoQuincena(mes, anio, currentHalf, payday));
       budget = currentHalf === 1 ? config.firstHalfBudget : config.secondHalfBudget;
     }
 
@@ -464,7 +467,8 @@ export async function getBudgetStatus(
 
 export async function getSharedFundStats(month: number, year: number): Promise<SharedFundStats> {
   try {
-    const { startDate, endDate } = getFinancialMonthRange(month, year);
+    const payday = await getPaydayDeLaCuenta();
+    const { startDate, endDate } = getFinancialMonthRange(month, year, payday);
     const accountId = await getAccountId();
     if (!accountId) throw new Error('No account id');
 
@@ -523,7 +527,7 @@ export async function getSharedFundStats(month: number, year: number): Promise<S
     });
     const mesesCerrados = new Set(cierres.map((c) => periodIndex(c.month, c.year)));
     const mesCerrado = (fecha: Date) => {
-      const suMes = getCurrentFinancialMonth(fecha);
+      const suMes = getCurrentFinancialMonth(fecha, payday);
       return mesesCerrados.has(periodIndex(suMes.month, suMes.year));
     };
 
@@ -654,7 +658,7 @@ export async function getSharedFundStats(month: number, year: number): Promise<S
 
 export async function getUserExpenseBreakdown(month: number, year: number): Promise<import('@/types').UserExpenseBreakdown[]> {
   try {
-    const { startDate, endDate } = getFinancialMonthRange(month, year);
+    const { startDate, endDate } = getFinancialMonthRange(month, year, await getPaydayDeLaCuenta());
     const accountId = await getAccountId();
     if (!accountId) throw new Error('No account id');
 
@@ -703,7 +707,7 @@ export async function getUserExpenseBreakdown(month: number, year: number): Prom
 
 export async function getCategoryBudgetStatuses(month: number, year: number): Promise<import('@/types').CategoryBudgetStatus[]> {
   try {
-    const { startDate, endDate } = getFinancialMonthRange(month, year);
+    const { startDate, endDate } = getFinancialMonthRange(month, year, await getPaydayDeLaCuenta());
     const accountId = await getAccountId();
     if (!accountId) throw new Error('No account id');
 
