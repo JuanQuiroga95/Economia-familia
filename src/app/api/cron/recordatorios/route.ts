@@ -102,7 +102,9 @@ export async function GET(request: NextRequest) {
   const hoy = getArgDate();
   const { month, year } = getCurrentFinancialMonth(hoy);
   const diaHoy = hoy.getDate();
-  const ultimoDia = new Date(year, month, 0).getDate();
+  // Ojo: acá interesa el mes del calendario, porque la pregunta es si mañana
+  // cae en otro mes de calendario, no en otro mes de presupuesto.
+  const ultimoDia = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).getDate();
   const diaManana = diaHoy < ultimoDia ? diaHoy + 1 : null; // si es fin de mes, mañana ya es otro mes
   const esLunes = hoy.getDay() === 1;
 

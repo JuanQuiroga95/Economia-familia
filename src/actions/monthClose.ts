@@ -5,6 +5,7 @@ import { getAccountId } from '@/lib/session';
 import { getDashboardStats } from './dashboard';
 import { revalidatePath } from 'next/cache';
 import { addMonths, periodIndex } from '@/lib/periodUtils';
+import { getFinancialMonthRange } from '@/lib/dateUtils';
 
 /** Hasta cuántos meses para atrás se ofrece cerrar un mes olvidado. */
 const MESES_HACIA_ATRAS = 12;
@@ -117,9 +118,9 @@ export async function sendBalanceToSavings(prevMonth: number, prevYear: number, 
     const goal = await prisma.savingsGoal.findUnique({ where: { id: savingsGoalId } });
     if (!goal) throw new Error('Meta no encontrada');
 
-    // La fecha de depósito será el último día del mes que sobró
-    const lastDay = new Date(prevYear, prevMonth, 0).getDate();
-    const date = new Date(prevYear, prevMonth - 1, lastDay, 23, 59, 59);
+    // El depósito se fecha el último día del mes que sobró. Ojo: el mes de la
+    // app termina el día antes del cobro, así que no es el 31 sino el 30.
+    const date = getFinancialMonthRange(prevMonth, prevYear).endDate;
 
     await prisma.savingsTransaction.create({
       data: {

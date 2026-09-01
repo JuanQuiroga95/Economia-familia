@@ -1,6 +1,8 @@
 'use client';
 
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
+import { getFinancialMonthRange } from '@/lib/dateUtils';
+import { textoDelPeriodo } from '@/lib/budgetPeriod';
 
 interface MonthYearPickerProps {
   month: number;
@@ -44,8 +46,14 @@ export default function MonthYearPicker({ month, year }: MonthYearPickerProps) {
     handleDateChange(newMonth, newYear);
   };
 
+  // El mes de la app va de día de cobro a día de cobro, así que "Septiembre"
+  // son del 31 de agosto al 29 de septiembre. Sin decirlo, un gasto del 31 que
+  // aparece en el mes siguiente parece un error.
+  const { startDate, endDate } = getFinancialMonthRange(month, year);
+
   return (
-    <div className="flex items-center justify-between glass-card p-2 px-4 rounded-xl mb-6">
+    <div className="glass-card p-2 px-4 rounded-xl mb-6">
+      <div className="flex items-center justify-between">
       <button 
         onClick={handlePrevMonth}
         className="p-2 hover:bg-bg-input rounded-lg transition-colors text-text-secondary hover:text-text-primary"
@@ -93,6 +101,10 @@ export default function MonthYearPicker({ month, year }: MonthYearPickerProps) {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
       </button>
+      </div>
+      <p className="text-center text-xs text-text-muted pb-1">
+        Del {textoDelPeriodo(startDate, endDate)}
+      </p>
     </div>
   );
 }

@@ -522,8 +522,10 @@ export async function getSharedFundStats(month: number, year: number): Promise<S
       select: { month: true, year: true },
     });
     const mesesCerrados = new Set(cierres.map((c) => periodIndex(c.month, c.year)));
-    const mesCerrado = (fecha: Date) =>
-      mesesCerrados.has(periodIndex(fecha.getMonth() + 1, fecha.getFullYear()));
+    const mesCerrado = (fecha: Date) => {
+      const suMes = getCurrentFinancialMonth(fecha);
+      return mesesCerrados.has(periodIndex(suMes.month, suMes.year));
+    };
 
     const gastosPendientes = gastosQueGeneranDeuda.filter((e) => !mesCerrado(e.date));
     const devoluciones = todasLasDevoluciones.filter((p) => !mesCerrado(p.date));

@@ -1,3 +1,5 @@
+import { mesDePresupuesto, rangoMesDePresupuesto } from './budgetPeriod';
+
 export function getArgDate() {
   // Obtiene la fecha/hora actual en la zona horaria de Buenos Aires
   const argTimeStr = new Date().toLocaleString("en-US", { timeZone: "America/Argentina/Buenos_Aires" });
@@ -17,20 +19,20 @@ export function parseArgDate(dateStr: string) {
   return new Date(`${dateStr}T12:00:00-03:00`);
 }
 
+/**
+ * El mes de la app NO es el mes del calendario: va de día de cobro a día de
+ * cobro. Septiembre son del 31 de agosto al 29 de septiembre.
+ *
+ * Es como se vive la plata acá: el sueldo entra el último día del mes y con eso
+ * se banca el mes siguiente. Antes el presupuesto usaba este corte y todo el
+ * resto (gastos, fondo compartido, dashboard) usaba el mes calendario, así que
+ * un gasto del 31 se descontaba del presupuesto nuevo pero figuraba en el mes
+ * viejo, y no había forma de hacer coincidir los números.
+ */
 export function getCurrentFinancialMonth(date = getArgDate()) {
-  const month = date.getMonth() + 1; // 1-12
-  const year = date.getFullYear();
-
-  return { month, year };
+  return mesDePresupuesto(date);
 }
 
 export function getFinancialMonthRange(month: number, year: number) {
-  // Inicio: Día 1 del mes actual a las 00:00:00
-  const startDate = new Date(year, month - 1, 1, 0, 0, 0);
-
-  // Fin: Último día del mes actual a las 23:59:59
-  const currentMonthLastDay = new Date(year, month, 0).getDate();
-  const endDate = new Date(year, month - 1, currentMonthLastDay, 23, 59, 59);
-
-  return { startDate, endDate };
+  return rangoMesDePresupuesto(month, year);
 }
