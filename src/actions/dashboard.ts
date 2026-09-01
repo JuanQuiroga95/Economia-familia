@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma';
 import type { BudgetStatus, CategoryBreakdown, SharedFundStats } from '@/types';
 import { getFinancialMonthRange, getArgDate, getCurrentFinancialMonth } from '@/lib/dateUtils';
 import { categoriaDeConsumo, MONEDA_BASE } from '@/lib/reportFilters';
-import { addMonths } from '@/lib/periodUtils';
+import { addMonths, periodIndex } from '@/lib/periodUtils';
 import {
   mesDePresupuesto,
   quincenaDe,
@@ -474,7 +474,7 @@ export async function getSharedFundStats(month: number, year: number): Promise<S
     });
 
     if (!account || account.profiles.length < 2) {
-      return { totalSharedExpenses: 0, debts: [], payments: [], currency: 'ARS' };
+      return { totalSharedExpenses: 0, debts: [], payments: [], monthClosed: false, currency: 'ARS' };
     }
 
     const [profileA, profileB] = account.profiles.sort((a, b) => a.name.localeCompare(b.name));
@@ -509,11 +509,25 @@ export async function getSharedFundStats(month: number, year: number): Promise<S
       include: { profile: true },
     });
 
-    const devoluciones = await prisma.sharedFundPayment.findMany({
+    const todasLasDevoluciones = await prisma.sharedFundPayment.findMany({
       where: { accountId, date: { lte: endDate } },
     });
 
-    const fundPayments = devoluciones.filter((p) => p.date >= startDate);
+    const fundPayments = todasLasDevoluciones.filter((p) => p.date >= startDate);
+
+    // Cerrar un mes salda sus deudas: lo que quedó debiéndose ahí no se
+    // arrastra ni sigue figurando cuando volvés a mirar ese mes.
+    const cierres = await prisma.monthClose.findMany({
+      where: { accountId },
+      select: { month: true, year: true },
+    });
+    const mesesCerrados = new Set(cierres.map((c) => periodIndex(c.month, c.year)));
+    const mesCerrado = (fecha: Date) =>
+      mesesCerrados.has(periodIndex(fecha.getMonth() + 1, fecha.getFullYear()));
+
+    const gastosPendientes = gastosQueGeneranDeuda.filter((e) => !mesCerrado(e.date));
+    const devoluciones = todasLasDevoluciones.filter((p) => !mesCerrado(p.date));
+    const esteMesEstaCerrado = mesesCerrados.has(periodIndex(month, year));
 
     const totalSharedExpenses = sharedExpenses.reduce((sum, exp) => sum + exp.amount, 0);
 
@@ -533,7 +547,7 @@ export async function getSharedFundStats(month: number, year: number): Promise<S
         { profileName: string; profileAvatar: string | null; total: number; deEsteMes: number }
       >();
 
-      gastosQueGeneranDeuda.forEach((exp) => {
+      gastosPendientes.forEach((exp) => {
         const fila = acumulado.get(exp.profileId) ?? {
           profileName: exp.profile.name,
           profileAvatar: exp.profile.avatar,
@@ -564,10 +578,16 @@ export async function getSharedFundStats(month: number, year: number): Promise<S
         })
         .filter((d) => d.amount > 0);
 
-      return { totalSharedExpenses, debts, payments: mappedPayments, currency: 'ARS' };
+      return {
+        totalSharedExpenses,
+        debts,
+        payments: mappedPayments,
+        monthClosed: esteMesEstaCerrado,
+        currency: 'ARS',
+      };
     } else {
       // PORCENTAJE: la deuda es de persona a persona, pero también acumulada.
-      const saldoDeA = (gastos: typeof gastosQueGeneranDeuda) =>
+      const saldoDeA = (gastos: typeof gastosPendientes) =>
         gastos.reduce((saldo, exp) => {
           const payer = exp.profileId;
           const payerPercent =
@@ -584,9 +604,9 @@ export async function getSharedFundStats(month: number, year: number): Promise<S
         .filter((p) => p.profileId === profileB.id)
         .reduce((sum, p) => sum + p.amount, 0);
 
-      const balanceA = saldoDeA(gastosQueGeneranDeuda) - devueltoA + devueltoB;
+      const balanceA = saldoDeA(gastosPendientes) - devueltoA + devueltoB;
       const generadoEsteMes = saldoDeA(
-        gastosQueGeneranDeuda.filter((exp) => esDeEsteMes(exp.date))
+        gastosPendientes.filter((exp) => esDeEsteMes(exp.date))
       );
 
       const debts = [];
@@ -616,11 +636,17 @@ export async function getSharedFundStats(month: number, year: number): Promise<S
           currency: 'ARS',
         });
       }
-      return { totalSharedExpenses, debts, payments: mappedPayments, currency: 'ARS' };
+      return {
+        totalSharedExpenses,
+        debts,
+        payments: mappedPayments,
+        monthClosed: esteMesEstaCerrado,
+        currency: 'ARS',
+      };
     }
   } catch (error) {
     console.error('Error fetching shared fund stats:', error);
-    return { totalSharedExpenses: 0, debts: [], payments: [], currency: 'ARS' };
+    return { totalSharedExpenses: 0, debts: [], payments: [], monthClosed: false, currency: 'ARS' };
   }
 }
 

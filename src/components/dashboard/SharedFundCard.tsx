@@ -70,7 +70,9 @@ export default function SharedFundCard({ stats }: { stats: SharedFundStats }) {
         <div>
           <h3 className="text-lg font-semibold text-text-primary">Fondo Compartido</h3>
           <p className="text-xs text-text-muted">
-            Gastos del mes, y la deuda acumulada hasta acá
+            {stats.monthClosed
+              ? 'Mes cerrado: lo que se debía acá quedó saldado'
+              : 'Gastos del mes, y lo que se debe hasta acá'}
           </p>
         </div>
       </div>
@@ -138,7 +140,9 @@ export default function SharedFundCard({ stats }: { stats: SharedFundStats }) {
       {!hasDebts && hasExpenses && (
         <div className="p-3 rounded-xl bg-success/5 border border-success/20 text-center">
           <p className="text-sm text-success">
-            ✅ No queda ninguna deuda pendiente con el fondo
+            {stats.monthClosed
+              ? '✅ Mes cerrado: las deudas de este mes quedaron saldadas'
+              : '✅ No queda ninguna deuda pendiente con el fondo'}
           </p>
         </div>
       )}

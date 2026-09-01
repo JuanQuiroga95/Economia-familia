@@ -180,5 +180,7 @@ export interface SharedFundStats {
   totalSharedExpenses: number;
   debts: SharedFundDebt[];
   payments: SharedFundPaymentDetail[];
+  /** El mes ya se cerró: sus deudas quedaron saldadas y no se arrastran. */
+  monthClosed: boolean;
   currency: string;
 }
