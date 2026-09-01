@@ -1,6 +1,7 @@
 'use client';
 import { formatCurrency } from '@/lib/formatUtils';
-import { useState, useTransition } from 'react';
+import { coincideBusqueda } from '@/lib/searchUtils';
+import { useMemo, useState, useTransition } from 'react';
 import { useProfile } from '@/hooks/useProfile';
 import { createExpense, deleteExpense, updateExpense } from '@/actions/expenses';
 import toast from 'react-hot-toast';
@@ -50,6 +51,27 @@ function origenDelGasto(e: Expense) {
   return null;
 }
 
+/** Totales separados por moneda: la app no convierte entre monedas, así que no se suman entre sí. */
+type TotalPorMoneda = Record<string, number>;
+
+const SIMBOLO_MONEDA: Record<string, string> = { ARS: '$', USD: 'US$', EUR: '€' };
+
+function sumarPorMoneda(gastos: Expense[]): TotalPorMoneda {
+  const total: TotalPorMoneda = {};
+  for (const gasto of gastos) {
+    total[gasto.currency] = (total[gasto.currency] || 0) + gasto.amount;
+  }
+  return total;
+}
+
+/** "$130.000", o "$130.000 + US$50" cuando lo que estás mirando mezcla monedas. */
+function textoTotal(total: TotalPorMoneda): string {
+  const partes = Object.entries(total)
+    .sort(([a], [b]) => (a === 'ARS' ? -1 : b === 'ARS' ? 1 : a.localeCompare(b)))
+    .map(([moneda, monto]) => `${SIMBOLO_MONEDA[moneda] ?? `${moneda} `}${formatCurrency(monto)}`);
+  return partes.length > 0 ? partes.join(' + ') : '$0';
+}
+
 interface GastosClientProps {
   initialExpenses: Expense[];
   categories: Category[];
@@ -67,6 +89,8 @@ export default function GastosClient({ initialExpenses, categories, savings = []
   const [showForm, setShowForm] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [filterType, setFilterType] = useState<string>('');
+  const [busqueda, setBusqueda] = useState('');
+  const [categoriasElegidas, setCategoriasElegidas] = useState<string[]>([]);
   const router = useRouter();
 
   // Animation state
@@ -326,9 +350,69 @@ export default function GastosClient({ initialExpenses, categories, savings = []
     });
   };
 
-  const filteredExpenses = filterType
-    ? initialExpenses.filter((e) => e.type === filterType)
-    : initialExpenses;
+  const alternarCategoria = (id: string) => {
+    setCategoriasElegidas((actual) =>
+      actual.includes(id) ? actual.filter((c) => c !== id) : [...actual, id]
+    );
+  };
+
+  const limpiarFiltros = () => {
+    setFilterType('');
+    setBusqueda('');
+    setCategoriasElegidas([]);
+  };
+
+  // El tipo y la búsqueda se aplican ANTES que las categorías. Así el total que
+  // muestra cada categoría no cambia cuando tocás una, y podés comparar "Hogar"
+  // contra "Servicios" mirando siempre el mismo recorte.
+  const gastosAntesDeCategoria = useMemo(
+    () =>
+      initialExpenses.filter(
+        (e) =>
+          (!filterType || e.type === filterType) &&
+          coincideBusqueda(`${e.description} ${e.category.name} ${e.profile.name}`, busqueda)
+      ),
+    [initialExpenses, filterType, busqueda]
+  );
+
+  const resumenPorCategoria = useMemo(() => {
+    const acumulado = new Map<
+      string,
+      { categoria: Category; total: TotalPorMoneda; cantidad: number }
+    >();
+
+    // Las categorías elegidas figuran siempre, aunque el recorte actual las deje
+    // en cero: si desaparecieran, no quedaría forma de destildarlas.
+    for (const id of categoriasElegidas) {
+      const categoria = categories.find((c) => c.id === id);
+      if (categoria) acumulado.set(id, { categoria, total: {}, cantidad: 0 });
+    }
+
+    for (const gasto of gastosAntesDeCategoria) {
+      const fila = acumulado.get(gasto.category.id) ?? {
+        categoria: gasto.category,
+        total: {} as TotalPorMoneda,
+        cantidad: 0,
+      };
+      fila.total[gasto.currency] = (fila.total[gasto.currency] || 0) + gasto.amount;
+      fila.cantidad += 1;
+      acumulado.set(gasto.category.id, fila);
+    }
+
+    const peso = (total: TotalPorMoneda) => Object.values(total).reduce((a, b) => a + b, 0);
+    return [...acumulado.values()].sort((a, b) => peso(b.total) - peso(a.total));
+  }, [gastosAntesDeCategoria, categoriasElegidas, categories]);
+
+  const filteredExpenses = useMemo(
+    () =>
+      categoriasElegidas.length > 0
+        ? gastosAntesDeCategoria.filter((e) => categoriasElegidas.includes(e.category.id))
+        : gastosAntesDeCategoria,
+    [gastosAntesDeCategoria, categoriasElegidas]
+  );
+
+  const totalVisible = useMemo(() => sumarPorMoneda(filteredExpenses), [filteredExpenses]);
+  const hayFiltroActivo = Boolean(filterType || busqueda.trim() || categoriasElegidas.length > 0);
 
   return (
     <div className="space-y-6 animate-fade-in relative">
@@ -345,21 +429,108 @@ export default function GastosClient({ initialExpenses, categories, savings = []
         </button>
       </div>
 
-      {/* Filters */}
-      <div className="flex gap-2 overflow-x-auto pb-2">
-        {['', 'PROPIO', 'COMPARTIDO'].map((t) => (
-          <button
-            key={t}
-            onClick={() => setFilterType(t)}
-            className={`px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
-              filterType === t
-                ? 'bg-accent text-white'
-                : 'bg-bg-card text-text-secondary border border-border hover:bg-bg-card-hover'
-            }`}
-          >
-            {t === '' ? 'Todos' : t === 'PROPIO' ? '👤 Propio' : '👥 Compartido'}
-          </button>
-        ))}
+      {/* Filtros: tipo, búsqueda y categorías, todo junto arriba de la lista */}
+      <div className="space-y-3">
+        <div className="flex gap-2 overflow-x-auto pb-2">
+          {['', 'PROPIO', 'COMPARTIDO'].map((t) => (
+            <button
+              key={t}
+              onClick={() => setFilterType(t)}
+              className={`px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
+                filterType === t
+                  ? 'bg-accent text-white'
+                  : 'bg-bg-card text-text-secondary border border-border hover:bg-bg-card-hover'
+              }`}
+            >
+              {t === '' ? 'Todos' : t === 'PROPIO' ? '👤 Propio' : '👥 Compartido'}
+            </button>
+          ))}
+        </div>
+
+        {/* Buscador: no importan mayúsculas, acentos ni palabras completas */}
+        <div className="flex items-center gap-2 rounded-xl border border-border bg-bg-input px-3">
+          <span className="text-text-muted">🔎</span>
+          <input
+            type="search"
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            placeholder="Buscar: gas, luz, super…"
+            aria-label="Buscar gastos por concepto, categoría o persona"
+            className="flex-1 bg-transparent py-3 text-sm text-text-primary outline-none placeholder:text-text-muted"
+          />
+          {busqueda && (
+            <button
+              type="button"
+              onClick={() => setBusqueda('')}
+              className="text-text-muted hover:text-text-primary transition-colors"
+              aria-label="Limpiar la búsqueda"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
+        {/* Filtro por categoría, con lo que va gastado en cada una este mes */}
+        {resumenPorCategoria.length > 0 && (
+          <div className="flex gap-2 overflow-x-auto pb-2">
+            <button
+              onClick={() => setCategoriasElegidas([])}
+              className={`px-4 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
+                categoriasElegidas.length === 0
+                  ? 'bg-accent text-white'
+                  : 'bg-bg-card text-text-secondary border border-border hover:bg-bg-card-hover'
+              }`}
+            >
+              Todas
+            </button>
+            {resumenPorCategoria.map(({ categoria, total, cantidad }) => {
+              const elegida = categoriasElegidas.includes(categoria.id);
+              return (
+                <button
+                  key={categoria.id}
+                  onClick={() => alternarCategoria(categoria.id)}
+                  aria-pressed={elegida}
+                  className={`px-3 py-2 rounded-xl text-left whitespace-nowrap transition-all ${
+                    elegida
+                      ? 'bg-accent text-white'
+                      : 'bg-bg-card text-text-secondary border border-border hover:bg-bg-card-hover'
+                  }`}
+                >
+                  <span className="block text-sm font-medium">
+                    {categoria.icon} {categoria.name}
+                  </span>
+                  <span className={`block text-xs ${elegida ? 'text-white/80' : 'text-text-muted'}`}>
+                    {textoTotal(total)} · {cantidad === 1 ? '1 gasto' : `${cantidad} gastos`}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Cuánto suma exactamente lo que estás mirando ahora */}
+        {initialExpenses.length > 0 && (
+          <div className="glass-card px-4 py-3 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm text-text-secondary">
+                {hayFiltroActivo
+                  ? `${filteredExpenses.length} de ${initialExpenses.length} gastos del mes`
+                  : `${initialExpenses.length} ${initialExpenses.length === 1 ? 'gasto' : 'gastos'} del mes`}
+              </p>
+              {hayFiltroActivo && (
+                <button onClick={limpiarFiltros} className="text-xs text-accent hover:underline mt-0.5">
+                  Limpiar filtros
+                </button>
+              )}
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-text-muted">
+                {hayFiltroActivo ? 'Suma de lo filtrado' : 'Total del mes'}
+              </p>
+              <p className="text-base font-bold text-danger">{textoTotal(totalVisible)}</p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Form */}
@@ -672,8 +843,21 @@ export default function GastosClient({ initialExpenses, categories, savings = []
       <div className="space-y-3">
         {filteredExpenses.length === 0 ? (
           <div className="glass-card p-8 text-center">
-            <span className="text-4xl">💸</span>
-            <p className="text-text-muted mt-2">No hay gastos registrados</p>
+            <span className="text-4xl">{hayFiltroActivo ? '🔎' : '💸'}</span>
+            {hayFiltroActivo ? (
+              <>
+                <p className="text-text-muted mt-2">Nada coincide con este filtro</p>
+                <p className="text-xs text-text-muted mt-1">
+                  Ojo: busca solo dentro del mes que estás mirando. Si el pago fue en otro mes,
+                  cambiá el mes ahí arriba.
+                </p>
+                <button onClick={limpiarFiltros} className="text-sm text-accent hover:underline mt-3">
+                  Limpiar filtros
+                </button>
+              </>
+            ) : (
+              <p className="text-text-muted mt-2">No hay gastos registrados</p>
+            )}
           </div>
         ) : (
           filteredExpenses.map((expense) => (
