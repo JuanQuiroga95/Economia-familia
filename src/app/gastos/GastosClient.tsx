@@ -91,6 +91,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
   const [filterType, setFilterType] = useState<string>('');
   const [busqueda, setBusqueda] = useState('');
   const [categoriasElegidas, setCategoriasElegidas] = useState<string[]>([]);
+  const [mostrarCategorias, setMostrarCategorias] = useState(false);
   const router = useRouter();
 
   // Animation state
@@ -412,6 +413,21 @@ export default function GastosClient({ initialExpenses, categories, savings = []
   );
 
   const totalVisible = useMemo(() => sumarPorMoneda(filteredExpenses), [filteredExpenses]);
+  const totalDeTodasLasCategorias = useMemo(
+    () => sumarPorMoneda(gastosAntesDeCategoria),
+    [gastosAntesDeCategoria]
+  );
+
+  // Con una sola categoría elegida conviene mostrar cuál es; con varias, cuántas.
+  const categoriaUnicaElegida =
+    categoriasElegidas.length === 1
+      ? categories.find((c) => c.id === categoriasElegidas[0])
+      : undefined;
+  const textoCategoriasElegidas = categoriaUnicaElegida
+    ? `${categoriaUnicaElegida.icon} ${categoriaUnicaElegida.name}`
+    : categoriasElegidas.length === 0
+      ? 'Todas las categorías'
+      : `${categoriasElegidas.length} categorías elegidas`;
   const hayFiltroActivo = Boolean(filterType || busqueda.trim() || categoriasElegidas.length > 0);
 
   return (
@@ -470,41 +486,74 @@ export default function GastosClient({ initialExpenses, categories, savings = []
           )}
         </div>
 
-        {/* Filtro por categoría, con lo que va gastado en cada una este mes */}
+        {/* Categorías: se despliega hacia abajo, en vertical, para que la
+            página no se estire a lo ancho en el celular. */}
         {resumenPorCategoria.length > 0 && (
-          <div className="flex gap-2 overflow-x-auto pb-2">
+          <div>
             <button
-              onClick={() => setCategoriasElegidas([])}
-              className={`px-4 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
-                categoriasElegidas.length === 0
-                  ? 'bg-accent text-white'
-                  : 'bg-bg-card text-text-secondary border border-border hover:bg-bg-card-hover'
-              }`}
+              type="button"
+              onClick={() => setMostrarCategorias((abierto) => !abierto)}
+              aria-expanded={mostrarCategorias}
+              className="w-full flex items-center justify-between gap-3 rounded-xl border border-border bg-bg-input px-3 py-3 text-sm text-text-primary hover:border-border-focus transition-all"
             >
-              Todas
+              <span className="truncate text-left">🏷️ {textoCategoriasElegidas}</span>
+              <span className="shrink-0 text-text-muted">{mostrarCategorias ? '▲' : '▼'}</span>
             </button>
-            {resumenPorCategoria.map(({ categoria, total, cantidad }) => {
-              const elegida = categoriasElegidas.includes(categoria.id);
-              return (
+
+            {mostrarCategorias && (
+              <div className="mt-2 rounded-xl border border-border bg-bg-card p-2 space-y-1 max-h-80 overflow-y-auto">
                 <button
-                  key={categoria.id}
-                  onClick={() => alternarCategoria(categoria.id)}
-                  aria-pressed={elegida}
-                  className={`px-3 py-2 rounded-xl text-left whitespace-nowrap transition-all ${
-                    elegida
-                      ? 'bg-accent text-white'
-                      : 'bg-bg-card text-text-secondary border border-border hover:bg-bg-card-hover'
+                  type="button"
+                  onClick={() => setCategoriasElegidas([])}
+                  className={`w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-left text-sm transition-all ${
+                    categoriasElegidas.length === 0
+                      ? 'bg-accent/15 text-accent'
+                      : 'text-text-secondary hover:bg-bg-card-hover'
                   }`}
                 >
-                  <span className="block text-sm font-medium">
-                    {categoria.icon} {categoria.name}
-                  </span>
-                  <span className={`block text-xs ${elegida ? 'text-white/80' : 'text-text-muted'}`}>
-                    {textoTotal(total)} · {cantidad === 1 ? '1 gasto' : `${cantidad} gastos`}
+                  <span>Todas las categorías</span>
+                  <span className="shrink-0 text-xs text-text-muted">
+                    {textoTotal(totalDeTodasLasCategorias)}
                   </span>
                 </button>
-              );
-            })}
+
+                {resumenPorCategoria.map(({ categoria, total, cantidad }) => {
+                  const elegida = categoriasElegidas.includes(categoria.id);
+                  return (
+                    <button
+                      key={categoria.id}
+                      type="button"
+                      onClick={() => alternarCategoria(categoria.id)}
+                      aria-pressed={elegida}
+                      className={`w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-left transition-all ${
+                        elegida
+                          ? 'bg-accent/15 text-accent'
+                          : 'text-text-secondary hover:bg-bg-card-hover'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2 min-w-0">
+                        <span
+                          className={`shrink-0 w-4 h-4 rounded border flex items-center justify-center text-[10px] ${
+                            elegida ? 'bg-accent border-accent text-white' : 'border-border'
+                          }`}
+                        >
+                          {elegida ? '✓' : ''}
+                        </span>
+                        <span className="truncate text-sm">
+                          {categoria.icon} {categoria.name}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-right">
+                        <span className="block text-sm font-medium">{textoTotal(total)}</span>
+                        <span className="block text-xs text-text-muted">
+                          {cantidad === 1 ? '1 gasto' : `${cantidad} gastos`}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -861,16 +910,16 @@ export default function GastosClient({ initialExpenses, categories, savings = []
           </div>
         ) : (
           filteredExpenses.map((expense) => (
-            <div key={expense.id} className="glass-card p-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
+            <div key={expense.id} className="glass-card p-4 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
                 <div
-                  className="w-10 h-10 rounded-xl flex items-center justify-center text-lg"
+                  className="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-lg"
                   style={{ backgroundColor: `${expense.category.color}20` }}
                 >
                   {expense.category.icon}
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-text-primary">{expense.description}</p>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-text-primary break-words">{expense.description}</p>
                   <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                     <span className="text-xs text-text-muted">
                       {new Date(expense.date).toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}
@@ -919,7 +968,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="shrink-0 flex items-center gap-3">
                 <div className="text-right">
                   <p className="text-sm font-bold text-danger">
                     -${formatCurrency(expense.amount)}
