@@ -69,7 +69,9 @@ export default function SharedFundCard({ stats }: { stats: SharedFundStats }) {
         </div>
         <div>
           <h3 className="text-lg font-semibold text-text-primary">Fondo Compartido</h3>
-          <p className="text-xs text-text-muted">Gastos compartidos del mes</p>
+          <p className="text-xs text-text-muted">
+            Gastos del mes, y la deuda acumulada hasta acá
+          </p>
         </div>
       </div>
 
@@ -89,6 +91,9 @@ export default function SharedFundCard({ stats }: { stats: SharedFundStats }) {
           <p className="text-sm font-medium text-text-secondary mb-2">
             💳 Deudas del fondo (a devolver)
           </p>
+          {/* La deuda no se reinicia cada mes: lo que no se devolvió sigue
+              debiéndose. Antes se calculaba mes contra mes y una deuda vieja
+              desaparecía sola al pasar al mes siguiente. */}
           <div className="space-y-2">
             {stats.debts.map((debt) => (
               <div
@@ -104,6 +109,12 @@ export default function SharedFundCard({ stats }: { stats: SharedFundStats }) {
                     <p className="text-xs text-text-muted">
                       Pagó gastos compartidos de su billetera
                     </p>
+                    {debt.amountFromPreviousMonths > 0 && (
+                      <p className="text-xs text-warning/80 mt-0.5">
+                        Incluye ${formatCurrency(debt.amountFromPreviousMonths)} que viene de
+                        meses anteriores
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-2">
@@ -127,7 +138,7 @@ export default function SharedFundCard({ stats }: { stats: SharedFundStats }) {
       {!hasDebts && hasExpenses && (
         <div className="p-3 rounded-xl bg-success/5 border border-success/20 text-center">
           <p className="text-sm text-success">
-            ✅ No hay deudas pendientes este mes
+            ✅ No queda ninguna deuda pendiente con el fondo
           </p>
         </div>
       )}

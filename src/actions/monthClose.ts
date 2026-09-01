@@ -10,7 +10,7 @@ import { addMonths, periodIndex } from '@/lib/periodUtils';
 const MESES_HACIA_ATRAS = 12;
 
 /**
- * Busca el mes más viejo que quedó sin cerrar y todavía tiene saldo a favor.
+ * Busca el mes más viejo que quedó sin cerrar y tuvo movimiento.
  *
  * Antes miraba solo el mes anterior: si pasabas 30 días sin entrar, ese mes
  * quedaba colgado para siempre y el sobrante no se arrastraba ni iba a ahorros.
@@ -32,11 +32,16 @@ export async function checkPreviousMonthStatus(currentMonth: number, currentYear
       if (cerrados.has(periodIndex(month, year))) continue;
 
       const stats = await getDashboardStats(month, year);
-      if (stats.balance > 0) {
+
+      // Cualquier mes con movimiento se ofrece cerrar, sobre o falte. Antes
+      // sólo se ofrecía si había sobrante: un mes que cerraba en rojo se
+      // marcaba solo como IGNORE y ya no se podía cerrar nunca más.
+      if (stats.totalIncome > 0 || stats.totalExpenses > 0) {
         return { month, year, balance: stats.balance };
       }
 
-      // Un mes sin sobrante se marca como visto para no volver a calcularlo.
+      // Un mes sin un solo movimiento sí se marca como visto: no hay nada que
+      // decidir y no vale la pena recalcularlo cada vez.
       await prisma.monthClose
         .create({ data: { month, year, accountId, action: 'IGNORE' } })
         .catch(() => {});

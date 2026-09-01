@@ -20,6 +20,10 @@ export default function MonthCloseBanner({ prevStatus, savingsGoals }: MonthClos
 
   const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
+  // Un mes puede cerrar en rojo. Ahí no hay saldo que pasar ni mandar a
+  // ahorros, pero igual hay que poder cerrarlo para que deje de figurar.
+  const sobro = prevStatus.balance > 0;
+
   const handleCarryOver = async () => {
     setLoading(true);
     const res = await carryOverBalance(prevStatus.month, prevStatus.year, prevStatus.balance);
@@ -33,9 +37,11 @@ export default function MonthCloseBanner({ prevStatus, savingsGoals }: MonthClos
 
   const handleIgnore = async () => {
     const ok = await confirmar({
-      titulo: '¿Ignorar este saldo?',
-      detalle: 'No se suma al mes actual ni va a ahorros, y el aviso no vuelve a aparecer.',
-      confirmar: 'Ignorar saldo',
+      titulo: sobro ? '¿Ignorar este saldo?' : `¿Cerrar ${monthNames[prevStatus.month - 1]}?`,
+      detalle: sobro
+        ? 'No se suma al mes actual ni va a ahorros, y el aviso no vuelve a aparecer.'
+        : 'El mes queda cerrado tal cual está y el aviso no vuelve a aparecer.',
+      confirmar: sobro ? 'Ignorar saldo' : 'Cerrar mes',
     });
     if (!ok) return;
     setLoading(true);
@@ -75,33 +81,55 @@ export default function MonthCloseBanner({ prevStatus, savingsGoals }: MonthClos
         <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex-1">
             <h3 className="text-xl font-bold text-white mb-1">
-              🎉 ¡Te sobró saldo en {monthNames[prevStatus.month - 1]}!
+              {sobro
+                ? `🎉 ¡Te sobró saldo en ${monthNames[prevStatus.month - 1]}!`
+                : `📋 Falta cerrar ${monthNames[prevStatus.month - 1]}`}
             </h3>
             <p className="text-indigo-200">
-              Tenés un balance positivo de <strong className="text-white">${prevStatus.balance.toLocaleString()}</strong>. ¿Qué querés hacer con este dinero?
+              {sobro ? (
+                <>
+                  Tenés un balance positivo de{' '}
+                  <strong className="text-white">${prevStatus.balance.toLocaleString()}</strong>.
+                  ¿Qué querés hacer con este dinero?
+                </>
+              ) : (
+                <>
+                  El mes cerró con{' '}
+                  <strong className="text-white">${prevStatus.balance.toLocaleString()}</strong>, así
+                  que no hay saldo para pasar. Cerralo para que deje de figurar como pendiente.
+                </>
+              )}
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto shrink-0">
-            <button
-              onClick={handleCarryOver}
-              disabled={loading}
-              className="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-xl font-medium transition-colors disabled:opacity-50"
-            >
-              Pasar a este mes
-            </button>
-            <button
-              onClick={() => setShowModal(true)}
-              disabled={loading}
-              className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-xl font-medium transition-colors disabled:opacity-50 border border-white/20"
-            >
-              Mandar a Ahorros
-            </button>
+            {sobro && (
+              <>
+                <button
+                  onClick={handleCarryOver}
+                  disabled={loading}
+                  className="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-xl font-medium transition-colors disabled:opacity-50"
+                >
+                  Pasar a este mes
+                </button>
+                <button
+                  onClick={() => setShowModal(true)}
+                  disabled={loading}
+                  className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-xl font-medium transition-colors disabled:opacity-50 border border-white/20"
+                >
+                  Mandar a Ahorros
+                </button>
+              </>
+            )}
             <button
               onClick={handleIgnore}
               disabled={loading}
-              className="text-white/60 hover:text-white px-2 py-2 rounded-xl text-sm transition-colors disabled:opacity-50"
+              className={
+                sobro
+                  ? 'text-white/60 hover:text-white px-2 py-2 rounded-xl text-sm transition-colors disabled:opacity-50'
+                  : 'bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-xl font-medium transition-colors disabled:opacity-50'
+              }
             >
-              Ignorar
+              {sobro ? 'Ignorar' : 'Cerrar mes'}
             </button>
           </div>
         </div>

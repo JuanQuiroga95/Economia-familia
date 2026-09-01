@@ -4,6 +4,14 @@ import { prisma } from '@/lib/prisma';
 import type { BudgetStatus, CategoryBreakdown, SharedFundStats } from '@/types';
 import { getFinancialMonthRange, getArgDate, getCurrentFinancialMonth } from '@/lib/dateUtils';
 import { categoriaDeConsumo, MONEDA_BASE } from '@/lib/reportFilters';
+import { addMonths } from '@/lib/periodUtils';
+import {
+  mesDePresupuesto,
+  quincenaDe,
+  rangoMesDePresupuesto,
+  rangoQuincena,
+  textoDelPeriodo,
+} from '@/lib/budgetPeriod';
 
 import { getAccountId } from '@/lib/session';
 
@@ -345,7 +353,9 @@ export async function getBudgetStatus(
     if (!config || !config.isActive) return null;
 
     const now = getArgDate();
-    const actual = getCurrentFinancialMonth(now);
+    // El mes de presupuesto no es el calendario: desde el día de cobro (el
+    // último del mes) ya se está gastando el presupuesto del mes que viene.
+    const actual = mesDePresupuesto(now);
     const mes = month ?? actual.month;
     const anio = year ?? actual.year;
     const esMesActual = mes === actual.month && anio === actual.year;
@@ -358,65 +368,44 @@ export async function getBudgetStatus(
     let budget: number;
     let currentHalf: 1 | 2 = 1;
 
-    if (!esMesActual) {
-      // Mes cerrado: el mes entero de punta a punta.
-      const rango = getFinancialMonthRange(mes, anio);
-      startDate = rango.startDate;
-      endDate = rango.endDate;
-      budget =
-        budgetType === 'MENSUAL'
-          ? monthlyBudget
-          : config.firstHalfBudget + config.secondHalfBudget;
+    if (budgetType === 'MENSUAL') {
+      ({ startDate, endDate } = rangoMesDePresupuesto(mes, anio));
+      budget = monthlyBudget;
+    } else if (!esMesActual) {
+      // Mes ya cerrado: las dos quincenas juntas, con el mismo corte que tuvo
+      // en vivo. Antes acá se usaba el mes calendario, así que lo gastado el
+      // último día del mes se contaba dos veces.
+      ({ startDate, endDate } = rangoMesDePresupuesto(mes, anio));
+      budget = config.firstHalfBudget + config.secondHalfBudget;
     } else {
-      const day = now.getDate();
-      const yearNow = now.getFullYear();
-      const monthNow = now.getMonth();
-
-      const lastDayOfMonth = new Date(yearNow, monthNow + 1, 0).getDate();
-      const isFirstHalf = day >= lastDayOfMonth || day <= 15;
-      currentHalf = isFirstHalf ? 1 : 2;
-
-      budget =
-        budgetType === 'MENSUAL'
-          ? monthlyBudget
-          : isFirstHalf
-            ? config.firstHalfBudget
-            : config.secondHalfBudget;
-
-      if (budgetType === 'MENSUAL') {
-        startDate = new Date(yearNow, monthNow, 1);
-        endDate = new Date(yearNow, monthNow, lastDayOfMonth, 23, 59, 59);
-      } else if (isFirstHalf) {
-        if (day >= lastDayOfMonth) {
-          startDate = new Date(yearNow, monthNow, lastDayOfMonth);
-          endDate = new Date(yearNow, monthNow + 1, 15, 23, 59, 59);
-        } else {
-          const prevMonthLastDay = new Date(yearNow, monthNow, 0).getDate();
-          startDate = new Date(yearNow, monthNow - 1, prevMonthLastDay);
-          endDate = new Date(yearNow, monthNow, 15, 23, 59, 59);
-        }
-      } else {
-        startDate = new Date(yearNow, monthNow, 16);
-        endDate = new Date(yearNow, monthNow, lastDayOfMonth - 1, 23, 59, 59);
-      }
+      currentHalf = quincenaDe(now);
+      ({ startDate, endDate } = rangoQuincena(mes, anio, currentHalf));
+      budget = currentHalf === 1 ? config.firstHalfBudget : config.secondHalfBudget;
     }
 
     const extraBudget = config.extraBudget || 0;
     budget += extraBudget;
 
+    // Lo que sobró del mes pasado, si al cerrarlo se eligió arrastrarlo. Va
+    // sólo a la primera quincena: sumarlo a las dos lo duplicaría.
+    const previo = addMonths(mes, anio, -1);
+    const cierrePrevio = await prisma.budgetClose.findUnique({
+      where: {
+        profileId_month_year: { profileId, month: previo.month, year: previo.year },
+      },
+    });
+    const carryOver =
+      cierrePrevio?.action === 'ARRASTRAR' &&
+      cierrePrevio.leftover > 0 &&
+      (budgetType === 'MENSUAL' || !esMesActual || currentHalf === 1)
+        ? cierrePrevio.leftover
+        : 0;
+    budget += carryOver;
+
     // El rango real que se está contando. La quincena no coincide con el mes
     // calendario, así que sin esto es imposible entender por qué un gasto del
     // día 10 no aparece en el presupuesto del día 21.
-    const MESES_CORTOS = [
-      'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
-      'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
-    ];
-    const dia = (d: Date) => d.getDate();
-    const mesDe = (d: Date) => MESES_CORTOS[d.getMonth()];
-    const periodo =
-      mesDe(startDate) === mesDe(endDate)
-        ? `${dia(startDate)} al ${dia(endDate)} de ${mesDe(endDate)}`
-        : `${dia(startDate)} de ${mesDe(startDate)} al ${dia(endDate)} de ${mesDe(endDate)}`;
+    const periodo = textoDelPeriodo(startDate, endDate);
 
     const ownExpenses = await prisma.expense.findMany({
       where: {
@@ -459,6 +448,7 @@ export async function getBudgetStatus(
       esMesActual,
       budgetType,
       extraBudget,
+      carryOver,
       periodo,
       budget,
       spent,
@@ -489,6 +479,7 @@ export async function getSharedFundStats(month: number, year: number): Promise<S
 
     const [profileA, profileB] = account.profiles.sort((a, b) => a.name.localeCompare(b.name));
 
+    // Lo gastado en conjunto ESTE mes, que es lo que va arriba de la tarjeta.
     const sharedExpenses = await prisma.expense.findMany({
       where: {
         type: 'COMPARTIDO',
@@ -499,12 +490,30 @@ export async function getSharedFundStats(month: number, year: number): Promise<S
       include: { profile: true },
     });
 
-    const fundPayments = await prisma.sharedFundPayment.findMany({
+    // La deuda con el fondo, en cambio, es un saldo que se arrastra: todo lo
+    // que alguien puso de su bolsillo hasta el final del mes que se está
+    // mirando, menos todo lo que se le devolvió hasta esa misma fecha.
+    //
+    // Antes se calculaba mes contra mes y eso daba dos números falsos: una
+    // deuda de agosto que no se devolvió desaparecía el 1 de septiembre, y una
+    // devolución hecha en septiembre por una deuda de agosto borraba la deuda
+    // nueva de septiembre.
+    const gastosQueGeneranDeuda = await prisma.expense.findMany({
       where: {
-        date: { gte: startDate, lte: endDate },
-        accountId,
+        type: 'COMPARTIDO',
+        paidFromPersonalBudget: true,
+        date: { lte: endDate },
+        profile: { accountId },
+        currency: MONEDA_BASE,
       },
+      include: { profile: true },
     });
+
+    const devoluciones = await prisma.sharedFundPayment.findMany({
+      where: { accountId, date: { lte: endDate } },
+    });
+
+    const fundPayments = devoluciones.filter((p) => p.date >= startDate);
 
     const totalSharedExpenses = sharedExpenses.reduce((sum, exp) => sum + exp.amount, 0);
 
@@ -516,76 +525,94 @@ export async function getSharedFundStats(month: number, year: number): Promise<S
       date: p.date
     }));
 
+    const esDeEsteMes = (fecha: Date) => fecha >= startDate && fecha <= endDate;
+
     if (account.splitMode === 'FONDO_COMUN') {
-      const debtMap = new Map<string, { profileName: string; profileAvatar: string | null; amount: number }>();
-      sharedExpenses.forEach((exp) => {
-        if (exp.paidFromPersonalBudget) {
-          const existing = debtMap.get(exp.profileId);
-          if (existing) {
-            existing.amount += exp.amount;
-          } else {
-            debtMap.set(exp.profileId, {
-              profileName: exp.profile.name,
-              profileAvatar: exp.profile.avatar,
-              amount: exp.amount,
-            });
-          }
-        }
-      });
-      const debts = Array.from(debtMap.entries()).map(([profileId, data]) => {
-        const paymentsReceived = fundPayments.filter(p => p.profileId === profileId).reduce((sum, p) => sum + p.amount, 0);
-        return {
-          profileId,
-          profileName: data.profileName,
-          profileAvatar: data.profileAvatar,
-          amount: Math.max(0, data.amount - paymentsReceived),
-          currency: 'ARS',
+      const acumulado = new Map<
+        string,
+        { profileName: string; profileAvatar: string | null; total: number; deEsteMes: number }
+      >();
+
+      gastosQueGeneranDeuda.forEach((exp) => {
+        const fila = acumulado.get(exp.profileId) ?? {
+          profileName: exp.profile.name,
+          profileAvatar: exp.profile.avatar,
+          total: 0,
+          deEsteMes: 0,
         };
-      }).filter(d => d.amount > 0);
+        fila.total += exp.amount;
+        if (esDeEsteMes(exp.date)) fila.deEsteMes += exp.amount;
+        acumulado.set(exp.profileId, fila);
+      });
+
+      const debts = Array.from(acumulado.entries())
+        .map(([profileId, data]) => {
+          const devuelto = devoluciones
+            .filter((p) => p.profileId === profileId)
+            .reduce((sum, p) => sum + p.amount, 0);
+          const amount = Math.max(0, data.total - devuelto);
+          return {
+            profileId,
+            profileName: data.profileName,
+            profileAvatar: data.profileAvatar,
+            amount,
+            // Cuánto de esa deuda viene de meses anteriores, para que un número
+            // que no cierra con los gastos del mes no parezca un error.
+            amountFromPreviousMonths: Math.max(0, amount - data.deEsteMes),
+            currency: 'ARS',
+          };
+        })
+        .filter((d) => d.amount > 0);
+
       return { totalSharedExpenses, debts, payments: mappedPayments, currency: 'ARS' };
     } else {
-      // PORCENTAJE mode: person-to-person debt
-      let balanceA = 0; // Positive means B owes A
-      sharedExpenses.forEach((exp) => {
-        if (exp.paidFromPersonalBudget) {
+      // PORCENTAJE: la deuda es de persona a persona, pero también acumulada.
+      const saldoDeA = (gastos: typeof gastosQueGeneranDeuda) =>
+        gastos.reduce((saldo, exp) => {
           const payer = exp.profileId;
-          const payerPercent = exp.splitPercentage ?? (payer === profileA.id ? account.splitPercentA : account.splitPercentB);
-          
-          const owedAmount = exp.amount * (100 - payerPercent) / 100;
-          
-          if (payer === profileA.id) {
-            balanceA += owedAmount;
-          } else {
-            balanceA -= owedAmount;
-          }
-        }
-      });
-      
+          const payerPercent =
+            exp.splitPercentage ??
+            (payer === profileA.id ? account.splitPercentA : account.splitPercentB);
+          const owedAmount = (exp.amount * (100 - payerPercent)) / 100;
+          return payer === profileA.id ? saldo + owedAmount : saldo - owedAmount;
+        }, 0);
+
+      const devueltoA = devoluciones
+        .filter((p) => p.profileId === profileA.id)
+        .reduce((sum, p) => sum + p.amount, 0);
+      const devueltoB = devoluciones
+        .filter((p) => p.profileId === profileB.id)
+        .reduce((sum, p) => sum + p.amount, 0);
+
+      const balanceA = saldoDeA(gastosQueGeneranDeuda) - devueltoA + devueltoB;
+      const generadoEsteMes = saldoDeA(
+        gastosQueGeneranDeuda.filter((exp) => esDeEsteMes(exp.date))
+      );
+
       const debts = [];
-      
-      const paymentsToA = fundPayments.filter(p => p.profileId === profileA.id).reduce((sum, p) => sum + p.amount, 0);
-      const paymentsToB = fundPayments.filter(p => p.profileId === profileB.id).reduce((sum, p) => sum + p.amount, 0);
-      
-      balanceA = balanceA - paymentsToA + paymentsToB; // Adjusted by payments
-      
       if (balanceA > 0) {
-        // B owes A
+        // B le debe a A
         debts.push({
           profileId: profileA.id,
           profileName: profileA.name,
           profileAvatar: profileA.avatar,
           debtorName: profileB.name,
           amount: balanceA,
+          amountFromPreviousMonths: Math.max(0, balanceA - Math.max(0, generadoEsteMes)),
           currency: 'ARS',
         });
       } else if (balanceA < 0) {
-        // A owes B
+        // A le debe a B
         debts.push({
           profileId: profileB.id,
           profileName: profileB.name,
           profileAvatar: profileB.avatar,
           debtorName: profileA.name,
           amount: Math.abs(balanceA),
+          amountFromPreviousMonths: Math.max(
+            0,
+            Math.abs(balanceA) - Math.max(0, -generadoEsteMes)
+          ),
           currency: 'ARS',
         });
       }

@@ -1,9 +1,106 @@
 'use client';
 import { formatCurrency } from '@/lib/formatUtils';
+import { useTransition } from 'react';
+import { useRouter } from 'next/navigation';
+import toast from 'react-hot-toast';
 
-import type { BudgetStatus } from '@/types';
+import type { BudgetStatus, BudgetCloseStatus } from '@/types';
+import { closeBudgetMonth } from '@/actions/budgetClose';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
 
-export default function BudgetTracker({ status }: { status: BudgetStatus | null }) {
+const MESES = [
+  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+];
+
+/**
+ * Aviso de cierre: el mes de presupuesto ya terminó (va de día de cobro a día
+ * de cobro) y todavía no se cerró. Hasta cerrarlo, lo que sobró queda colgado.
+ */
+function CierrePendiente({ cierre }: { cierre: BudgetCloseStatus }) {
+  const router = useRouter();
+  const confirmar = useConfirm();
+  const [isPending, startTransition] = useTransition();
+  const sobro = cierre.leftover > 0;
+
+  const cerrar = (accion: 'ARRASTRAR' | 'IGNORAR') => {
+    startTransition(async () => {
+      const res = await closeBudgetMonth(cierre.profileId, cierre.month, cierre.year, accion);
+      if (res.success) {
+        toast.success(
+          accion === 'ARRASTRAR'
+            ? `Se sumaron $${formatCurrency(cierre.leftover)} al mes nuevo`
+            : `${MESES[cierre.month - 1]} quedó cerrado`
+        );
+        router.refresh();
+      } else {
+        toast.error(res.error || 'Error al cerrar el presupuesto');
+      }
+    });
+  };
+
+  const confirmarYCerrar = async (accion: 'ARRASTRAR' | 'IGNORAR') => {
+    const ok = await confirmar({
+      titulo: `¿Cerrar el presupuesto de ${MESES[cierre.month - 1]}?`,
+      detalle:
+        accion === 'ARRASTRAR'
+          ? 'Lo que sobró se suma a la primera quincena del mes nuevo. Después no se cuentan más gastos en ese mes.'
+          : 'El mes queda cerrado tal cual está y el aviso no vuelve a aparecer.',
+      confirmar: accion === 'ARRASTRAR' ? 'Cerrar y arrastrar' : 'Cerrar sin arrastrar',
+      resumen: [
+        { etiqueta: 'Período', valor: cierre.periodo },
+        { etiqueta: 'Presupuesto', valor: `$${formatCurrency(cierre.budget)}` },
+        { etiqueta: 'Gastado', valor: `$${formatCurrency(cierre.spent)}` },
+        {
+          etiqueta: sobro ? 'Sobró' : 'Se pasó',
+          valor: `$${formatCurrency(Math.abs(cierre.leftover))}`,
+        },
+      ],
+    });
+    if (ok) cerrar(accion);
+  };
+
+  return (
+    <div className="mb-4 p-3 rounded-xl bg-info/10 border border-info/30">
+      <p className="text-sm font-medium text-text-primary">
+        📋 Terminó el presupuesto de {MESES[cierre.month - 1]}
+      </p>
+      <p className="text-xs text-text-muted mt-1">
+        Del {cierre.periodo}: gastaste ${formatCurrency(cierre.spent)} de $
+        {formatCurrency(cierre.budget)}.{' '}
+        {sobro
+          ? `Te sobraron $${formatCurrency(cierre.leftover)}.`
+          : `Te pasaste por $${formatCurrency(Math.abs(cierre.leftover))}.`}
+      </p>
+      <div className="flex flex-wrap gap-2 mt-3">
+        {sobro && (
+          <button
+            onClick={() => confirmarYCerrar('ARRASTRAR')}
+            disabled={isPending}
+            className="px-3 py-1.5 rounded-lg bg-info/20 text-info text-xs font-medium hover:bg-info/30 transition-colors disabled:opacity-50"
+          >
+            Cerrar y sumar lo que sobró
+          </button>
+        )}
+        <button
+          onClick={() => confirmarYCerrar('IGNORAR')}
+          disabled={isPending}
+          className="px-3 py-1.5 rounded-lg bg-bg-card border border-border text-text-secondary text-xs font-medium hover:bg-bg-card-hover transition-colors disabled:opacity-50"
+        >
+          {sobro ? 'Cerrar sin arrastrar' : 'Cerrar el mes'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export default function BudgetTracker({
+  status,
+  cierrePendiente,
+}: {
+  status: BudgetStatus | null;
+  cierrePendiente?: BudgetCloseStatus | null;
+}) {
   if (!status) return null;
 
   const getStatusColor = () => {
@@ -24,6 +121,8 @@ export default function BudgetTracker({ status }: { status: BudgetStatus | null 
 
   return (
     <div className={`glass-card p-4 lg:p-6 ${pulseClass}`}>
+      {cierrePendiente && <CierrePendiente cierre={cierrePendiente} />}
+
       <div className="flex items-start justify-between mb-3 gap-3">
         <div className="min-w-0">
           <h3 className="text-lg font-semibold text-text-primary">
@@ -87,12 +186,21 @@ export default function BudgetTracker({ status }: { status: BudgetStatus | null 
       {/* De dónde sale el presupuesto, si hay un extra sumado. Ese campo se
           suma a TODAS las quincenas hasta que alguien lo borre, así que
           conviene que se vea y no quede escondido en Configuración. */}
-      {status.extraBudget > 0 && (
+      {(status.extraBudget > 0 || status.carryOver > 0) && (
         <p className="mt-3 text-xs text-text-muted text-center">
-          Incluye ${formatCurrency(status.extraBudget)} de{' '}
-          <span className="text-warning">saldo extra</span> cargado en Configuración
-          {' · '}
-          <span>base: ${formatCurrency(status.budget - status.extraBudget)}</span>
+          Base: ${formatCurrency(status.budget - status.extraBudget - status.carryOver)}
+          {status.extraBudget > 0 && (
+            <>
+              {' · '}incluye ${formatCurrency(status.extraBudget)} de{' '}
+              <span className="text-warning">saldo extra</span> de Configuración
+            </>
+          )}
+          {status.carryOver > 0 && (
+            <>
+              {' · '}incluye ${formatCurrency(status.carryOver)}{' '}
+              <span className="text-info">que sobró del mes pasado</span>
+            </>
+          )}
         </p>
       )}
 

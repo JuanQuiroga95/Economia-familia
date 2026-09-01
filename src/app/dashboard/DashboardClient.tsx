@@ -14,7 +14,7 @@ import AgendaSummary from '@/components/dashboard/AgendaSummary';
 import type { CardsSummary } from '@/actions/cards';
 import type { LoansSummary as LoansSummaryData } from '@/actions/loans';
 import type { AgendaSummary as AgendaSummaryData } from '@/actions/agenda';
-import type { BudgetStatus, CategoryBreakdown, SharedFundStats, UserExpenseBreakdown, CategoryBudgetStatus, SplitBalanceDetail } from '@/types';
+import type { BudgetStatus, BudgetCloseStatus, CategoryBreakdown, SharedFundStats, UserExpenseBreakdown, CategoryBudgetStatus, SplitBalanceDetail } from '@/types';
 import { formatCurrency } from '@/lib/formatUtils';
 
 interface DashboardClientProps {
@@ -22,6 +22,8 @@ interface DashboardClientProps {
   categoryData: CategoryBreakdown[];
   monthlyData: { name: string; ingresos: number; gastos: number }[];
   budgetStatuses: BudgetStatus[];
+  /** Meses de presupuesto que ya terminaron y falta cerrar, por perfil. */
+  budgetCloses?: BudgetCloseStatus[];
   sharedFundStats: SharedFundStats;
   profiles: { id: string; name: string; avatar: string | null }[];
   currentMonth: number;
@@ -44,6 +46,7 @@ export default function DashboardClient({
   categoryData,
   monthlyData,
   budgetStatuses,
+  budgetCloses = [],
   sharedFundStats,
   currentMonth,
   currentYear,
@@ -203,7 +206,11 @@ export default function DashboardClient({
 
       {/* Budget Trackers (for all profiles with active budget) */}
       {budgetStatuses.map((status) => (
-        <BudgetTracker key={status.profileId} status={status} />
+        <BudgetTracker
+          key={status.profileId}
+          status={status}
+          cierrePendiente={budgetCloses.find((c) => c.profileId === status.profileId) || null}
+        />
       ))}
 
       {/* Shared Fund */}

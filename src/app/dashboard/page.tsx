@@ -15,6 +15,7 @@ import { esAdmin } from '@/lib/admin';
 import { redirect } from 'next/navigation';
 
 import MonthCloseBannerWrapper from '@/components/dashboard/MonthCloseBannerWrapper';
+import { getBudgetCloseStatus } from '@/actions/budgetClose';
 
 export default async function DashboardPage(props: { searchParams: Promise<{ month?: string; year?: string }> }) {
   const searchParams = await props.searchParams;
@@ -57,6 +58,12 @@ export default async function DashboardPage(props: { searchParams: Promise<{ mon
   );
   const activeBudgets = budgetStatuses.filter((b) => b !== null);
 
+  // Presupuestos cuyo mes ya terminó y falta cerrar. No depende del mes que se
+  // esté mirando: el aviso es sobre el último mes de presupuesto cerrado.
+  const budgetCloses = (
+    await Promise.all(profiles.map((p) => getBudgetCloseStatus(p.id)))
+  ).filter((c) => c !== null);
+
   return (
     <AppLayout>
       <MonthCloseBannerWrapper currentMonth={month} currentYear={year} />
@@ -66,6 +73,7 @@ export default async function DashboardPage(props: { searchParams: Promise<{ mon
         categoryData={categoryData}
         monthlyData={monthlyData}
         budgetStatuses={activeBudgets}
+        budgetCloses={budgetCloses}
         sharedFundStats={sharedFundStats}
         profiles={profiles}
         currentMonth={month}

@@ -62,6 +62,7 @@ model Profile {
   investments         Investment[]
   investmentTransactions InvestmentTransaction[]
   budgetConfigs       BudgetConfig[]
+  budgetCloses        BudgetClose[]
   sharedFundPayments  SharedFundPayment[]
   pushSubscriptions   PushSubscription[]
   creditCards         CreditCard[]
@@ -589,6 +590,28 @@ model PushSubscription {
   profileId String
   profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
+}
+
+/**
+ * Cierre del presupuesto personal de un mes.
+ *
+ * El mes de presupuesto no es el mes calendario: arranca el día de cobro (el
+ * último del mes anterior). Cerrarlo deja constancia de cómo terminó y, si se
+ * elige ARRASTRAR, `leftover` se suma a la primera quincena del mes siguiente.
+ */
+model BudgetClose {
+  id        String   @id @default(cuid())
+  month     Int
+  year      Int
+  profileId String
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  /// "ARRASTRAR" | "IGNORAR"
+  action    String
+  /// Lo que sobró (o faltó, en negativo) al cerrar.
+  leftover  Float    @default(0)
+  createdAt DateTime @default(now())
+
+  @@unique([profileId, month, year])
 }
 
 model MonthClose {

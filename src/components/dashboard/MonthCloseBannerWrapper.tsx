@@ -2,13 +2,16 @@ import { checkPreviousMonthStatus } from '@/actions/monthClose';
 import { prisma } from '@/lib/prisma';
 import MonthCloseBanner from './MonthCloseBanner';
 import { getAccountId } from '@/lib/session';
+import { getArgDate } from '@/lib/dateUtils';
 
 export default async function MonthCloseBannerWrapper({ currentMonth, currentYear }: { currentMonth: number, currentYear: number }) {
   const accountId = await getAccountId();
   if (!accountId) return null;
 
-  // Solo mostrar banner si estamos viendo el mes actual real, no en meses históricos
-  const now = new Date();
+  // Solo mostrar banner si estamos viendo el mes actual real, no en meses
+  // históricos. Va en hora argentina: con la del servidor (UTC), después de
+  // las 21 del último día del mes el cartel no aparecía.
+  const now = getArgDate();
   const realCurrentMonth = now.getMonth() + 1;
   const realCurrentYear = now.getFullYear();
 

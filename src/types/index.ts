@@ -61,6 +61,8 @@ export interface BudgetStatus {
   budgetType: string;
   /** Cuánto de `budget` viene del campo "Saldo Mes Anterior o Extra". */
   extraBudget: number;
+  /** Lo que sobró del mes pasado y se arrastró al cerrarlo. 0 si no se arrastró. */
+  carryOver: number;
   /** Qué días cubre el presupuesto, ej "16 al 30 de agosto". */
   periodo: string;
   budget: number;
@@ -144,7 +146,25 @@ export interface SharedFundDebt {
   profileName: string;
   profileAvatar: string | null;
   debtorName?: string;
+  /** Saldo adeudado acumulado, no sólo lo del mes que se está mirando. */
   amount: number;
+  /** Cuánto de ese saldo viene arrastrado de meses anteriores. */
+  amountFromPreviousMonths: number;
+  currency: string;
+}
+
+/** Un mes de presupuesto que ya terminó y todavía no se cerró. */
+export interface BudgetCloseStatus {
+  profileId: string;
+  profileName: string;
+  month: number;
+  year: number;
+  /** Qué días cubría, ej "31 de julio al 30 de agosto". */
+  periodo: string;
+  budget: number;
+  spent: number;
+  /** Positivo si sobró, negativo si se pasó. */
+  leftover: number;
   currency: string;
 }
 
