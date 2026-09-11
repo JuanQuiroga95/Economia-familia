@@ -12,6 +12,7 @@
 
 # testing
 /coverage
+/artifacts/planning-export-review/
 
 # next.js
 /.next/

@@ -3,10 +3,13 @@
 import { useEffect, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import { Bar, BarChart, CartesianGrid, Legend, Line, ComposedChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import toast from 'react-hot-toast';
 import { savePlanning } from '@/actions/planning';
-import { MONTHS, periodMonths, variance, type PlanningData } from '@/lib/planning';
+import { MONTHS, type PlanningData } from '@/lib/planning';
+import { buildPlanningReport } from '@/lib/planningReport';
+import PlanningExport from './PlanningExport';
 
 const money = (value: number) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(value);
 const keyOf = (id: string, month: number) => `${id}:${month}`;
@@ -14,13 +17,15 @@ const chartStyle = { background: '#111133', border: '1px solid #454575', borderR
 
 export default function PlanningClient({ data, analytics, initialPeriod }: { data: PlanningData; analytics: boolean; initialPeriod: string }) {
   const router = useRouter();
+  const { data: session } = useSession();
   const [period, setPeriod] = useState(initialPeriod);
   const [month, setMonth] = useState(data.month);
   const [draft, setDraft] = useState<Record<string, string>>(() => Object.fromEntries(data.budgets.map(b => [keyOf(b.categoryId, b.month), String(b.amount)])));
   const [dirty, setDirty] = useState<Set<string>>(new Set());
   const [pending, startTransition] = useTransition();
   const [adjustment, setAdjustment] = useState('0');
-  const months = periodMonths(month, period);
+  const report = buildPlanningReport(data, draft, month, period, session?.user?.name || 'Familia');
+  const { months, actualMap, rows, planned, actual, unplanned, income, execution, ranked, configured, isOpen, future, monthly: chartData } = report;
   const href = (path: string) => `${path}?year=${data.year}&month=${month}&period=${period}`;
   useEffect(() => {
     if (!dirty.size) return;
@@ -40,30 +45,7 @@ export default function PlanningClient({ data, analytics, initialPeriod }: { dat
       document.removeEventListener('click', guardLink, true);
     };
   }, [dirty]);
-  const actualMap = new Map(data.actuals.map(a => [keyOf(a.categoryId, a.month), a.amount]));
-  const rows = data.categories.map(category => {
-    const planned = months.reduce((sum, m) => sum + (Number(draft[keyOf(category.id, m)]) || 0), 0);
-    const actual = months.reduce((sum, m) => sum + (actualMap.get(keyOf(category.id, m)) ?? 0), 0);
-    const configured = months.filter(m => draft[keyOf(category.id, m)] !== undefined && draft[keyOf(category.id, m)] !== '').length;
-    const unplanned = months.reduce((sum, m) => sum + ((draft[keyOf(category.id, m)] === undefined || draft[keyOf(category.id, m)] === '') ? actualMap.get(keyOf(category.id, m)) ?? 0 : 0), 0);
-    return { ...category, planned, actual, configured, unplanned, ...variance(planned, actual) };
-  });
-  const planned = rows.reduce((sum, row) => sum + row.planned, 0);
-  const actual = rows.reduce((sum, row) => sum + row.actual, 0);
-  const unplanned = rows.reduce((sum, row) => sum + row.unplanned, 0);
-  const income = months.reduce((sum, m) => sum + data.incomes[m - 1], 0);
-  const execution = variance(planned, actual).execution;
-  const chartData = months.map(m => ({
-    name: MONTHS[m - 1],
-    Presupuesto: data.categories.reduce((sum, c) => sum + (Number(draft[keyOf(c.id, m)]) || 0), 0),
-    Real: data.categories.reduce((sum, c) => sum + (actualMap.get(keyOf(c.id, m)) ?? 0), 0),
-    Ingresos: data.incomes[m - 1],
-  }));
-  const ranked = [...rows].filter(row => row.planned || row.actual).sort((a, b) => a.available - b.available);
-  const configured = rows.reduce((sum, row) => sum + row.configured, 0);
   const elapsed = months.filter(m => data.year < data.currentYear || (data.year === data.currentYear && m < data.currentMonth));
-  const isOpen = data.year === data.currentYear && months.includes(data.currentMonth);
-  const future = data.year > data.currentYear || (data.year === data.currentYear && months[0] > data.currentMonth);
 
   function edit(id: string, m: number, value: string) {
     const key = keyOf(id, m);
@@ -108,25 +90,14 @@ export default function PlanningClient({ data, analytics, initialPeriod }: { dat
       } catch { toast.error('No se pudo conectar. Tus cambios siguen en pantalla.'); }
     });
   }
-  function exportCsv() {
-    const records = [['Categoría', 'Mes', 'Año', 'Moneda', 'Presupuesto', 'Real', 'Disponible']];
-    for (const row of rows) for (const m of months) {
-      const value = draft[keyOf(row.id, m)];
-      const actualValue = actualMap.get(keyOf(row.id, m)) ?? 0;
-      records.push([row.name, MONTHS[m - 1], String(data.year), 'ARS', value ?? '', String(actualValue), value === undefined || value === '' ? '' : String(Number(value) - actualValue)]);
-    }
-    const csv = records.map(row => row.map(value => `"${(/^[=+@\-\t\r]/.test(value) ? "'" : '') + value.replaceAll('"', '""')}"`).join(';')).join('\r\n');
-    const url = URL.createObjectURL(new Blob(['\ufeff', csv], { type: 'text/csv;charset=utf-8;' }));
-    const anchor = document.createElement('a'); anchor.href = url; anchor.download = `presupuesto-${data.year}-${period}-${month}.csv`; anchor.click(); URL.revokeObjectURL(url);
-  }
   return <div className="space-y-6 max-w-[1600px] mx-auto">
     <section className="glass-card p-6 lg:p-8 relative overflow-hidden">
       <div className="absolute -right-16 -top-24 w-72 h-72 bg-accent/10 blur-3xl rounded-full pointer-events-none" />
       <div className="flex flex-wrap justify-between items-start gap-4 relative">
         <div><p className="text-xs uppercase tracking-[0.22em] text-accent mb-3">Planificación familiar · ARS</p><h1 className="text-3xl font-bold">{analytics ? 'Cada peso, en perspectiva.' : 'Un plan para lo que viene.'}</h1><p className="text-text-secondary mt-3 max-w-2xl">{analytics ? 'Compará tus objetivos con los gastos registrados y detectá dónde ajustar.' : 'Asigná un propósito a tus gastos. Construí el año mes a mes, con espacio para lo cotidiano y lo extraordinario.'}</p></div>
-        <button onClick={exportCsv} disabled={!!dirty.size || pending} className="border border-border rounded-xl px-4 py-2 text-sm disabled:opacity-40" title={dirty.size ? 'Guardá los cambios antes de exportar' : 'Descargar detalle mensual'}>↓ Exportar CSV</button>
       </div>
       <nav aria-label="Planificación" className="flex gap-2 mt-6"><Link href={href('/presupuesto')} className={`px-4 py-2 rounded-xl text-sm ${!analytics ? 'bg-accent text-white' : 'bg-bg-input text-text-secondary'}`}>▦ Presupuesto</Link><Link href={href('/analitica')} className={`px-4 py-2 rounded-xl text-sm ${analytics ? 'bg-accent text-white' : 'bg-bg-input text-text-secondary'}`}>↗ Analítica</Link></nav>
+      <PlanningExport report={report} disabled={!!dirty.size || pending} />
     </section>
 
     <div className="flex flex-wrap items-end gap-3">
