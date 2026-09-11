@@ -45,7 +45,7 @@ export default function LandingPage() {
               <span className="gradient-text">economía familiar</span>
             </h1>
             <p className="text-lg md:text-xl text-text-muted mb-10 max-w-2xl mx-auto lg:mx-0">
-              Gestiona ingresos, gastos, ahorros e inversiones. Lleva un presupuesto compartido en pareja sin perder tu independencia financiera.
+              Gestioná ingresos, gastos, ahorros e inversiones. Planificá tu presupuesto mensual, semestral o anual y compará lo previsto con tus gastos reales, solo o en pareja.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4">
               <Link href="/register" className="gradient-btn px-8 py-4 text-lg w-full sm:w-auto shadow-lg shadow-accent/25 hover:shadow-accent/40 text-center">
@@ -81,6 +81,54 @@ export default function LandingPage() {
         </motion.div>
 
         <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
+
+          <motion.div
+            className="glass-card p-8 lg:p-10 md:col-span-2 border-accent/30"
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+          >
+            <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 items-center">
+              <div>
+                <p className="text-sm font-semibold text-accent mb-3">PRESUPUESTO + ANALÍTICA</p>
+                <h3 className="text-2xl md:text-3xl font-bold mb-4">Planificá tus gastos. Entendé tus resultados.</h3>
+                <p className="text-text-secondary leading-relaxed mb-5">
+                  Prepará el mes antes de que empiece: asigná un presupuesto a cada categoría y seguí cómo evoluciona frente a lo que realmente gastás.
+                </p>
+                <div className="flex flex-wrap gap-2 mb-5">
+                  {['Mensual', 'Semestral', 'Anual'].map(period => <span key={period} className="rounded-full bg-accent/10 border border-accent/20 px-3 py-1 text-xs text-accent">{period}</span>)}
+                </div>
+                <ul className="space-y-3 text-sm text-text-secondary">
+                  <li className="flex items-start gap-2"><span aria-hidden="true">✓</span><span>Armá tu plan por categoría, con ayuda de tus gastos registrados y la agenda.</span></li>
+                  <li className="flex items-start gap-2"><span aria-hidden="true">✓</span><span>Compará <strong>presupuesto vs. realidad</strong> con gráficos, porcentajes de ejecución y desvíos.</span></li>
+                  <li className="flex items-start gap-2"><span aria-hidden="true">✓</span><span>Detectá gastos sin presupuesto y cuánto queda disponible del plan.</span></li>
+                  <li className="flex items-start gap-2"><span aria-hidden="true">✓</span><span>Descargá Presupuesto y Analítica en <strong>PDF o CSV</strong>, por separado o juntos.</span></li>
+                </ul>
+                <p className="text-xs text-text-muted mt-5">Planificación en pesos (ARS), adaptada al día de cobro de tu familia.</p>
+              </div>
+              <figure className="rounded-2xl bg-bg-primary border border-border p-5 sm:p-6 min-w-0">
+                <figcaption className="flex flex-wrap items-center justify-between gap-2 mb-6">
+                  <span className="font-semibold">Tu plan, de un vistazo</span>
+                  <span className="text-xs text-text-secondary">Ejemplo ilustrativo · ARS</span>
+                </figcaption>
+                <div className="space-y-5">
+                  <div>
+                    <div className="flex justify-between gap-3 text-sm mb-2"><span className="text-text-secondary">Presupuestado</span><span className="font-semibold">$600.000</span></div>
+                    <div aria-hidden="true" className="h-3 rounded-full bg-accent" />
+                  </div>
+                  <div>
+                    <div className="flex justify-between gap-3 text-sm mb-2"><span className="text-text-secondary">Gasto real</span><span className="font-semibold">$510.000</span></div>
+                    <div aria-hidden="true" className="h-3 rounded-full bg-bg-card"><div className="h-full w-[85%] rounded-full bg-success" /></div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 border-t border-border mt-6 pt-5">
+                  <div><p className="text-xs text-text-secondary mb-1">Disponible del plan</p><p className="text-xl font-bold text-success">$90.000</p></div>
+                  <div><p className="text-xs text-text-secondary mb-1">Ejecución</p><p className="text-xl font-bold text-accent">85%</p></div>
+                </div>
+                <p className="text-xs text-text-muted mt-5">Si el período sigue abierto, lo disponible todavía debe cubrir los gastos pendientes.</p>
+              </figure>
+            </div>
+          </motion.div>
           
           {/* Feature 1 */}
           <motion.div 
