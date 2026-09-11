@@ -2,11 +2,18 @@
 import { prisma } from '@/lib/prisma';
 import { getAccountId } from '@/lib/session';
 import { revalidatePath } from 'next/cache';
+import { validatePlan } from '@/lib/planning';
 
 export async function setCategoryBudget(categoryId: string, month: number, year: number, amount: number) {
   try {
     const accountId = await getAccountId();
     if (!accountId) throw new Error('No account id');
+
+    if (!validatePlan(year, [{ categoryId, month, amount }])) {
+      return { success: false, error: 'Período o importe inválido' };
+    }
+    const category = await prisma.category.findFirst({ where: { id: categoryId, accountId } });
+    if (!category) return { success: false, error: 'Categoría no encontrada' };
 
     await prisma.categoryBudget.upsert({
       where: {
@@ -31,6 +38,8 @@ export async function setCategoryBudget(categoryId: string, month: number, year:
     });
 
     revalidatePath('/dashboard');
+    revalidatePath('/presupuesto');
+    revalidatePath('/analitica');
     return { success: true };
   } catch (error) {
     console.error('Error setting category budget:', error);

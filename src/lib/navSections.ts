@@ -23,6 +23,8 @@ export const SECCIONES: Seccion[] = [
   { href: '/gastos', label: 'Gastos', icon: '💸', principal: true, porMes: true },
   { href: '/ingresos', label: 'Ingresos', icon: '💰', principal: true, porMes: true },
   { href: '/ahorros', label: 'Ahorros', icon: '🐷', principal: true, porMes: true },
+  { href: '/presupuesto', label: 'Presupuesto', icon: '📋', porMes: true },
+  { href: '/analitica', label: 'Analítica', icon: '📊', porMes: true },
   { href: '/agenda', label: 'Agenda', icon: '🗓️', porMes: true },
   { href: '/tarjetas', label: 'Tarjetas', icon: '💳', porMes: true },
   { href: '/prestamos', label: 'Préstamos', icon: '🏦', porMes: true },
