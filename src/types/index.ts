@@ -63,6 +63,15 @@ export interface BudgetStatus {
   extraBudget: number;
   /** Lo que sobró del mes pasado y se arrastró al cerrarlo. 0 si no se arrastró. */
   carryOver: number;
+  /** Plata traída de la quincena que viene. */
+  adelantoRecibido: number;
+  /** Plata que esta quincena le prestó a la anterior. */
+  adelantoPrestado: number;
+  /** Cuánto más se puede adelantar sin dejar la próxima quincena en negativo. */
+  adelantoDisponible: number;
+  /** Mes de bolsillo que se está mirando (no es el mes calendario). */
+  month: number;
+  year: number;
   /** Qué días cubre el presupuesto, ej "16 al 30 de agosto". */
   periodo: string;
   budget: number;

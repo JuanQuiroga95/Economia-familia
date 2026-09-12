@@ -35,6 +35,23 @@ interface Expense {
   cardPayment?: { id: string; card: { name: string } } | null;
   loanPayment?: { id: string; loan: { name: string } } | null;
   plannedExpense?: { id: string } | null;
+  // De dónde salió la plata, cuando no salió del balance del mes.
+  savingsWithdrawal?: { id: string; savingsGoalId: string; savingsGoal: { name: string } } | null;
+  investmentWithdrawal?: { id: string; investmentId: string; investment: { name: string } } | null;
+}
+
+/** La moneda de casa. Todo lo que no sea esto hay que sacarlo de algún lado. */
+const MONEDA_LOCAL = 'ARS';
+
+/** Valor del select "Origen de los fondos" para un gasto ya guardado. */
+function origenDeLosFondos(e: Expense): { valor: string; nombre: string } | null {
+  if (e.savingsWithdrawal) {
+    return { valor: `ahorro_${e.savingsWithdrawal.savingsGoalId}`, nombre: e.savingsWithdrawal.savingsGoal.name };
+  }
+  if (e.investmentWithdrawal) {
+    return { valor: `inversion_${e.investmentWithdrawal.investmentId}`, nombre: e.investmentWithdrawal.investment.name };
+  }
+  return null;
 }
 
 /** Etiqueta de origen para los gastos que nacieron en otra sección. */
@@ -118,6 +135,50 @@ export default function GastosClient({ initialExpenses, categories, savings = []
   const [splitPercentage, setSplitPercentage] = useState<string>('');
   const [walletId, setWalletId] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'EFECTIVO' | 'TRANSFERENCIA'>('TRANSFERENCIA');
+
+  // Ahorros e inversiones con plata en la moneda del gasto. La app no convierte
+  // entre monedas: un gasto en dólares sólo puede salir de algo en dólares.
+  const ahorrosDisponibles = useMemo(
+    () => savings.filter((s) => s.currency === currency && s.currentAmount > 0),
+    [savings, currency]
+  );
+  const inversionesDisponibles = useMemo(
+    () => investments.filter((i) => i.currency === currency && i.amount > 0),
+    [investments, currency]
+  );
+  const hayDeDondeSacar = ahorrosDisponibles.length + inversionesDisponibles.length > 0;
+  const esMonedaExtranjera = currency !== MONEDA_LOCAL;
+  // En moneda extranjera no se asume nada: hay que decir de dónde sale.
+  const origenObligatorio = esMonedaExtranjera && hayDeDondeSacar;
+
+  /** Nombre de lo elegido, para el cartel de confirmación. */
+  const nombreDelOrigen = (valor: string) => {
+    if (valor === 'balance') return esMonedaExtranjera ? `Balance en ${currency}` : 'Balance general';
+    const id = valor.slice(valor.indexOf('_') + 1);
+    const ahorro = savings.find((s) => s.id === id);
+    if (ahorro) return `Ahorro "${ahorro.name}"`;
+    const inversion = investments.find((i) => i.id === id);
+    if (inversion) return `Inversión "${inversion.name}"`;
+    return valor;
+  };
+
+  // Al cambiar de moneda, el origen elegido puede no existir más (un ahorro en
+  // pesos no paga un gasto en dólares), así que se vuelve a preguntar.
+  const handleCurrencyChange = (nueva: string) => {
+    setCurrency(nueva);
+
+    const sigueSirviendo =
+      fundingSource !== '' &&
+      (fundingSource === 'balance' ||
+        savings.some((s) => `ahorro_${s.id}` === fundingSource && s.currency === nueva && s.currentAmount > 0) ||
+        investments.some((i) => `inversion_${i.id}` === fundingSource && i.currency === nueva && i.amount > 0));
+    if (sigueSirviendo && !(nueva !== MONEDA_LOCAL && fundingSource === 'balance')) return;
+
+    const hayOpciones =
+      savings.some((s) => s.currency === nueva && s.currentAmount > 0) ||
+      investments.some((i) => i.currency === nueva && i.amount > 0);
+    setFundingSource(nueva !== MONEDA_LOCAL && hayOpciones ? '' : 'balance');
+  };
 
   const handleCreateCategory = () => {
     setNuevaCategoria('');
@@ -209,6 +270,11 @@ export default function GastosClient({ initialExpenses, categories, savings = []
       return;
     }
 
+    if (origenObligatorio && !fundingSource) {
+      toast.error(`Elegí de dónde sale el gasto en ${currency}`);
+      return;
+    }
+
     const categoria = categories.find((c) => c.id === categoryId);
     const ok = await confirmar({
       titulo: editingExpenseId ? '¿Guardar los cambios?' : '¿Registrar este gasto?',
@@ -225,8 +291,8 @@ export default function GastosClient({ initialExpenses, categories, savings = []
           etiqueta: 'Tipo',
           valor: type === 'COMPARTIDO' ? 'Compartido' : `Propio de ${activeProfile.name}`,
         },
-        ...(fundingSource !== 'balance'
-          ? [{ etiqueta: 'Sale de', valor: fundingSource.startsWith('ahorro') ? 'Un ahorro' : 'Una inversión' }]
+        ...(fundingSource && (fundingSource !== 'balance' || esMonedaExtranjera)
+          ? [{ etiqueta: 'Sale de', valor: nombreDelOrigen(fundingSource) }]
           : []),
       ],
     });
@@ -296,7 +362,9 @@ export default function GastosClient({ initialExpenses, categories, savings = []
     setPaidFromPersonal(expense.paidFromPersonalBudget);
     setSplitPercentage(expense.splitPercentage?.toString() || '');
     setReceiptUrl(expense.receiptUrl || '');
-    setFundingSource('balance');
+    // El origen real del gasto, no 'balance': antes se reseteaba acá y al
+    // guardar el cambio de origen se perdía sin decir nada.
+    setFundingSource(origenDeLosFondos(expense)?.valor ?? 'balance');
     setWalletId(expense.walletId || '');
     setPaymentMethod((expense.paymentMethod as 'EFECTIVO' | 'TRANSFERENCIA') || 'TRANSFERENCIA');
     setShowForm(true);
@@ -319,13 +387,16 @@ export default function GastosClient({ initialExpenses, categories, savings = []
 
   const handleDelete = async (expense: Expense) => {
     const origen = origenDelGasto(expense);
+    const fondos = origenDeLosFondos(expense);
     const ok = await confirmar({
       titulo: '¿Eliminar este gasto?',
       tono: 'peligro',
       confirmar: 'Eliminar',
       detalle: origen?.seccion
         ? `Este gasto es el pago registrado en ${origen.seccion}. Al borrarlo, esa deuda vuelve a figurar como impaga.`
-        : undefined,
+        : fondos
+          ? `Los ${formatCurrency(expense.amount)} ${expense.currency} vuelven a ${fondos.nombre}.`
+          : undefined,
       resumen: [
         { etiqueta: 'Concepto', valor: expense.description },
         { etiqueta: 'Monto', valor: `$${formatCurrency(expense.amount)} ${expense.currency}` },
@@ -600,7 +671,7 @@ export default function GastosClient({ initialExpenses, categories, savings = []
             </div>
             <div>
               <label className="block text-sm text-text-secondary mb-1">Moneda</label>
-              <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="input-field">
+              <select value={currency} onChange={(e) => handleCurrencyChange(e.target.value)} className="input-field">
                 <option value="ARS">🇦🇷 ARS</option>
                 <option value="USD">🇺🇸 USD</option>
                 <option value="EUR">🇪🇺 EUR</option>
@@ -609,31 +680,61 @@ export default function GastosClient({ initialExpenses, categories, savings = []
           </div>
 
           {/* Origen de los fondos */}
-          <div>
-            <label className="block text-sm text-text-secondary mb-1">Origen de los fondos</label>
-            <select value={fundingSource} onChange={(e) => setFundingSource(e.target.value)} className="input-field">
-              <option value="balance">🏦 Balance General (Cuenta corriente)</option>
+          <div
+            className={
+              origenObligatorio && !fundingSource
+                ? 'p-3 rounded-xl border-2 border-warning bg-warning/10'
+                : undefined
+            }
+          >
+            <label className="block text-sm text-text-secondary mb-1">
+              {esMonedaExtranjera ? `¿De dónde sale? (gasto en ${currency})` : 'Origen de los fondos'}
+            </label>
+            <select
+              value={fundingSource}
+              onChange={(e) => setFundingSource(e.target.value)}
+              className="input-field"
+            >
+              {origenObligatorio && (
+                <option value="" disabled>
+                  Elegí de dónde lo sacás…
+                </option>
+              )}
 
-              {savings.filter(s => s.currency === currency && s.currentAmount > 0).length > 0 && (
+              {ahorrosDisponibles.length > 0 && (
                 <optgroup label="Mis Ahorros">
-                  {savings.filter(s => s.currency === currency && s.currentAmount > 0).map(s => (
+                  {ahorrosDisponibles.map(s => (
                     <option key={s.id} value={`ahorro_${s.id}`}>
-                      🎯 {s.name} (${formatCurrency(s.currentAmount)})
+                      🎯 {s.name} ({formatCurrency(s.currentAmount)} {s.currency})
                     </option>
                   ))}
                 </optgroup>
               )}
 
-              {investments.filter(i => i.currency === currency && i.amount > 0).length > 0 && (
+              {inversionesDisponibles.length > 0 && (
                 <optgroup label="Mis Inversiones">
-                  {investments.filter(i => i.currency === currency && i.amount > 0).map(i => (
+                  {inversionesDisponibles.map(i => (
                     <option key={i.id} value={`inversion_${i.id}`}>
-                      📈 {i.name} (${formatCurrency(i.amount)})
+                      📈 {i.name} ({formatCurrency(i.amount)} {i.currency})
                     </option>
                   ))}
                 </optgroup>
               )}
+
+              <option value="balance">
+                {esMonedaExtranjera
+                  ? `🏦 De ningún ahorro (solo registrar el gasto en ${currency})`
+                  : '🏦 Balance General (Cuenta corriente)'}
+              </option>
             </select>
+
+            {esMonedaExtranjera && (
+              <p className="text-xs text-text-muted mt-2">
+                {hayDeDondeSacar
+                  ? 'Lo que elijas se descuenta de ahí. Si después editás o borrás el gasto, la plata vuelve sola.'
+                  : `No tenés ahorros ni inversiones en ${currency} con saldo. El gasto queda registrado, pero no se descuenta de ningún lado.`}
+              </p>
+            )}
           </div>
 
           <div>
@@ -942,6 +1043,17 @@ export default function GastosClient({ initialExpenses, categories, savings = []
                           }
                         >
                           {origen.icono} {origen.texto}
+                        </span>
+                      ) : null;
+                    })()}
+                    {(() => {
+                      const fondos = origenDeLosFondos(expense);
+                      return fondos ? (
+                        <span
+                          className="text-xs px-1.5 py-0.5 rounded-full bg-success/20 text-success"
+                          title="La plata salió de acá. Si borrás el gasto, vuelve."
+                        >
+                          🎯 Sale de {fondos.nombre}
                         </span>
                       ) : null;
                     })()}

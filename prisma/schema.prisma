@@ -74,6 +74,7 @@ model Profile {
   loans               Loan[]
   loanPayments        LoanPayment[]
   plannedExpenses     PlannedExpense[]
+  budgetAdvances      BudgetAdvance[]
 }
 
 model Category {
@@ -162,6 +163,11 @@ model Expense {
 
   // Si este gasto nació de marcar un ítem de la agenda como pagado
   plannedExpense PlannedExpense?
+
+  // De dónde salió la plata, cuando no salió del balance del mes.
+  // Se usa para poder devolverla si el gasto se edita o se borra.
+  savingsWithdrawal    SavingsTransaction?
+  investmentWithdrawal InvestmentTransaction?
 }
 
 enum ExpenseType {
@@ -448,6 +454,11 @@ model SavingsTransaction {
   profile       Profile     @relation(fields: [profileId], references: [id], onDelete: Cascade)
   date          DateTime    @default(now())
   createdAt     DateTime    @default(now())
+
+  /// Gasto que se pagó con esta plata. Si el gasto se borra, el retiro se va
+  /// con él (y el saldo de la meta se devuelve antes de borrarlo).
+  expenseId String?  @unique
+  expense   Expense? @relation(fields: [expenseId], references: [id], onDelete: Cascade)
 }
 
 enum SavingsType {
@@ -489,6 +500,10 @@ model InvestmentTransaction {
   profile      Profile     @relation(fields: [profileId], references: [id], onDelete: Cascade)
   date         DateTime    @default(now())
   createdAt    DateTime    @default(now())
+
+  /// Gasto que se pagó con este rescate (ver SavingsTransaction.expenseId).
+  expenseId String?  @unique
+  expense   Expense? @relation(fields: [expenseId], references: [id], onDelete: Cascade)
 
   @@index([investmentId])
 }
@@ -617,6 +632,31 @@ model BudgetClose {
   createdAt DateTime @default(now())
 
   @@unique([profileId, month, year])
+}
+
+/**
+ * Adelanto del bolsillo: plata que se trae de la quincena que viene porque con
+ * la de ahora no se llega.
+ *
+ * No es plata nueva ni un gasto: se le suma al período que la recibe y se le
+ * resta al que se la presta, así el mes sigue cerrando por el mismo total.
+ */
+model BudgetAdvance {
+  id     String @id @default(cuid())
+  month  Int
+  year   Int
+  /// Quincena que recibe la plata: 1 o 2. El 0 es el mes entero, para quien
+  /// tiene el bolsillo configurado como MENSUAL.
+  half   Int
+  amount Float
+  note   String?
+
+  profileId String
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([profileId, year, month])
 }
 
 model MonthClose {

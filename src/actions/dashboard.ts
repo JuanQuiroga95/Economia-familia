@@ -15,6 +15,12 @@ import {
 
 import { getAccountId } from '@/lib/session';
 import { getPaydayDeLaCuenta } from '@/lib/accountPeriod';
+import {
+  ajustePorAdelantos,
+  mesesInvolucrados,
+  periodoSiguiente,
+  type PeriodoDelBolsillo,
+} from '@/lib/budgetAdvance';
 
 export async function getDashboardStats(month: number, year: number, profileId?: string) {
   try {
@@ -389,6 +395,36 @@ export async function getBudgetStatus(
     const extraBudget = config.extraBudget || 0;
     budget += extraBudget;
 
+    // Lo que se trajo de la quincena que viene (o lo que esta quincena ya le
+    // prestó a la anterior). Mirando un mes cerrado van las dos quincenas
+    // juntas, así que un adelanto de una a la otra se compensa y da cero.
+    const periodos: PeriodoDelBolsillo[] =
+      budgetType === 'MENSUAL'
+        ? [{ month: mes, year: anio, half: 0 }]
+        : !esMesActual
+          ? [
+              { month: mes, year: anio, half: 1 },
+              { month: mes, year: anio, half: 2 },
+            ]
+          : [{ month: mes, year: anio, half: currentHalf }];
+
+    const adelantos = await prisma.budgetAdvance.findMany({
+      where: { profileId, OR: mesesInvolucrados(periodos) },
+    });
+    const ajuste = ajustePorAdelantos(adelantos, periodos);
+    budget += ajuste.neto;
+
+    // Cuánto más se puede adelantar: lo que le queda al período que presta.
+    const origen = periodoSiguiente(periodos[0]);
+    const baseDelOrigen =
+      origen.half === 0
+        ? monthlyBudget
+        : origen.half === 1
+          ? config.firstHalfBudget
+          : config.secondHalfBudget;
+    const ajusteDelOrigen = ajustePorAdelantos(adelantos, [origen]);
+    const adelantoDisponible = Math.max(0, baseDelOrigen + extraBudget + ajusteDelOrigen.neto);
+
     // Lo que sobró del mes pasado, si al cerrarlo se eligió arrastrarlo. Va
     // sólo a la primera quincena: sumarlo a las dos lo duplicaría.
     const previo = addMonths(mes, anio, -1);
@@ -452,6 +488,11 @@ export async function getBudgetStatus(
       budgetType,
       extraBudget,
       carryOver,
+      adelantoRecibido: ajuste.recibido,
+      adelantoPrestado: ajuste.prestado,
+      adelantoDisponible,
+      month: mes,
+      year: anio,
       periodo,
       budget,
       spent,

@@ -1287,7 +1287,7 @@ export async function POST(request: NextRequest) {
     // ─── /estado command ───
     if (text === '/estado') {
       const budgetInfo = await getBudgetRemaining(profile.id);
-      await sendTelegramMessage(chatId, budgetInfo ? `📊 <b>Estado de ${profile.name}</b>${budgetInfo}` : `📊 No tenés presupuesto configurado.`);
+      await sendTelegramMessage(chatId, budgetInfo ? `📊 <b>Estado de ${profile.name}</b>${budgetInfo}` : `📊 No tenés bolsillo configurado.`);
       return NextResponse.json({ ok: true });
     }
 

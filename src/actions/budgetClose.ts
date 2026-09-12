@@ -86,7 +86,7 @@ export async function closeBudgetMonth(
     }
 
     const estado = await getBudgetStatus(profileId, month, year);
-    if (!estado) return { success: false, error: 'Ese perfil no tiene presupuesto activo' };
+    if (!estado) return { success: false, error: 'Ese perfil no tiene bolsillo activo' };
 
     await prisma.budgetClose.create({
       data: { profileId, month, year, action, leftover: estado.remaining },

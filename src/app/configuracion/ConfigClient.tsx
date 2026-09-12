@@ -200,7 +200,7 @@ export default function ConfigClient({ exchangeRates, categories, wallets, budge
         payday: paydayPropio,
         isActive,
       });
-      if (result.success) { toast.success('Presupuesto actualizado'); router.refresh(); }
+      if (result.success) { toast.success('Bolsillo actualizado'); router.refresh(); }
       else { toast.error(result.error || 'Error'); }
     });
   };
@@ -488,15 +488,19 @@ export default function ConfigClient({ exchangeRates, categories, wallets, budge
         )}
         {profiles.length > 1 && (
           <p className="text-xs text-text-muted">
-            Si alguien cobra otro día, se lo podés poner aparte en su presupuesto, acá abajo.
+            Si alguien cobra otro día, se lo podés poner aparte en su bolsillo, acá abajo.
           </p>
         )}
       </section>
 
       {/* Budget Config - for all profiles */}
       <section className="glass-card p-4 lg:p-6 space-y-4">
-        <h2 className="text-lg font-semibold text-text-primary">💳 Presupuestos</h2>
-        <p className="text-xs text-text-muted">Configurá el límite de gasto para cada integrante. Si no querés límite, dejalo desactivado.</p>
+        <h2 className="text-lg font-semibold text-text-primary">👛 Bolsillo de cada uno</h2>
+        <p className="text-xs text-text-muted">
+          Cuánta plata suelta tiene cada uno por quincena para sus gastos propios. No es el
+          Presupuesto de la familia: eso se arma por categoría en su propia sección. Si alguien
+          no quiere límite, dejalo desactivado.
+        </p>
         {profiles.map((profile) => {
           const config = budgetConfigs.find((c) => c.profileId === profile.id);
           return (
@@ -676,7 +680,7 @@ function BudgetConfigForm({
               </>
             ) : (
               <div className="col-span-2">
-                <label className="block text-xs text-text-muted mb-1">Presupuesto Mensual (ARS)</label>
+                <label className="block text-xs text-text-muted mb-1">Bolsillo mensual (ARS)</label>
                 <CurrencyInput value={monthly} onChange={(e) => setMonthly(e.target.value)} className="input-field" placeholder="100000" />
               </div>
             )}

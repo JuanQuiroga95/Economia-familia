@@ -7,6 +7,20 @@ import { sendPushNotification } from '@/lib/push';
 import { getAccountId } from '@/lib/session';
 import { parseArgDate, getFinancialMonthRange } from '@/lib/dateUtils';
 import { getPaydayDeLaCuenta } from '@/lib/accountPeriod';
+import {
+  descontarDelOrigen,
+  devolverAlOrigen,
+  incluirOrigen,
+  mismoOrigen,
+  origenDeUnGasto,
+  parseFundingSource,
+} from '@/lib/fundingSource';
+
+/**
+ * El ahorro no alcanzaba, o está en otra moneda. Corta la transacción para que
+ * el gasto tampoco quede guardado, y el mensaje se muestra tal cual.
+ */
+class FondeoError extends Error {}
 
 /** El perfil tiene que ser de la cuenta con la sesión abierta. */
 async function perfilPropio(profileId: string, accountId: string) {
@@ -17,7 +31,7 @@ async function perfilPropio(profileId: string, accountId: string) {
 async function gastoPropio(id: string, accountId: string) {
   return prisma.expense.findFirst({
     where: { id, profile: { accountId } },
-    include: { cardPayment: true, loanPayment: true },
+    include: { cardPayment: true, loanPayment: true, ...incluirOrigen },
   });
 }
 
@@ -39,91 +53,42 @@ export async function createExpense(data: ExpenseFormData) {
     }
 
     const expenseDate = parseArgDate(data.date);
+    const origen = parseFundingSource(data.fundingSource);
 
-    // Si la plata sale de un ahorro o de una inversión, se descuenta de ahí y
-    // queda registrado el retiro. NO se crea ningún ingreso: el balance del mes
-    // ya suma los retiros por su cuenta, así que un ingreso extra lo contaría
-    // dos veces y el mes cerraría de más.
-    if (data.fundingSource && data.fundingSource !== 'balance') {
-      const parts = data.fundingSource.split('_');
-      const type = parts[0];
-      const sourceId = parts.slice(1).join('_');
+    // El gasto y el retiro se guardan juntos o no se guarda ninguno: si el
+    // ahorro no alcanzaba, antes quedaba el gasto cargado igual y la plata
+    // descontada de dos lados distintos.
+    await prisma.$transaction(async (tx) => {
+      const gasto = await tx.expense.create({
+        data: {
+          amount: data.amount,
+          currency: data.currency,
+          date: expenseDate,
+          description: data.description,
+          categoryId: data.categoryId,
+          profileId: data.profileId,
+          type: data.type,
+          paidFromPersonalBudget: data.type === 'COMPARTIDO' ? data.paidFromPersonalBudget : false,
+          splitPercentage: data.type === 'COMPARTIDO' ? data.splitPercentage ?? null : null,
+          receiptUrl: data.receiptUrl || null,
+          walletId: data.walletId || null,
+          paymentMethod: data.paymentMethod || 'TRANSFERENCIA',
+        },
+      });
 
-      if (type === 'ahorro') {
-        const goal = await prisma.savingsGoal.findFirst({ where: { id: sourceId, accountId } });
-        if (!goal) return { success: false, error: 'Meta de ahorro no encontrada' };
-        if (goal.currency !== data.currency) {
-          return {
-            success: false,
-            error: `La meta está en ${goal.currency} y el gasto en ${data.currency}`,
-          };
-        }
-        if (goal.currentAmount < data.amount) {
-          return { success: false, error: 'No hay fondos suficientes en ese ahorro' };
-        }
-
-        await prisma.savingsTransaction.create({
-          data: {
-            amount: data.amount,
-            type: 'RETIRO',
-            description: `Gasto: ${data.description}`,
-            savingsGoalId: sourceId,
-            profileId: data.profileId,
-            date: expenseDate,
-          },
-        });
-        await prisma.savingsGoal.update({
-          where: { id: sourceId },
-          data: { currentAmount: goal.currentAmount - data.amount },
-        });
-      } else if (type === 'inversion') {
-        const inv = await prisma.investment.findFirst({
-          where: { id: sourceId, profile: { accountId } },
-        });
-        if (!inv) return { success: false, error: 'Inversión no encontrada' };
-        if (inv.currency !== data.currency) {
-          return {
-            success: false,
-            error: `La inversión está en ${inv.currency} y el gasto en ${data.currency}`,
-          };
-        }
-        if (inv.amount < data.amount) {
-          return { success: false, error: 'No hay fondos suficientes en esa inversión' };
-        }
-
-        await prisma.investmentTransaction.create({
-          data: {
-            amount: data.amount,
-            type: 'RETIRO',
-            description: `Gasto: ${data.description}`,
-            investmentId: sourceId,
-            profileId: data.profileId,
-            date: expenseDate,
-          },
-        });
-        await prisma.investment.update({
-          where: { id: sourceId },
-          data: { amount: inv.amount - data.amount },
-        });
-      }
-    }
-
-    // Registrar gasto normal
-    await prisma.expense.create({
-      data: {
+      // Si la plata sale de un ahorro o de una inversión, se descuenta de ahí y
+      // queda registrado el retiro. NO se crea ningún ingreso: el balance del mes
+      // ya suma los retiros por su cuenta, así que un ingreso extra lo contaría
+      // dos veces y el mes cerraría de más.
+      const retiro = await descontarDelOrigen(tx, origen, accountId, {
         amount: data.amount,
         currency: data.currency,
-        date: expenseDate,
-        description: data.description,
-        categoryId: data.categoryId,
         profileId: data.profileId,
-        type: data.type,
-        paidFromPersonalBudget: data.type === 'COMPARTIDO' ? data.paidFromPersonalBudget : false,
-        splitPercentage: data.type === 'COMPARTIDO' ? data.splitPercentage ?? null : null,
-        receiptUrl: data.receiptUrl || null,
-        walletId: data.walletId || null,
-        paymentMethod: data.paymentMethod || 'TRANSFERENCIA',
-      },
+        description: data.description,
+        date: expenseDate,
+        expenseId: gasto.id,
+      });
+      if (!retiro.ok) throw new FondeoError(retiro.error);
     });
 
     try {
@@ -153,6 +118,7 @@ export async function createExpense(data: ExpenseFormData) {
     revalidatePath('/inversiones');
     return { success: true };
   } catch (error) {
+    if (error instanceof FondeoError) return { success: false, error: error.message };
     console.error('Error creating expense:', error);
     return { success: false, error: 'Error al crear gasto' };
   }
@@ -190,6 +156,9 @@ export async function getExpenses(filters?: TransactionFilters) {
         cardPayment: { select: { id: true, card: { select: { name: true } } } },
         loanPayment: { select: { id: true, loan: { select: { name: true } } } },
         plannedExpense: { select: { id: true } },
+        // De dónde salió la plata, para mostrarlo en la lista y poder
+        // precargarlo al editar.
+        ...incluirOrigen,
       },
       orderBy: { date: 'desc' },
     });
@@ -246,34 +215,74 @@ export async function updateExpense(id: string, data: Partial<ExpenseFormData>) 
     const tipo = data.type ?? actual.type;
     const esCompartido = tipo === 'COMPARTIDO';
 
-    await prisma.expense.update({
-      where: { id },
-      data: {
-        ...(data.amount !== undefined ? { amount: data.amount } : {}),
-        ...(data.currency !== undefined ? { currency: data.currency } : {}),
-        ...(data.date !== undefined ? { date: parseArgDate(data.date) } : {}),
-        ...(data.description !== undefined ? { description: data.description } : {}),
-        ...(data.categoryId !== undefined ? { categoryId: data.categoryId } : {}),
-        ...(data.profileId !== undefined ? { profileId: data.profileId } : {}),
-        ...(data.type !== undefined ? { type: data.type } : {}),
-        ...(data.receiptUrl !== undefined ? { receiptUrl: data.receiptUrl || null } : {}),
-        ...(data.walletId !== undefined ? { walletId: data.walletId || null } : {}),
-        ...(data.paymentMethod ? { paymentMethod: data.paymentMethod } : {}),
-        // Si deja de ser compartido, se limpian los campos del fondo común:
-        // si no, un gasto propio quedaba marcado como "lo pagué yo".
-        paidFromPersonalBudget: esCompartido
-          ? data.paidFromPersonalBudget ?? actual.paidFromPersonalBudget
-          : false,
-        splitPercentage: esCompartido
-          ? data.splitPercentage ?? actual.splitPercentage
-          : null,
-      },
+    // De dónde sale la plata ahora y de dónde salía antes. Si cambió el origen,
+    // el monto, la moneda o la fecha, se devuelve lo viejo y se descuenta lo
+    // nuevo: antes el formulario dejaba elegir el ahorro y acá se ignoraba, así
+    // que el gasto quedaba cargado y el ahorro intacto.
+    const origenAnterior = origenDeUnGasto(actual);
+    const origenNuevo =
+      data.fundingSource !== undefined ? parseFundingSource(data.fundingSource) : origenAnterior;
+
+    const montoNuevo = data.amount ?? actual.amount;
+    const monedaNueva = data.currency ?? actual.currency;
+    const fechaNueva = data.date !== undefined ? parseArgDate(data.date) : actual.date;
+    const descripcionNueva = data.description ?? actual.description;
+    const perfilNuevo = data.profileId ?? actual.profileId;
+
+    const cambioElRetiro =
+      !mismoOrigen(origenAnterior, origenNuevo) ||
+      montoNuevo !== actual.amount ||
+      monedaNueva !== actual.currency ||
+      descripcionNueva !== actual.description ||
+      perfilNuevo !== actual.profileId ||
+      fechaNueva.getTime() !== actual.date.getTime();
+
+    await prisma.$transaction(async (tx) => {
+      if (cambioElRetiro) {
+        await devolverAlOrigen(tx, actual);
+        const retiro = await descontarDelOrigen(tx, origenNuevo, accountId, {
+          amount: montoNuevo,
+          currency: monedaNueva,
+          profileId: perfilNuevo,
+          description: descripcionNueva,
+          date: fechaNueva,
+          expenseId: id,
+        });
+        if (!retiro.ok) throw new FondeoError(retiro.error);
+      }
+
+      await tx.expense.update({
+        where: { id },
+        data: {
+          ...(data.amount !== undefined ? { amount: data.amount } : {}),
+          ...(data.currency !== undefined ? { currency: data.currency } : {}),
+          ...(data.date !== undefined ? { date: parseArgDate(data.date) } : {}),
+          ...(data.description !== undefined ? { description: data.description } : {}),
+          ...(data.categoryId !== undefined ? { categoryId: data.categoryId } : {}),
+          ...(data.profileId !== undefined ? { profileId: data.profileId } : {}),
+          ...(data.type !== undefined ? { type: data.type } : {}),
+          ...(data.receiptUrl !== undefined ? { receiptUrl: data.receiptUrl || null } : {}),
+          ...(data.walletId !== undefined ? { walletId: data.walletId || null } : {}),
+          ...(data.paymentMethod ? { paymentMethod: data.paymentMethod } : {}),
+          // Si deja de ser compartido, se limpian los campos del fondo común:
+          // si no, un gasto propio quedaba marcado como "lo pagué yo".
+          paidFromPersonalBudget: esCompartido
+            ? data.paidFromPersonalBudget ?? actual.paidFromPersonalBudget
+            : false,
+          splitPercentage: esCompartido
+            ? data.splitPercentage ?? actual.splitPercentage
+            : null,
+        },
+      });
     });
 
     revalidatePath('/gastos');
     revalidatePath('/dashboard');
+    revalidatePath('/ahorros');
+    revalidatePath('/inversiones');
     return { success: true };
   } catch (error) {
+    if (error instanceof FondeoError) return { success: false, error: error.message };
     console.error('Error updating expense:', error);
     return { success: false, error: 'Error al actualizar gasto' };
   }
@@ -289,12 +298,19 @@ export async function deleteExpense(id: string) {
 
     // Borrar el gasto arrastra el pago de tarjeta / cuota de préstamo por
     // cascada, y la deuda vuelve a figurar. Se avisa en la UI antes de llegar acá.
-    await prisma.expense.delete({ where: { id } });
+    // Si la plata había salido de un ahorro o una inversión, primero se la
+    // devuelve: el retiro se va por cascada, pero el saldo no vuelve solo.
+    await prisma.$transaction(async (tx) => {
+      await devolverAlOrigen(tx, actual);
+      await tx.expense.delete({ where: { id } });
+    });
 
     revalidatePath('/gastos');
     revalidatePath('/dashboard');
     revalidatePath('/tarjetas');
     revalidatePath('/prestamos');
+    revalidatePath('/ahorros');
+    revalidatePath('/inversiones');
     return { success: true };
   } catch (error) {
     console.error('Error deleting expense:', error);
