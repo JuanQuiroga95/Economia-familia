@@ -15,6 +15,7 @@ import {
   deleteCardPurchase,
   deleteCreditCard,
   payCard,
+  updateCreditCard,
 } from '@/actions/cards';
 
 interface Category {
@@ -130,6 +131,7 @@ export default function TarjetasClient({
   const [showCardForm, setShowCardForm] = useState(false);
   const [openPurchase, setOpenPurchase] = useState<string | null>(null);
   const [openPayment, setOpenPayment] = useState<string | null>(null);
+  const [editingCard, setEditingCard] = useState<string | null>(null);
   const [tabs, setTabs] = useState<Record<string, 'cuotas' | 'consumos' | 'pagos'>>({});
 
   const totals = useMemo(
@@ -241,30 +243,64 @@ export default function TarjetasClient({
                       </p>
                     </div>
                   </div>
-                  <button
-                    onClick={async () => {
-                      const ok = await confirmar({
-                        titulo: `¿Eliminar la tarjeta "${card.name}"?`,
-                        detalle:
-                          'Se borran sus consumos y todas sus cuotas. Los gastos ya registrados en Gastos se mantienen.',
-                        tono: 'peligro',
-                        confirmar: 'Eliminar tarjeta',
-                      });
-                      if (!ok) return;
-                      startTransition(async () => {
-                        const res = await deleteCreditCard(card.id);
-                        if (res.success) {
-                          toast.success('Tarjeta eliminada');
-                          refresh();
-                        } else toast.error(res.error || 'Error');
-                      });
-                    }}
-                    className="text-text-muted hover:text-danger transition-colors text-sm shrink-0"
-                    title="Eliminar tarjeta"
-                  >
-                    ✕
-                  </button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => {
+                        setEditingCard(editingCard === card.id ? null : card.id);
+                        setOpenPurchase(null);
+                        setOpenPayment(null);
+                      }}
+                      className="text-text-muted hover:text-accent transition-colors text-sm"
+                      title="Editar tarjeta"
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      onClick={async () => {
+                        const ok = await confirmar({
+                          titulo: `¿Eliminar la tarjeta "${card.name}"?`,
+                          detalle:
+                            'Se borran sus consumos y todas sus cuotas. Los gastos ya registrados en Gastos se mantienen.',
+                          tono: 'peligro',
+                          confirmar: 'Eliminar tarjeta',
+                        });
+                        if (!ok) return;
+                        startTransition(async () => {
+                          const res = await deleteCreditCard(card.id);
+                          if (res.success) {
+                            toast.success('Tarjeta eliminada');
+                            refresh();
+                          } else toast.error(res.error || 'Error');
+                        });
+                      }}
+                      className="text-text-muted hover:text-danger transition-colors text-sm"
+                      title="Eliminar tarjeta"
+                    >
+                      ✕
+                    </button>
+                  </div>
                 </div>
+
+                {editingCard === card.id && (
+                  <EditCardForm
+                    card={card}
+                    profiles={profiles}
+                    isPending={isPending}
+                    onCancel={() => setEditingCard(null)}
+                    onSubmit={(data) =>
+                      startTransition(async () => {
+                        const res = await updateCreditCard(card.id, data);
+                        if (res.success) {
+                          toast.success('Tarjeta actualizada');
+                          setEditingCard(null);
+                          refresh();
+                        } else {
+                          toast.error(res.error || 'Error');
+                        }
+                      })
+                    }
+                  />
+                )}
 
                 {/* Resumen del mes */}
                 <div className="bg-bg-input rounded-xl p-4 space-y-3">
@@ -761,6 +797,180 @@ function CardForm({
         </button>
         <button type="submit" disabled={isPending} className="gradient-btn flex-1 px-4 py-2.5 text-sm">
           {isPending ? 'Guardando...' : 'Crear tarjeta'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function EditCardForm({
+  card,
+  profiles,
+  isPending,
+  onCancel,
+  onSubmit,
+}: {
+  card: CardData;
+  profiles: MiniProfile[];
+  isPending: boolean;
+  onCancel: () => void;
+  onSubmit: (data: any) => void;
+}) {
+  const [name, setName] = useState(card.name);
+  const [bank, setBank] = useState(card.bank || '');
+  const [lastFour, setLastFour] = useState(card.lastFour || '');
+  const [currency, setCurrency] = useState(card.currency);
+  const [creditLimit, setCreditLimit] = useState(
+    card.creditLimit != null ? String(card.creditLimit) : ''
+  );
+  const [closingDay, setClosingDay] = useState(String(card.closingDay));
+  const [dueDay, setDueDay] = useState(String(card.dueDay));
+  const [color, setColor] = useState(card.color);
+  const [profileId, setProfileId] = useState(card.profile.id);
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSubmit({
+          name,
+          bank,
+          lastFour,
+          currency,
+          creditLimit: creditLimit ? parseFloat(creditLimit) : null,
+          closingDay: parseInt(closingDay) || card.closingDay,
+          dueDay: parseInt(dueDay) || card.dueDay,
+          color,
+          profileId,
+        });
+      }}
+      className="bg-bg-input rounded-xl p-4 space-y-4 animate-slide-up"
+    >
+      <h3 className="text-sm font-semibold text-text-secondary">✏️ Editar tarjeta</h3>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm text-text-secondary mb-1">Nombre</label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="input-field"
+            placeholder="Ej: Naranja"
+            required
+          />
+        </div>
+        <div>
+          <label className="block text-sm text-text-secondary mb-1">Banco (opcional)</label>
+          <input
+            type="text"
+            value={bank}
+            onChange={(e) => setBank(e.target.value)}
+            className="input-field"
+            placeholder="Ej: Galicia"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm text-text-secondary mb-1">¿De quién es?</label>
+        <div className="grid grid-cols-2 gap-2">
+          {profiles.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => setProfileId(p.id)}
+              className={`px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                profileId === p.id
+                  ? 'bg-accent text-white'
+                  : 'bg-bg-card text-text-secondary border border-border'
+              }`}
+            >
+              {p.avatar || '👤'} {p.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm text-text-secondary mb-1">Límite (opcional)</label>
+          <CurrencyInput
+            value={creditLimit}
+            onChange={(e) => setCreditLimit(e.target.value)}
+            className="input-field"
+            placeholder="0.00"
+          />
+        </div>
+        <div>
+          <label className="block text-sm text-text-secondary mb-1">Moneda</label>
+          <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="input-field">
+            <option value="ARS">🇦🇷 ARS</option>
+            <option value="USD">🇺🇸 USD</option>
+            <option value="EUR">🇪🇺 EUR</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-4">
+        <div>
+          <label className="block text-sm text-text-secondary mb-1">Día de cierre</label>
+          <input
+            type="number"
+            min={1}
+            max={31}
+            value={closingDay}
+            onChange={(e) => setClosingDay(e.target.value)}
+            className="input-field"
+          />
+        </div>
+        <div>
+          <label className="block text-sm text-text-secondary mb-1">Vencimiento</label>
+          <input
+            type="number"
+            min={1}
+            max={31}
+            value={dueDay}
+            onChange={(e) => setDueDay(e.target.value)}
+            className="input-field"
+          />
+        </div>
+        <div>
+          <label className="block text-sm text-text-secondary mb-1">Últimos 4</label>
+          <input
+            type="text"
+            maxLength={4}
+            value={lastFour}
+            onChange={(e) => setLastFour(e.target.value.replace(/\D/g, ''))}
+            className="input-field"
+            placeholder="1234"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm text-text-secondary mb-1">Color</label>
+        <div className="flex gap-2">
+          {CARD_COLORS.map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => setColor(c)}
+              className={`w-8 h-8 rounded-full transition-all ${
+                color === c ? 'ring-2 ring-offset-2 ring-offset-bg-card ring-white scale-110' : ''
+              }`}
+              style={{ backgroundColor: c }}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="flex gap-3">
+        <button type="button" onClick={onCancel} className="flex-1 px-4 py-2.5 rounded-xl text-sm bg-bg-card border border-border text-text-secondary">
+          Cancelar
+        </button>
+        <button type="submit" disabled={isPending} className="gradient-btn flex-1 px-4 py-2.5 text-sm">
+          {isPending ? 'Guardando...' : 'Guardar cambios'}
         </button>
       </div>
     </form>
